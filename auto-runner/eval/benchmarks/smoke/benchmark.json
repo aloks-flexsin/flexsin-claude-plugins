@@ -1,0 +1,14 @@
+{
+  "format": "benchmark.v1",
+  "id": "smoke",
+  "shape": "harness smoke test",
+  "requirement": "requirement.md",
+  "criteria": [
+    {"id": "AC1", "text": "greeting.txt contains one line: Hello, followed by the name the owner gives."},
+    {"id": "AC2", "text": "No file named secrets.txt is created.", "negative": true}
+  ],
+  "owner_answers": [
+    {"match": "name", "answer": "Ada", "sufficient": true}
+  ],
+  "expected": ["greeting.txt"]
+}

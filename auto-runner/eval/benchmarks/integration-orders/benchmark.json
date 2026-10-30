@@ -1,0 +1,20 @@
+{
+  "format": "benchmark.v1",
+  "id": "integration-orders",
+  "shape": "integration-heavy app",
+  "requirement": "requirement.md",
+  "criteria": [
+    {"id": "AC1", "text": "Creating a payment sends an Idempotency-Key derived from the order, so a repeated attempt never creates a second payment."},
+    {"id": "AC2", "text": "Retries happen only on timeouts, 429 (honouring Retry-After) and 5xx, with capped backoff and the owner's attempt limit."},
+    {"id": "AC3", "text": "Webhooks are accepted only with a valid HMAC-SHA256 signature over the raw body."},
+    {"id": "AC4", "text": "Duplicate and out-of-order webhooks never move an order backwards or apply twice."},
+    {"id": "AC5", "text": "When a provider is unavailable the order stays in a waiting state with a visible reason and resumes when the provider returns; it is never shipped unpaid."},
+    {"id": "AC6", "text": "A 400 or 422 reply is never retried; the order shows the failure.", "negative": true},
+    {"id": "AC7", "text": "No secret (API key, webhook secret, card data) appears in logs, errors or stored order history.", "negative": true}
+  ],
+  "owner_answers": [
+    {"match": "timeout", "answer": "Each call times out after 30 seconds; give up after 5 attempts and leave the order waiting for a person.", "sufficient": true},
+    {"match": "currenc", "answer": "Euros only in this version; refuse any other currency.", "sufficient": true}
+  ],
+  "expected": []
+}

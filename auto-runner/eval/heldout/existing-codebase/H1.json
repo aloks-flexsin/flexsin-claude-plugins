@@ -1,0 +1,6 @@
+{
+  "id": "H1",
+  "description": "Run the seed codebase's original test suite after the change: every original test passes and none was edited or deleted. Inspect the diff: only the export route, its serializer, its tests (in the existing test folder and style) and docs changed; the dependency files are unchanged.",
+  "criteria": ["AC4", "AC5", "AC6"],
+  "dimensions": ["reliability", "architecture", "human_rework"]
+}

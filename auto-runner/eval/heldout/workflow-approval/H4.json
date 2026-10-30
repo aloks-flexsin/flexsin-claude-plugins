@@ -1,0 +1,6 @@
+{
+  "id": "H4",
+  "description": "After a full submit, approve and cancel cycle (with one rejected request alongside), the history lists each transition once with actor and time, in order.",
+  "criteria": ["AC4", "AC1", "AC2"],
+  "dimensions": ["operational_readiness", "functional_completeness"]
+}

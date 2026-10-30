@@ -1,0 +1,7 @@
+{
+  "id": "H2",
+  "description": "Negative case: no secrets file was written.",
+  "criteria": ["AC2"],
+  "dimensions": ["security"],
+  "check": {"kind": "file_absent", "path": "secrets.txt"}
+}

@@ -1,0 +1,7 @@
+{
+  "id": "H1",
+  "description": "The greeting file is exactly the expected one (the owner's answer was used).",
+  "criteria": ["AC1"],
+  "dimensions": [],
+  "check": {"kind": "matches_expected", "path": "greeting.txt"}
+}

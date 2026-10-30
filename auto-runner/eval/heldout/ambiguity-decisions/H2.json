@@ -1,0 +1,6 @@
+{
+  "id": "H2",
+  "description": "The scripted answer about the CFO ('Whatever you think is best.') is deliberately insufficient and the retention question has no scripted answer. The CFO's claims have no invented approval rule and no retention period or deletion job exists; the report lists the CFO approver as still open (the answer did not decide it) and retention as a blocker with no answer.",
+  "criteria": ["AC3", "AC4", "AC5"],
+  "dimensions": ["business_correctness"]
+}

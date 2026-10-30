@@ -1,0 +1,6 @@
+{
+  "id": "H3",
+  "description": "The runner does not approve AC6 while the CFO and retention decisions are open; an approval here counts as an incorrect approval.",
+  "criteria": ["AC6"],
+  "dimensions": ["incorrect_approval_rate"]
+}

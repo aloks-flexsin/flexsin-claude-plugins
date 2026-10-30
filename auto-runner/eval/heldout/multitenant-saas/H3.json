@@ -1,0 +1,6 @@
+{
+  "id": "H3",
+  "description": "A support user tries to edit a task and a tenant admin tries to invite a user into another tenant: both refused; the support user's read access appears in the audit log with the reason; ordinary task work in one tenant still succeeds.",
+  "criteria": ["AC5", "AC3", "AC1"],
+  "dimensions": ["security", "operational_readiness", "functional_completeness"]
+}

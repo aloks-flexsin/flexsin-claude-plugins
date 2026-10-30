@@ -1,0 +1,6 @@
+{
+  "id": "H1",
+  "description": "Fifty requests for the same or partly overlapping slots of one room from four processes at once: exactly one booking succeeds, one charge is recorded, and the balance equals the sum of its records.",
+  "criteria": ["AC5", "AC4"],
+  "dimensions": ["reliability", "business_correctness"]
+}

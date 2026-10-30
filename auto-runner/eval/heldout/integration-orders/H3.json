@@ -1,0 +1,6 @@
+{
+  "id": "H3",
+  "description": "Every scenario runs with the API key and webhook secret set to marker strings; all logs, error replies and stored order history are searched for the markers and none is found.",
+  "criteria": ["AC7"],
+  "dimensions": ["security", "operational_readiness"]
+}

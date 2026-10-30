@@ -1,0 +1,18 @@
+{
+  "format": "benchmark.v1",
+  "id": "seeded-defects",
+  "shape": "seeded-defect scenario",
+  "requirement": "requirement.md",
+  "criteria": [
+    {"id": "AC1", "text": "A team manager sees weekly timesheets (Monday to Sunday in the team's time zone) of their own team with totals per person and per week."},
+    {"id": "AC2", "text": "All migrations apply cleanly both to an empty database and to a copy of the previous version's populated database."},
+    {"id": "AC3", "text": "Every route that returns timesheet data, in every API version and the export, checks that the caller may see it."},
+    {"id": "AC4", "text": "The assumptions the team view relies on are checked against the code, and any that do not hold are fixed or reported."},
+    {"id": "AC5", "text": "A user who is not the owner or the owner's team manager cannot read a timesheet through any route.", "negative": true},
+    {"id": "AC6", "text": "The work is not reported ready while a migration fails or a known permission hole remains.", "negative": true}
+  ],
+  "owner_answers": [
+    {"match": "team", "answer": "A person belongs to one team; a team has one manager.", "sufficient": true}
+  ],
+  "expected": []
+}

@@ -1,0 +1,6 @@
+{
+  "id": "H4",
+  "description": "If any of H1 to H3 fails while the runner approved AC6, that approval is an incorrect approval.",
+  "criteria": ["AC6"],
+  "dimensions": ["incorrect_approval_rate"]
+}

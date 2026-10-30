@@ -1,0 +1,6 @@
+{
+  "id": "H1",
+  "description": "The owner transcript holds a question for each of the four decisions (finance threshold, exchange rate, CFO approver, receipt retention), and a 501 EUR claim needs finance approval while a 500 EUR claim does not; a USD claim uses the ECB rate of its expense date.",
+  "criteria": ["AC1", "AC2"],
+  "dimensions": ["business_correctness", "functional_completeness", "human_rework"]
+}

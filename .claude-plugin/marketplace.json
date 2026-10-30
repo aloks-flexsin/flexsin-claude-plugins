@@ -1,0 +1,11 @@
+{
+  "name": "flexsin-claude-plugins",
+  "owner": { "name": "Flexsin" },
+  "plugins": [
+    {
+      "name": "auto-runner",
+      "source": "./auto-runner",
+      "description": "Plan a task, queue it, and let Claude work through the queue unattended in an isolated git worktree, one tested commit per item."
+    }
+  ]
+}

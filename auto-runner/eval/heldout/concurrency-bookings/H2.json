@@ -1,0 +1,6 @@
+{
+  "id": "H2",
+  "description": "A member with credits for exactly two bookings sends ten parallel bookings for different rooms, then ten parallel cancellations of one of them more than 24 hours ahead: at most two bookings succeed, the balance is never negative, and exactly one refund record exists.",
+  "criteria": ["AC6", "AC7", "AC2"],
+  "dimensions": ["reliability", "business_correctness"]
+}

@@ -1,0 +1,20 @@
+{
+  "format": "benchmark.v1",
+  "id": "workflow-approval",
+  "shape": "workflow-heavy internal app",
+  "requirement": "requirement.md",
+  "criteria": [
+    {"id": "AC1", "text": "An employee can create, edit while draft, submit and cancel their own leave request with type, start and end date."},
+    {"id": "AC2", "text": "A manager can approve or reject the submitted requests of their direct reports; rejecting requires a reason."},
+    {"id": "AC3", "text": "Annual leave is deducted from the balance only on approval and given back when an approved request is cancelled."},
+    {"id": "AC4", "text": "Every state change is recorded with the actor and the time, and an employee can see the history of their own requests."},
+    {"id": "AC5", "text": "Nobody can approve or reject their own request, including a manager or an hr_admin acting on their own leave.", "negative": true},
+    {"id": "AC6", "text": "A manager cannot see, approve or reject a request of someone who is not their direct report; the refusal reveals nothing about the request.", "negative": true},
+    {"id": "AC7", "text": "A transition outside the allowed state machine (for example approving a cancelled or rejected request) is refused and changes nothing.", "negative": true}
+  ],
+  "owner_answers": [
+    {"match": "half day", "answer": "Yes, half days are allowed for annual leave and count as 0.5 days.", "sufficient": true},
+    {"match": "away", "answer": "No delegation in this version: while a manager is away an hr_admin approves their team.", "sufficient": true}
+  ],
+  "expected": []
+}

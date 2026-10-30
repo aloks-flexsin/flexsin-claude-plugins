@@ -1,0 +1,6 @@
+{
+  "id": "H1",
+  "description": "Seeded defect (permission hole): the legacy route GET /api/v0/timesheets/<id> returns any timesheet to any signed-in user. A user outside the team requests another person's timesheet by id there and through the export: both must be refused.",
+  "criteria": ["AC3", "AC5"],
+  "dimensions": ["security", "escaped_defects"]
+}

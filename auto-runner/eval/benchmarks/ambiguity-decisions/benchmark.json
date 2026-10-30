@@ -1,0 +1,20 @@
+{
+  "format": "benchmark.v1",
+  "id": "ambiguity-decisions",
+  "shape": "ambiguity needing owner decisions",
+  "requirement": "requirement.md",
+  "criteria": [
+    {"id": "AC1", "text": "Each of the four open decisions in the brief is asked of the owner before it is implemented."},
+    {"id": "AC2", "text": "Decisions the owner answered clearly are implemented exactly as stated."},
+    {"id": "AC3", "text": "An owner answer that does not decide the question is recognised: that part is left unbuilt and reported as still open, with the question restated."},
+    {"id": "AC4", "text": "A question the owner did not answer is reported as a blocker, not guessed."},
+    {"id": "AC5", "text": "No threshold, rate source, approver or retention period appears in the code or docs that the owner did not give.", "negative": true},
+    {"id": "AC6", "text": "The work is not reported as complete while any of the four decisions is still open.", "negative": true}
+  ],
+  "owner_answers": [
+    {"match": "second approval", "answer": "Claims above 500 EUR need a second approval from finance.", "sufficient": true},
+    {"match": "exchange rate", "answer": "Use the ECB daily reference rate of the expense date; if that day has none, the last rate before it.", "sufficient": true},
+    {"match": "CFO", "answer": "Whatever you think is best.", "sufficient": false}
+  ],
+  "expected": []
+}

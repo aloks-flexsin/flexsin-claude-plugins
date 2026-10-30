@@ -1,0 +1,20 @@
+{
+  "format": "benchmark.v1",
+  "id": "concurrency-bookings",
+  "shape": "concurrency-sensitive rules app (balances and bookings)",
+  "requirement": "requirement.md",
+  "criteria": [
+    {"id": "AC1", "text": "A member can book a free room slot in the room's local time and is charged credits per started half hour."},
+    {"id": "AC2", "text": "Cancelling more than 24 hours before the start refunds in full; later cancellations refund nothing."},
+    {"id": "AC3", "text": "A retried request with the same request id books and charges at most once."},
+    {"id": "AC4", "text": "Every balance change is recorded exactly once, and the balance equals the sum of its records."},
+    {"id": "AC5", "text": "Two bookings of the same room never overlap, even partly, under simultaneous requests from several processes.", "negative": true},
+    {"id": "AC6", "text": "A member's balance never goes below zero under simultaneous bookings.", "negative": true},
+    {"id": "AC7", "text": "Simultaneous cancellations of the same booking refund at most once.", "negative": true}
+  ],
+  "owner_answers": [
+    {"match": "buffer", "answer": "No buffer between bookings: one may end at 10:00 and the next start at 10:00.", "sufficient": true},
+    {"match": "stored", "answer": "Store times in UTC together with the room's time zone; show them in the room's local time.", "sufficient": true}
+  ],
+  "expected": []
+}

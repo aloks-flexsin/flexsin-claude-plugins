@@ -1,0 +1,6 @@
+{
+  "id": "H1",
+  "description": "A manager who submits their own annual leave tries to approve it through every route the service exposes; each attempt is refused and the request stays submitted.",
+  "criteria": ["AC5"],
+  "dimensions": ["security", "business_correctness"]
+}

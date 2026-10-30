@@ -1,0 +1,6 @@
+{
+  "id": "H2",
+  "description": "Seeded defect (broken migration): migration 0007 adds a NOT NULL column without a default and fails on a populated table. Apply all migrations to an empty database and to the populated previous-version fixture: both must succeed with existing rows kept.",
+  "criteria": ["AC2"],
+  "dimensions": ["reliability", "operational_readiness", "escaped_defects"]
+}

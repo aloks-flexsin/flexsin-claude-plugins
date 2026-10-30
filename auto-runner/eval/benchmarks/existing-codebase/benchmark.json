@@ -1,0 +1,19 @@
+{
+  "format": "benchmark.v1",
+  "id": "existing-codebase",
+  "shape": "feature added to an unfamiliar existing codebase",
+  "requirement": "requirement.md",
+  "criteria": [
+    {"id": "AC1", "text": "An account user can download their account's invoices for a date range, optionally filtered by status, with the listed columns."},
+    {"id": "AC2", "text": "The export route uses the codebase's existing permission decorator; a user of another account gets nothing."},
+    {"id": "AC3", "text": "Amounts are produced through the codebase's existing money type, never through floating point."},
+    {"id": "AC4", "text": "The existing test suite still passes unchanged."},
+    {"id": "AC5", "text": "New tests for the export follow the existing suite's style and location."},
+    {"id": "AC6", "text": "No new dependency is added and no file unrelated to the feature is changed.", "negative": true},
+    {"id": "AC7", "text": "A cell value beginning with =, +, - or @ cannot run as a formula when the CSV is opened in a spreadsheet.", "negative": true}
+  ],
+  "owner_answers": [
+    {"match": "date range", "answer": "Inclusive on both ends, in the account's time zone.", "sufficient": true}
+  ],
+  "expected": []
+}

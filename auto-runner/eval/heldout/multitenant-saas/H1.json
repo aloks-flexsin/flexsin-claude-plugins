@@ -1,0 +1,6 @@
+{
+  "id": "H1",
+  "description": "Two tenants with overlapping task titles: a user of tenant A enumerates task, user and export ids through the API and the web pages and never receives tenant B data; each reply equals the reply for a missing id.",
+  "criteria": ["AC6", "AC2"],
+  "dimensions": ["security"]
+}

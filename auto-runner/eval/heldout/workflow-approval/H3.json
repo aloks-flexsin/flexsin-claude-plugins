@@ -1,0 +1,6 @@
+{
+  "id": "H3",
+  "description": "A manager from another team requests a known request id of someone outside their team: the reply is the same as for an id that does not exist and contains no request data.",
+  "criteria": ["AC6"],
+  "dimensions": ["security"]
+}

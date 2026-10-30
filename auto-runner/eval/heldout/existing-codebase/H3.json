@@ -1,0 +1,6 @@
+{
+  "id": "H3",
+  "description": "A customer named =HYPERLINK(\"x\") is exported as inert text, and a user of account B requesting account A's export is refused the same way other protected routes refuse.",
+  "criteria": ["AC7", "AC2"],
+  "dimensions": ["security"]
+}

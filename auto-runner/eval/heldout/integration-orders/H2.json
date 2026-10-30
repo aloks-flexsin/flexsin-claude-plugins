@@ -1,0 +1,6 @@
+{
+  "id": "H2",
+  "description": "The payment stub answers 500, then times out, then succeeds; separately it answers 422 once: the first order has exactly one payment at the stub and is paid, the second shows the failure after exactly one call.",
+  "criteria": ["AC1", "AC2", "AC5", "AC6"],
+  "dimensions": ["integration", "reliability", "business_correctness"]
+}

@@ -1,0 +1,27 @@
+{
+  "format": "rubric.v1",
+  "dimensions": [
+    {"id": "functional_completeness", "label": "Functional completeness", "measure": "criteria_pass_rate", "better": "higher",
+     "description": "Share of tested acceptance criteria whose held-out checks all pass."},
+    {"id": "business_correctness", "label": "Business correctness", "measure": "heldout_pass_rate", "better": "higher",
+     "description": "Share of executable held-out checks that pass (business rules written independently of the implementer)."},
+    {"id": "architecture", "label": "Architecture", "measure": "heldout_pass_rate", "dimension": "architecture", "better": "higher",
+     "description": "Held-out checks tagged architecture."},
+    {"id": "security", "label": "Security", "measure": "heldout_pass_rate", "dimension": "security", "better": "higher",
+     "description": "Held-out checks tagged security (permission holes, secrets, injection)."},
+    {"id": "integration", "label": "Integration", "measure": "heldout_pass_rate", "dimension": "integration", "better": "higher",
+     "description": "Held-out checks tagged integration (external contracts, failure behaviour)."},
+    {"id": "reliability", "label": "Reliability", "measure": "heldout_pass_rate", "dimension": "reliability", "better": "higher",
+     "description": "Held-out checks tagged reliability (recovery, concurrency, idempotence)."},
+    {"id": "operational_readiness", "label": "Operational readiness", "measure": "heldout_pass_rate", "dimension": "operational_readiness", "better": "higher",
+     "description": "Held-out checks tagged operational_readiness (deploy, rollback, observability)."},
+    {"id": "human_rework", "label": "Human rework", "measure": "reported", "key": "rework_minutes", "better": "lower",
+     "description": "Minutes a person spent fixing the delivery, as recorded by that person."},
+    {"id": "escaped_defects", "label": "Escaped defects", "measure": "reported", "key": "escaped_defects", "better": "lower",
+     "description": "Defects found after acceptance, as recorded later by a person."},
+    {"id": "cost", "label": "Cost", "measure": "reported", "key": "cost_usd", "better": "lower",
+     "description": "USD the runner reported; never estimated."},
+    {"id": "incorrect_approval_rate", "label": "Incorrect-approval rate", "measure": "incorrect_approval_rate", "better": "lower",
+     "description": "Share of criteria the runner approved whose held-out checks failed."}
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "id": "H1",
+  "description": "The payment stub sends payment.succeeded twice and then a late payment.failed, and a second webhook with one changed body byte and the original signature: the order is paid once, shipped once, stays paid, and the tampered webhook is rejected and changes nothing.",
+  "criteria": ["AC4", "AC3"],
+  "dimensions": ["integration", "reliability", "security"]
+}

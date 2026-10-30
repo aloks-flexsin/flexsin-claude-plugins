@@ -1,0 +1,6 @@
+{
+  "id": "H3",
+  "description": "Seeded defect (wrong assumption): the README says entries are stored in UTC, but the writer stores server local time. An entry at 23:30 on Sunday in the team's time zone must appear in that week of the team view, not the next, with correct totals.",
+  "criteria": ["AC4", "AC1"],
+  "dimensions": ["business_correctness", "escaped_defects"]
+}

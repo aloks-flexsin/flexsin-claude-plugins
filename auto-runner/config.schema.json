@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "auto-runner/config.schema.json",
+  "title": "auto-runner project config (.claude/auto.json), v2",
+  "description": "Every key is optional. The v2 sections are parsed and validated only; nothing acts on lanes yet. Kept in step with bin/autocfg.py DEFAULTS and SECTIONS by tests/auto_runner/test_config.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "text": {"type": "string"},
+    "texts": {"type": "array", "items": {"type": "string"}},
+    "flag": {"type": "boolean"},
+    "count": {"type": "integer", "minimum": 0},
+    "amount": {"type": "number", "minimum": 0}
+  },
+  "properties": {
+    "test_command": {"$ref": "#/$defs/text", "description": "Command that proves the suite is green ('' = none)."},
+    "check_only": {"$ref": "#/$defs/flag", "description": "true = no tests exist; statuses say 'unverified: no tests'."},
+    "queue_file": {"$ref": "#/$defs/text", "description": "The one queue file a person reads."},
+    "rules_files": {"$ref": "#/$defs/texts", "description": "Files the agent must read first."},
+    "share_dirs": {"$ref": "#/$defs/texts", "description": "Folders linked into the worktree instead of copied."},
+    "worktree_suffix": {"$ref": "#/$defs/text"},
+    "base_branch": {"$ref": "#/$defs/text", "description": "'' = detect."},
+    "branch_prefix": {"$ref": "#/$defs/text"},
+    "commit_trailer": {"$ref": "#/$defs/text"},
+    "models": {
+      "type": "object", "additionalProperties": false,
+      "description": "Role -> model alias or name.",
+      "properties": {
+        "implementer": {"$ref": "#/$defs/text"},
+        "planner": {"$ref": "#/$defs/text"},
+        "plan_reviewer": {"$ref": "#/$defs/text"},
+        "work_reviewer": {"$ref": "#/$defs/text"},
+        "tester": {"$ref": "#/$defs/text"},
+        "scribe": {"$ref": "#/$defs/text"}
+      }
+    },
+    "lanes": {
+      "type": "object", "additionalProperties": false,
+      "description": "Branch lanes; parsed and validated only.",
+      "properties": {
+        "protected": {"$ref": "#/$defs/texts"},
+        "sandbox": {"$ref": "#/$defs/texts"},
+        "deploy_command": {"$ref": "#/$defs/text"}
+      }
+    },
+    "review": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "model": {"$ref": "#/$defs/text"},
+        "max_plan_revisions": {"$ref": "#/$defs/count"},
+        "max_fix_rounds": {"$ref": "#/$defs/count"},
+        "max_budget_usd": {"$ref": "#/$defs/amount"}
+      }
+    },
+    "budgets": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "iteration_usd": {"$ref": "#/$defs/amount"},
+        "run_usd": {"$ref": "#/$defs/amount"},
+        "max_iterations": {"$ref": "#/$defs/count"}
+      }
+    },
+    "docs": {
+      "type": "object", "additionalProperties": false,
+      "description": "map = the doc map bin/autodocs.py reads (default docs/doc-map.json); check = false turns the runner's docs gate off (default on when the map exists).",
+      "properties": {
+        "adr_dir": {"$ref": "#/$defs/text"},
+        "required": {"$ref": "#/$defs/texts"},
+        "map": {"$ref": "#/$defs/text"},
+        "check": {"$ref": "#/$defs/flag"}
+      }
+    },
+    "central": {
+      "type": "object", "additionalProperties": false,
+      "description": "Central service; never holds a token.",
+      "properties": {
+        "enabled": {"$ref": "#/$defs/flag"},
+        "url": {"$ref": "#/$defs/text"},
+        "project": {"$ref": "#/$defs/text"}
+      }
+    },
+    "locks": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "path": {"$ref": "#/$defs/text"},
+        "stale_after_minutes": {"$ref": "#/$defs/count"}
+      }
+    },
+    "acceptance": {
+      "type": "object", "additionalProperties": false,
+      "description": "Browser acceptance. A set base_url must be local or a test/staging host (autobrowser.check_base_url).",
+      "properties": {
+        "browser": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "enabled": {"$ref": "#/$defs/flag"},
+            "base_url": {"$ref": "#/$defs/text"},
+            "command": {"$ref": "#/$defs/text"},
+            "headless": {"$ref": "#/$defs/flag"},
+            "exploratory": {"$ref": "#/$defs/flag"},
+            "accounts": {
+              "type": "object", "additionalProperties": false,
+              "properties": {
+                "method": {"type": "string", "enum": ["seed_command", "signup"]},
+                "seed_command": {"$ref": "#/$defs/text"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "changelog": {
+      "type": "object", "additionalProperties": false,
+      "description": "Changelog written by the runner. Defaults: enabled false, file CHANGELOG.md, versioning semver.",
+      "properties": {
+        "enabled": {"$ref": "#/$defs/flag"},
+        "file": {"$ref": "#/$defs/text"},
+        "versioning": {"type": "string", "enum": ["semver"]}
+      }
+    }
+  }
+}

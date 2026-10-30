@@ -1,0 +1,6 @@
+{
+  "id": "H3",
+  "description": "The same request id is sent three times with a simulated timeout after the first commit (one booking, one charge); a booking across the daylight-saving change in the room's time zone is charged for its real length and does not overlap its neighbours.",
+  "criteria": ["AC3", "AC1"],
+  "dimensions": ["reliability", "integration", "business_correctness"]
+}

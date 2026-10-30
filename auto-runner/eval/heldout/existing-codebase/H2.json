@@ -1,0 +1,6 @@
+{
+  "id": "H2",
+  "description": "Export invoices whose totals are seeded rounding traps (line items 0.10 + 0.20, and 1999.995) over a range whose last day is an invoice date in the account's time zone: the CSV includes that invoice and shows exactly the values the money type gives.",
+  "criteria": ["AC1", "AC3"],
+  "dimensions": ["business_correctness", "functional_completeness"]
+}

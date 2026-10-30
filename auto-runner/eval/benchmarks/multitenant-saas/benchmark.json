@@ -1,0 +1,20 @@
+{
+  "format": "benchmark.v1",
+  "id": "multitenant-saas",
+  "shape": "multi-tenant SaaS",
+  "requirement": "requirement.md",
+  "criteria": [
+    {"id": "AC1", "text": "A user can create, edit, assign, search and close tasks in their own tenant."},
+    {"id": "AC2", "text": "Search, lists and CSV export return only the requesting user's tenant's tasks."},
+    {"id": "AC3", "text": "A tenant admin can invite and remove users of their own tenant only."},
+    {"id": "AC4", "text": "The nightly summary job writes one summary per tenant counting only that tenant's tasks."},
+    {"id": "AC5", "text": "Support staff access follows the owner's decision and every support access is recorded in an audit log."},
+    {"id": "AC6", "text": "A request for another tenant's task, user or export by id gets the same not-found reply as a missing id and returns no data.", "negative": true},
+    {"id": "AC7", "text": "No cache entry, file name or background job result is shared between tenants.", "negative": true}
+  ],
+  "owner_answers": [
+    {"match": "support", "answer": "Support staff may read a tenant's data only, never change it, and every access is audited with the reason given.", "sufficient": true},
+    {"match": "leave", "answer": "When a tenant leaves, delete all its data within 30 days and keep only the audit log.", "sufficient": true}
+  ],
+  "expected": []
+}

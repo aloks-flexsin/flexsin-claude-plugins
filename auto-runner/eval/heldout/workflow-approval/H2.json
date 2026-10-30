@@ -1,0 +1,6 @@
+{
+  "id": "H2",
+  "description": "Approve, cancel, then try to approve the same request again: the second approval is refused and the balance equals the starting balance.",
+  "criteria": ["AC3", "AC7"],
+  "dimensions": ["business_correctness", "reliability"]
+}

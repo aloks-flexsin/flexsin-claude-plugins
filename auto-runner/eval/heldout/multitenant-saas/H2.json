@@ -1,0 +1,6 @@
+{
+  "id": "H2",
+  "description": "Tenant A's export is requested immediately after tenant B's identical export, and the nightly job runs for three tenants: the file served to A holds only A's rows, and each summary matches counts computed directly for that tenant.",
+  "criteria": ["AC7", "AC4", "AC2"],
+  "dimensions": ["security", "integration", "reliability"]
+}
