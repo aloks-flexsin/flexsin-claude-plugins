@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>auto-runner central</h1>
+<p>Signed in as {{ account.email }}.</p>
+<form method="post" action="{{ url_for('auth.signout') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit">Sign out</button>
+</form>
+{% endblock %}

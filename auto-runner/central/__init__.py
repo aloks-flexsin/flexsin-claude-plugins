@@ -31,6 +31,9 @@ def create_app(config=None):
 
     app.teardown_appcontext(db.close_db)
 
+    from . import auth
+    auth.init_app(app)
+
     @app.get("/healthz")
     def healthz():
         return jsonify(status="ok")
