@@ -41,6 +41,20 @@ One row per delivery: `delivery_id`, `project`, `task`, `blocker_id`, `version`,
 - `LocalTransport` has no hand-over to confirm, so its rows stay `pending` until acknowledged and it accepts an ack for any pulled
   row. The fake central refuses an ack for a row that was never delivered (`ValueError`).
 
+## HTTP binding (central service, `auto-runner/central/deliveries.py`)
+
+Both calls take `Authorization: Bearer <token>` with the `pull` scope (401 missing/bad/revoked token, 403 wrong scope); the
+project is the token's project.
+
+- `GET /api/v1/deliveries/pending` -> `200 {"deliveries": [delivery, ...]}` (the shape above). Each row handed over moves
+  pending/failed -> `delivered` and counts an attempt; a row whose reply cannot be built is left out and moves to `failed`
+  with `last_error` (also an attempt).
+- `POST /api/v1/deliveries/<delivery_id>/ack` -> `200` with the row (`delivery_id`, `project`, `task`, `blocker_id`,
+  `version`, `state`, `attempts`, `last_error`); a second ack answers the same row and changes nothing. `404` unknown id or
+  another project's id (the transport maps it to `KeyError`); `409` a row never delivered (maps to `ValueError`).
+- Decisions are recorded at the centre by owners, managers and admins of the project (`record_decision`), each as the
+  blocker's next version with a `pending` delivery row and an audit row.
+
 ## Rules both sides keep
 
 1. **Identity.** `delivery_id` = `<blocker_id>.v<version>`. A row whose id, `blocker_id` and `decision.version` disagree is not applied.
