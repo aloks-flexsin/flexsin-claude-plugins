@@ -1,12 +1,18 @@
 """auto-runner plugin: the delivery contract (auto-runner/docs/delivery-contract.md, roadmap K6).
 
-The same scenarios run against both transports: `LocalTransport` (answers saved in the project's own .auto folder) and the
-in-memory fake central service (answers made at the centre). No network and no real service.
+The same scenarios run against three transports: `LocalTransport` (answers saved in the project's own .auto folder), the
+in-memory fake central service (answers made at the centre), and `HttpTransport` talking to the real central app on SQLite
+through Flask's test client. No network and no socket.
 """
+import json
+import secrets
+import sys
+import uuid
+
 import pytest
 
 from tests.auto_runner.fake_central import FakeCentral
-from tests.auto_runner.test_runner import BLOCKER, ar, blocking_agent, events, picking_agent, project, \
+from tests.auto_runner.test_runner import BIN, BLOCKER, ar, blocking_agent, events, picking_agent, project, \
     project_statuses  # noqa: F401  (project is a fixture)
 
 ab = ar.autoblock
@@ -70,9 +76,86 @@ class CentralWorld:
         return self.central.state(did)
 
 
-@pytest.fixture(params=['local', 'central'])
+class HttpWorld:
+    """Answers are made at the real central service (Flask app on SQLite); the runner holds an `HttpTransport` whose `send`
+    goes through the app's test client, so every byte crosses the HTTP binding but no socket is opened."""
+
+    BASE = 'https://central.test'
+    AT = '2026-10-31T09:00:00Z'
+
+    def __init__(self, root):
+        auto_runner = str(BIN.parent)
+        if auto_runner not in sys.path:
+            sys.path.insert(0, auto_runner)
+        import central
+        from central import db
+        self.root, self.db = root, db
+        url = 'sqlite:///' + (root / 'central.sqlite3').as_posix()
+        db.init_db(url)
+        self.app = central.create_app({'TESTING': True, 'DATABASE_URL': url})
+        self.conn = db.connect(url)
+        self.client = self.app.test_client()
+        self.projects, self.raised = {}, set()
+
+    def close(self):
+        self.conn.close()
+
+    def auto(self, project):
+        return self.root / project / '.auto'
+
+    def _project(self, slug):
+        from central import projects, tokens
+        if slug not in self.projects:
+            p = projects.create(self.conn, slug, slug.title(), self.AT)
+            owner = secrets.token_hex(16)
+            self.conn.execute('INSERT INTO account (id, email, password_hash, role, disabled, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                              (owner, f'owner@{slug}.example.com', 'x', 'user', 0, self.AT))
+            self.conn.execute('INSERT INTO member (project_id, account_id, role, created_at) VALUES (?, ?, ?, ?)',
+                              (p['id'], owner, 'owner', self.AT))
+            self.conn.commit()
+            ingest, _ = tokens.create(self.conn, p['id'], ['ingest'], None, self.AT)
+            pull, _ = tokens.create(self.conn, p['id'], ['pull'], None, self.AT)
+            self.projects[slug] = {'row': p, 'owner': owner, 'ingest': ingest, 'pull': pull}
+        return self.projects[slug]
+
+    def send(self, method, url, headers, body, timeout):
+        assert url.startswith(self.BASE + '/')
+        r = self.client.open(url[len(self.BASE):], method=method, headers=headers, data=body,
+                             base_url=self.BASE)
+        return r.status_code, r.get_data()
+
+    def transport(self, project):
+        return ad.HttpTransport(self.BASE, self._project(project)['pull'], send=self.send)
+
+    def answer(self, project, task, bid, option='Orange'):
+        from central import deliveries
+        p = self._project(project)
+        if (project, bid) not in self.raised:     # the runner's ledger reports the blocker to the centre first
+            e = {'schema': 'event.v1', 'id': uuid.uuid4().hex, 'time': '2026-10-31T09:00:00+00:00', 'run': '20261031-0900',
+                 'project': project, 'type': 'blocker', 'item': task, 'detail': {'action': 'raised', 'id': bid},
+                 'evidence_class': 'agent_reported'}
+            r = self.client.post('/api/v1/events', base_url=self.BASE, data=json.dumps(e),
+                                 headers={'Authorization': 'Bearer ' + p['ingest'], 'Content-Type': 'application/json'})
+            assert r.status_code == 200, r.get_json()
+            self.raised.add((project, bid))
+        owner = self.conn.query_one('SELECT * FROM account WHERE id = ?', (p['owner'],))
+        return deliveries.record_decision(self.conn, p['row'], bid, owner, option=option)['delivery_id']
+
+    def row_state(self, project, did):
+        from central import deliveries
+        row = deliveries.get(self.conn, self._project(project)['row'], did)
+        return row and row['state']
+
+
+WORLDS = {'local': LocalWorld, 'central': CentralWorld, 'http': HttpWorld}
+
+
+@pytest.fixture(params=list(WORLDS))
 def world(request, tmp_path):
-    return (LocalWorld if request.param == 'local' else CentralWorld)(tmp_path)
+    w = WORLDS[request.param](tmp_path)
+    if hasattr(w, 'close'):
+        request.addfinalizer(w.close)
+    return w
 
 
 def _raise(world, project, bid, task='A1'):

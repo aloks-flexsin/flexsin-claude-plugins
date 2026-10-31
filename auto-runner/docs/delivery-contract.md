@@ -1,9 +1,11 @@
 # Delivery contract (roadmap K6)
 
-How an answered blocker travels from wherever a person answered it to the runner that raised it. A future central service must be
-built to this page; today two implementations meet it: `LocalTransport` in `bin/autodeliver.py` (answers saved in the project's own
-`.auto/` folder) and the in-memory fake `tests/auto_runner/fake_central.py`. The same scenarios run against both in
-`tests/auto_runner/test_delivery_contract.py`. **Unverified:** no real service exists, nothing here has run over a network.
+How an answered blocker travels from wherever a person answered it to the runner that raised it. Three implementations meet it:
+`LocalTransport` in `bin/autodeliver.py` (answers saved in the project's own `.auto/` folder), the in-memory fake
+`tests/auto_runner/fake_central.py`, and `HttpTransport` in `bin/autodeliver.py` talking to the central service in `central/`.
+The same scenarios run against all three in `tests/auto_runner/test_delivery_contract.py` (worlds `local`, `central`, `http`); the
+`http` world sends every request through the real app's Flask test client on SQLite. **Unverified:** nothing here has run over a
+real network or against a deployed service, and the runner does not use `HttpTransport` yet.
 
 ## Calls
 
@@ -52,6 +54,11 @@ project is the token's project.
 - `POST /api/v1/deliveries/<delivery_id>/ack` -> `200` with the row (`delivery_id`, `project`, `task`, `blocker_id`,
   `version`, `state`, `attempts`, `last_error`); a second ack answers the same row and changes nothing. `404` unknown id or
   another project's id (the transport maps it to `KeyError`); `409` a row never delivered (maps to `ValueError`).
+- Client side, `HttpTransport(base_url, token, send=None, timeout=10)` (stdlib `urllib` unless a `send` is given): no reply,
+  a connection error, a timeout, any `5xx`, or a `2xx` whose body is not the shape above raise `TransportUnavailable` with
+  nothing changed on the runner side; `404`/`409` on ack map as above; any other `4xx` (`401`, `403`, `413`, `429`, ...)
+  raises `autodeliver.TransportRefused`, which is not an outage. The token is sent only in the `Authorization` header,
+  never in a URL, an error message or `repr()`.
 - Decisions are recorded at the centre by owners, managers and admins of the project (`record_decision`), each as the
   blocker's next version with a `pending` delivery row and an audit row.
 

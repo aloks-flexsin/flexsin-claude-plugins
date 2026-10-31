@@ -85,7 +85,7 @@ Every run also appends to `.auto/events.jsonl` (schema `event.v1`, `bin/autoeven
 | `bin/queue.py`, `bin/autocfg.py`, `bin/autosafe.py` | Queue grammar and readiness (`*Depends on:*`), config loader (v1 keys + v2 sections), safety preflight. |
 | `bin/autoevents.py` | Append-only `.auto/events.jsonl`, schema `event.v1`. |
 | `bin/autoblock.py` | `blocker.v1` / `decision.v1`, lifecycle state machine, local store; `list [--state S]`, `answer ID --option/--text`, `view`. |
-| `bin/autodeliver.py` | `Transport` interface, `LocalTransport`, inbox writer, resume packets; `resume ID` rebuilds a packet. |
+| `bin/autodeliver.py` | `Transport` interface, `LocalTransport`, `HttpTransport` (central service), inbox writer, resume packets; `resume ID` rebuilds a packet. |
 | `bin/autostale.py` | Artifact front-matter (`version`, `hash`, `built_from`, `status`), `scan`, `status`, `revalidate`; stale artifacts refuse a resume. |
 | `bin/autoeval.py` | Evaluation harness: `run --benchmark ID --runner fake`, `validate`, `validate-results FILE`. |
 | `bin/auto_init.py`, `bin/auto_report.py` | Init (preview/apply/remove) and the status/log reports. |
@@ -152,12 +152,16 @@ blocked with that message. `.auto/QUESTIONS.md` is a generated view; never edit 
 `python bin/autoblock.py answer ID --option LABEL [--text TEXT]`: the decision is saved as data (never run as a command) and waits for delivery.
 Only RESUMED and CLOSED count as unblocked; "answered" is not "resumed". With no blocker file present the runner behaves as before.
 
-## Delivery contract (no real service exists)
+## Delivery contract
 Pull-based: the runner pulls answered decisions at start and between iterations, writes `.auto/inbox/<blocker>.v<N>.json` once per decision
 version, and acknowledges only when it selects the item again; the next prompt then carries `.auto/resume/<id>.md` (blocker, decision, artifact
 hashes, last evidence, failed attempts, ledger excerpt). Outages change nothing and are retried. The request/response shapes and state rules are in
-`docs/delivery-contract.md`; `LocalTransport` and the in-memory fake in `tests/auto_runner/fake_central.py` pass the same contract tests. The `central`
-config section is validated only: nothing connects anywhere.
+`docs/delivery-contract.md`. Three implementations pass the same contract tests: `LocalTransport`, the in-memory fake in
+`tests/auto_runner/fake_central.py`, and `HttpTransport(base_url, token, send=None, timeout=10)`, which talks to the central service
+(`central/`) with stdlib `urllib`: no reply, a timeout, a 5xx or an unreadable reply raise `TransportUnavailable`; on ack 404 is `KeyError` and 409
+`ValueError`; any other 4xx (bad token, wrong scope) raises `TransportRefused`. The token goes only in the `Authorization` header. The tests drive
+it through the real app's Flask test client; it has not run over a real network. The runner does not use it yet, and the `central` config
+section is validated only: nothing connects anywhere.
 
 ## Evaluation harness (no real-model run yet)
 `eval/` holds a rubric, a smoke benchmark and seven benchmark briefs with held-out test descriptions kept out of the agent's view. A criterion passes

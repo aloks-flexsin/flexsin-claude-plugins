@@ -9,8 +9,9 @@ next iteration on the item gets a resume packet built from files. Rules:
 - A `Transport` has `pull_pending(project)` (deliveries not yet acknowledged, for that project only) and `ack(delivery_id)`.
   `LocalTransport` is the stand-in for the central service: it reads the decisions `autoblock.py answer` saved in the same `.auto`
   folder and keeps one row per delivery in `.auto/deliveries/<delivery_id>.json` (state pending|delivered|acknowledged|failed, attempts,
-  last_error). A real central service is a later phase and is not built; `tests/auto_runner/fake_central.py` is an in-memory fake
-  of it, and both are held to `plugins/auto-runner/docs/delivery-contract.md` by the same tests.
+  last_error). `HttpTransport(base_url, token)` talks to the central service (`auto-runner/central/`) over HTTP;
+  `tests/auto_runner/fake_central.py` is an in-memory fake of it. All three are held to `auto-runner/docs/delivery-contract.md`
+  by the same tests (the HTTP one through the real app's Flask test client, no socket).
 - A decision made at the central service arrives while the local blocker is still OPEN: `pull()` first stores a copy
   (`Store.receive`, same transition keys as a local answer). A row whose project or task differs from the local blocker is ignored.
 - Either call may raise `TransportUnavailable`; `pull()` and `resume()` let it through having changed nothing for that delivery,
@@ -131,6 +132,85 @@ class LocalTransport(Transport):
             row['state'] = 'acknowledged'
             autoblock.write_json_atomic(self._path(did), row)
         return row
+
+
+class TransportRefused(RuntimeError):
+    """The service answered, but refused the call (401 bad token, 403 wrong scope, another 4xx). Not an outage: a person
+    has to fix the configuration. The message holds the status and the service's error text, never the token."""
+
+
+def urllib_send(method, url, headers, body, timeout):
+    """The default `send` of HttpTransport: one HTTP request with the standard library -> (status, body bytes).
+    A reply with an error status is returned like any other; no reply at all raises TransportUnavailable."""
+    import http.client
+    import urllib.error
+    import urllib.request
+    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, e.read()
+        finally:
+            e.close()
+    except (OSError, http.client.HTTPException) as e:   # URLError, refused, reset, DNS, TimeoutError, a cut reply
+        raise TransportUnavailable(f'{method} {url.split("?")[0]}: {type(e).__name__}') from None
+
+
+class HttpTransport(Transport):
+    """The central service over HTTP (`auto-runner/central/deliveries.py`; docs/delivery-contract.md, "HTTP binding").
+    `send(method, url, headers, body, timeout) -> (status, body bytes)` is urllib by default; tests pass their own.
+    No reply, a timeout, a 5xx or an unreadable 200 reply raise TransportUnavailable (this side has changed nothing);
+    ack: 404 -> KeyError, 409 -> ValueError; any other 4xx -> TransportRefused. The token goes only in the
+    Authorization header: never in a URL, a message or repr()."""
+
+    def __init__(self, base_url, token, send=None, timeout=10):
+        if not base_url or not token:
+            raise ValueError('HttpTransport needs a base url and a token')
+        self.base_url = base_url.rstrip('/')
+        self._token = token
+        self.send = send or urllib_send
+        self.timeout = timeout
+
+    def __repr__(self):
+        return f'HttpTransport({self.base_url!r})'
+
+    def _call(self, method, path, refusals=None):
+        """-> the JSON object of a 2xx reply. A 4xx raises refusals[status] (default TransportRefused) with the message."""
+        headers = {'Authorization': f'Bearer {self._token}', 'Accept': 'application/json'}
+        body = None
+        if method == 'POST':
+            body, headers['Content-Type'] = b'', 'application/json'
+        try:
+            status, raw = self.send(method, self.base_url + path, headers, body, self.timeout)
+        except TransportUnavailable:
+            raise
+        except OSError as e:                      # ConnectionError, TimeoutError, ... from any `send`
+            raise TransportUnavailable(f'{method} {path}: {type(e).__name__}') from None
+        try:
+            data = json.loads(raw.decode('utf-8')) if raw else None
+        except (UnicodeDecodeError, ValueError):
+            data = None
+        if status >= 500:
+            raise TransportUnavailable(f'{method} {path}: server error {status}')
+        if 200 <= status < 300:
+            if not isinstance(data, dict):
+                raise TransportUnavailable(f'{method} {path}: unreadable reply')
+            return data
+        error = data.get('error') if isinstance(data, dict) else None
+        message = f'{method} {path}: {status}' + (f' {str(error)[:200]}' if error else '')
+        raise (refusals or {}).get(status, TransportRefused)(message)
+
+    def pull_pending(self, project):
+        items = self._call('GET', '/api/v1/deliveries/pending').get('deliveries')
+        if not isinstance(items, list) or not all(isinstance(d, dict) for d in items):
+            raise TransportUnavailable('GET /api/v1/deliveries/pending: unreadable reply')
+        return items                              # autodeliver.pull() drops any row for another project
+
+    def ack(self, did):
+        from urllib.parse import quote
+        return self._call('POST', f'/api/v1/deliveries/{quote(did, safe="")}/ack', {404: KeyError, 409: ValueError})
 
 
 def inbox(auto_dir):
