@@ -1,0 +1,6 @@
+{
+  "test_command": "python -m pytest -q",
+  "rules_files": [
+    "CLAUDE.md"
+  ]
+}

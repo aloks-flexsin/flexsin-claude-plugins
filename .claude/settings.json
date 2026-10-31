@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(git remote:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean:*)",
+      "Bash(git checkout main:*)",
+      "Bash(git switch main:*)",
+      "Read(./.env)",
+      "Read(./.env.*)"
+    ]
+  }
+}

@@ -2,9 +2,10 @@ __pycache__/
 *.pyc
 .env
 .env.*
-.auto/
 node_modules/
 .vscode/
 .idea/
 Thumbs.db
 .DS_Store
+.auto/*
+!.auto/queue.md
