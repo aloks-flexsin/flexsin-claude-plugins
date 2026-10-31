@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} API tokens{% endblock %}
+{% block content %}
+<h1>{{ project.name }} <small>({{ project.slug }})</small> API tokens</h1>
+<p><a href="{{ url_for('projects.members_page', slug=project.slug) }}">Members</a></p>
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if new_token %}
+<section role="status">
+  <p>Copy this token now. It is shown only once and cannot be shown again.</p>
+  <p><code id="new-token">{{ new_token }}</code></p>
+</section>
+{% endif %}
+<h2>Tokens</h2>
+<table>
+  <thead><tr><th>Prefix</th><th>Scopes</th><th>Created</th><th>State</th><th>Actions</th></tr></thead>
+  <tbody>
+  {% for t in tokens %}
+    <tr>
+      <td><code>{{ t.prefix }}…</code></td>
+      <td>{{ t.scopes }}</td>
+      <td>{{ t.created_at }}</td>
+      <td>{% if t.revoked_at %}revoked {{ t.revoked_at }}{% else %}active{% endif %}</td>
+      <td>
+        {% if not t.revoked_at %}
+        <form method="post" action="{{ url_for('projects.token_rotate', slug=project.slug, token_id=t.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit">Rotate</button>
+        </form>
+        <form method="post" action="{{ url_for('projects.token_revoke', slug=project.slug, token_id=t.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit">Revoke</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<h2>Create a token</h2>
+<form method="post" action="{{ url_for('projects.token_create', slug=project.slug) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% for s in scopes %}<label><input type="checkbox" name="scope" value="{{ s }}"> {{ s }}</label>{% endfor %}
+  <button type="submit">Create token</button>
+</form>
+{% endblock %}

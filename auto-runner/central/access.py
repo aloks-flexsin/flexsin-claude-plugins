@@ -4,12 +4,14 @@
 - `/projects/<slug>` is the members page (any member); owners and admins add, re-role and remove members there.
 - The guard answers 404 to anyone signed out, to non-members and to members below `min_role`: never 403.
 - Project creation and every membership change (and refusal) write an audit row with the project's id.
+- `/projects/<slug>/tokens` (managers, owners and admins) creates, revokes and rotates API tokens (see tokens.py);
+  a new token appears once, on the page that answers its creation or rotation, and is never in an audit row.
 """
 import functools
 
-from flask import Blueprint, abort, g, redirect, render_template, request, url_for
+from flask import Blueprint, abort, g, make_response, redirect, render_template, request, url_for
 
-from . import audit, auth, projects, sessions
+from . import audit, auth, projects, sessions, tokens
 from .db import get_db
 
 bp = Blueprint("projects", __name__)
@@ -72,6 +74,7 @@ def _members_page(error=None, status=200, form_email=""):
     db = get_db()
     page = render_template("project_members.html", project=g.project, members=projects.members(db, g.project["id"]),
                            can_manage=projects.allows(g.project_role, "owner"), roles=projects.MEMBER_ROLES,
+                           can_tokens=projects.allows(g.project_role, "manager"),
                            my_role=g.project_role, error=error, form_email=form_email)
     return page, status
 
@@ -140,3 +143,71 @@ def member_remove(slug, account_id):
     if account_id == g.account["id"] and g.project_role != projects.ADMIN:
         return redirect(url_for("projects.projects_page"))
     return redirect(url_for("projects.members_page", slug=slug))
+
+
+def _tokens_page(new_token=None, error=None, status=200):
+    page = render_template("project_tokens.html", project=g.project, tokens=tokens.for_project(get_db(), g.project["id"]),
+                           scopes=tokens.SCOPES, new_token=new_token, error=error)
+    response = make_response(page, status)
+    # The page may carry a token shown only this once: never keep it in a cache.
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _token_detail(row):
+    return {"token_id": row["id"], "prefix": row["prefix"], "scopes": row["scopes"]}
+
+
+@bp.get("/projects/<slug>/tokens")
+@project_access("manager")
+def tokens_page(slug):
+    return _tokens_page()
+
+
+@bp.post("/projects/<slug>/tokens")
+@project_access("manager")
+def token_create(slug):
+    db = get_db()
+    scopes = request.form.getlist("scope")
+    try:
+        raw, row = tokens.create(db, g.project["id"], scopes, g.account["id"], _at())
+    except tokens.TokenError as exc:
+        _record(db, "token.create.refused", {"scopes": " ".join(s[:16] for s in scopes[:4]), "reason": str(exc)})
+        return _tokens_page(error=str(exc), status=400)
+    _record(db, "token.create", _token_detail(row))
+    return _tokens_page(new_token=raw, status=201)
+
+
+def _token_or_404(db, token_id):
+    row = tokens.get(db, g.project["id"], token_id)
+    if row is None:
+        abort(404)
+    return row
+
+
+@bp.post("/projects/<slug>/tokens/<token_id>/revoke")
+@project_access("manager")
+def token_revoke(slug, token_id):
+    db = get_db()
+    row = _token_or_404(db, token_id)
+    try:
+        tokens.revoke(db, g.project["id"], token_id, _at())
+    except tokens.TokenError as exc:
+        _record(db, "token.revoke.refused", dict(_token_detail(row), reason=str(exc)))
+        return _tokens_page(error=str(exc), status=400)
+    _record(db, "token.revoke", _token_detail(row))
+    return redirect(url_for("projects.tokens_page", slug=slug))
+
+
+@bp.post("/projects/<slug>/tokens/<token_id>/rotate")
+@project_access("manager")
+def token_rotate(slug, token_id):
+    db = get_db()
+    old = _token_or_404(db, token_id)
+    try:
+        raw, row = tokens.rotate(db, g.project["id"], token_id, g.account["id"], _at())
+    except tokens.TokenError as exc:
+        _record(db, "token.rotate.refused", dict(_token_detail(old), reason=str(exc)))
+        return _tokens_page(error=str(exc), status=400)
+    _record(db, "token.rotate", dict(_token_detail(row), old_token_id=old["id"], old_prefix=old["prefix"]))
+    return _tokens_page(new_token=raw, status=201)
