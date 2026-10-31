@@ -73,7 +73,10 @@ Besides `models.implementer`, three sections act: `acceptance.browser` (the brow
 The runner refuses to start unless:
 - `.claude/settings.json` denies `git push`, `git remote`, `git reset --hard`, `git clean`, checking out or switching to the base branch, and reading `.env` files;
 - a `test_command` exists, or `check_only` is true;
-- the repository has at least one commit.
+- the repository has at least one commit;
+- when `central.enabled` is true: `central.url` and `central.project` are set and the token is in the environment variable
+  `AUTO_RUNNER_CENTRAL_TOKEN` (the message names what is missing; the token is never read from `.claude/auto.json`, where a
+  `central.token` key is refused as unknown).
 
 It also stops on a red suite, a STOP file, uncommitted leftovers, or two iterations without progress. Cost per iteration is recorded in `.auto/runs.jsonl` only when the CLI reports it; otherwise it is `null`.
 Every run also appends to `.auto/events.jsonl` (schema `event.v1`, `bin/autoevents.py`): run start and end (with exit code and reason), each item state change (from, to) and each independent test result, one line per event, never rewritten. `runs.jsonl` keeps its old shape.
@@ -160,8 +163,13 @@ hashes, last evidence, failed attempts, ledger excerpt). Outages change nothing 
 `tests/auto_runner/fake_central.py`, and `HttpTransport(base_url, token, send=None, timeout=10)`, which talks to the central service
 (`central/`) with stdlib `urllib`: no reply, a timeout, a 5xx or an unreadable reply raise `TransportUnavailable`; on ack 404 is `KeyError` and 409
 `ValueError`; any other 4xx (bad token, wrong scope) raises `TransportRefused`. The token goes only in the `Authorization` header. The tests drive
-it through the real app's Flask test client; it has not run over a real network. The runner does not use it yet, and the `central` config
-section is validated only: nothing connects anywhere.
+it through the real app's Flask test client; it has not run over a real network.
+
+With `"central": {"enabled": true, "url": "...", "project": "<slug>"}` in `.claude/auto.json` and `AUTO_RUNNER_CENTRAL_TOKEN` set,
+the runner pulls and acknowledges answers through `HttpTransport` instead of `LocalTransport`, and events, blockers and pulls carry
+`central.project` (which must equal the token's project) instead of the folder name. The token is removed from the environment of the
+agent and the test command, added to the values redacted from events, and never written to a log, an event or a file. Without the
+section, or with `enabled` false, nothing changes: answers stay local. This is proven with a fake `send` only (no real service).
 
 ## Evaluation harness (no real-model run yet)
 `eval/` holds a rubric, a smoke benchmark and seven benchmark briefs with held-out test descriptions kept out of the agent's view. A criterion passes

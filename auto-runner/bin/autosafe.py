@@ -17,9 +17,13 @@ When `acceptance.browser.enabled` is true, the capability doctor (`autosetup.py`
 acceptance needs (BROWSER_NEEDS) as present; otherwise the run is refused with a message ending in SETUP_HINT. The doctor is
 loaded only in that case, so projects without browser acceptance are unaffected. In the same case a set
 `acceptance.browser.base_url` must pass `autobrowser.check_base_url` (local or test hosts only), else the run is refused naming it.
+
+When `central.enabled` is true, `central.url` and `central.project` must be set and the token must be in the environment variable
+CENTRAL_TOKEN_ENV (never in the config file), else the run is refused naming what is missing. The token's value is never printed.
 """
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -32,6 +36,7 @@ BROWSER_NEEDS = ('browser', 'playwright', 'mail_sink', 'accounts_ignore')
 MODEL_ALIASES = ('opus', 'sonnet', 'haiku', 'inherit')
 FULL_MODEL = re.compile(r'claude-[A-Za-z0-9._\[\]-]+')
 TAG_RULES = ['Bash(git tag:*)', 'Bash(git tag)']
+CENTRAL_TOKEN_ENV = 'AUTO_RUNNER_CENTRAL_TOKEN'
 
 
 def changelog_enabled(cfg):
@@ -162,6 +167,25 @@ def base_url_problems(cfg):
     return [] if allowed else [f'.claude/auto.json: "acceptance.browser.base_url" is refused: {reason}']
 
 
+def central_enabled(cfg):
+    c = cfg.get('central') if isinstance(cfg, dict) else None
+    return isinstance(c, dict) and c.get('enabled') is True
+
+
+def central_problems(cfg, env=None):
+    """One message naming what is missing when `central.enabled` is true; [] otherwise. `env` defaults to os.environ."""
+    if not central_enabled(cfg):
+        return []
+    env = os.environ if env is None else env
+    missing = [f'"central.{k}"' for k in ('url', 'project') if not (cfg['central'].get(k) or '').strip()]
+    if not (env.get(CENTRAL_TOKEN_ENV) or '').strip():
+        missing.append(f'the environment variable {CENTRAL_TOKEN_ENV} (the token never goes in .claude/auto.json)')
+    if not missing:
+        return []
+    return ['.claude/auto.json sets "central.enabled" but the central service cannot be used without '
+            + ', '.join(missing) + '. Set them, or set "central.enabled": false to keep answers local.']
+
+
 def capability_problems(project, cfg, doctor=None):
     """One message when browser acceptance is on and a capability it needs is missing; [] otherwise."""
     if not browser_enabled(cfg):
@@ -178,6 +202,7 @@ def preflight(project, cfg, base, doctor=None):
     """-> list of problems; empty means the runner may start. `doctor(project) -> results` is injectable for tests."""
     problems = model_problems(cfg)
     problems += base_url_problems(cfg)
+    problems += central_problems(cfg)
     problems += capability_problems(project, cfg, doctor)
     if not has_commit(project):
         problems.append('The repository has no commit yet (the worktree is made from a commit). Commit once, then run again.')

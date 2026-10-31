@@ -104,15 +104,20 @@ def git(cwd, *args, check=True):
     return r.stdout.strip()
 
 
+def child_env():
+    """This process's environment without the central token: the agent and the suite never see it."""
+    return {k: v for k, v in os.environ.items() if k != autosafe.CENTRAL_TOKEN_ENV}
+
+
 def run_claude(cmd, cwd):
     """-> (returncode, output). The only place the agent is started."""
-    r = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True)
+    r = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True, env=child_env())
     return r.returncode, (r.stdout or '') + (r.stderr or '')
 
 
 def run_tests(command, cwd):
     """-> (returncode, output) of the independent suite run."""
-    r = subprocess.run(command, cwd=str(cwd), shell=True, capture_output=True, text=True)
+    r = subprocess.run(command, cwd=str(cwd), shell=True, capture_output=True, text=True, env=child_env())
     return r.returncode, (r.stdout or '') + (r.stderr or '')
 
 
@@ -386,10 +391,26 @@ def record(project, entry):
         f.write(json.dumps(entry) + '\n')
 
 
+def central_transport(cfg, env=None):
+    """-> HttpTransport when `central.enabled` (url and project from the config, the token only from the environment variable
+    autosafe.CENTRAL_TOKEN_ENV), else None (answers stay local). Preflight has already refused a missing url, project or token."""
+    if not autosafe.central_enabled(cfg):
+        return None
+    env = os.environ if env is None else env
+    return autodeliver.HttpTransport(cfg['central']['url'], env.get(autosafe.CENTRAL_TOKEN_ENV, '').strip())
+
+
+def project_slug(project, cfg):
+    """The name events, blockers and deliveries carry: `central.project` when the central service is on (it must equal the
+    token's project), else the project folder's name."""
+    return cfg['central']['project'].strip() if autosafe.central_enabled(cfg) else Path(project).name
+
+
 def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False, allow_dirty=False,
         claude=run_claude, tests=run_tests, transport=None, browser_runner=None):
     """-> exit code. 0 = finished or stopped cleanly, 1 = refused or stopped on a problem a person should look at.
-    `transport` is where answers come from (default: autodeliver.LocalTransport on this project's .auto folder).
+    `transport` is where answers come from (default: central_transport(cfg) when `central.enabled`, else
+    autodeliver.LocalTransport on this project's .auto folder).
     `browser_runner(command, cwd, env) -> (code, output)` replaces the browser command's process (tests)."""
     project = Path(project).resolve()
     cfg = autocfg.load(project)
@@ -452,11 +473,18 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         return 0
 
     lock.acquire()
-    def generated():
-        """Test credentials written for this run (project or worktree); never written to a log, an event or a commit."""
-        return autobrowser.known_secrets(project, wt)
+    slug = project_slug(project, cfg)
+    central_token = os.environ.get(autosafe.CENTRAL_TOKEN_ENV, '').strip() if autosafe.central_enabled(cfg) else ''
 
-    ledger = autoevents.Ledger(auto, stamp, project.name, redact=lambda d: autobrowser.redact_obj(d, generated()))
+    def generated():
+        """Test credentials written for this run (project or worktree) and the central token; never written to a log, an event
+        or a commit."""
+        found = autobrowser.known_secrets(project, wt)
+        if central_token:
+            found[autosafe.CENTRAL_TOKEN_ENV] = central_token
+        return found
+
+    ledger = autoevents.Ledger(auto, stamp, slug, redact=lambda d: autobrowser.redact_obj(d, generated()))
     ledger.emit('run_start', detail={'branch': branch, 'base': base, 'max_iterations': max_iterations})
     exit_code, reason = None, 'error'
     statuses = {}
@@ -468,7 +496,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         if prev != state:
             ledger.emit('item_state', item, {'from': prev, 'to': state})
 
-    source = transport or autodeliver.LocalTransport(auto)
+    source = transport or central_transport(cfg) or autodeliver.LocalTransport(auto)
 
     def hold_stale(item, paths):
         detail = f'{STALE_NOTE} {", ".join(paths)}: revalidate (autostale.py revalidate) before it resumes'
@@ -480,7 +508,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
     def deliver():
         """Pull answers into the inbox; an item whose blockers are all answered goes back to queued. -> True if anything arrived."""
         try:
-            got = autodeliver.pull(source, auto, project.name)
+            got = autodeliver.pull(source, auto, slug)
         except autodeliver.TransportUnavailable as e:
             say(f'answer service unavailable ({e}): will try again at the next pull')
             got = []
@@ -516,7 +544,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         known = {i: (s, d) for i, s, d in queue.statuses(pq.read_text(encoding='utf-8'))} if pq.exists() else {}
         statuses.update({i: sd for i, sd in known.items() if sd[0] in ('blocked', 'rejected')})
         new_dirs = [wt / AUTO_DIR / 'blockers' / autoblock.NEW, auto / 'blockers' / autoblock.NEW]
-        for r in autoblock.ingest(new_dirs, auto, None, stamp, project.name):
+        for r in autoblock.ingest(new_dirs, auto, None, stamp, slug):
             say(f"blocker file {r['file']} was waiting before any iteration: moved to {r['moved_to']}")
         deliver()
         say(f'{queue.open_count(wq.read_text(encoding="utf-8"))} open item(s) in {queue_rel}')
@@ -600,7 +628,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                     entry['findings'] = [s['ref'] for s in found['stored']]
             creds = generated()
             log.write_text(autobrowser.redact(log_text, creds), encoding='utf-8')
-            raised = autoblock.ingest(new_dirs, auto, item, stamp, project.name)
+            raised = autoblock.ingest(new_dirs, auto, item, stamp, slug)
             for r in raised:
                 ledger.emit('blocker', item, {'action': 'raised', 'id': r['id']} if r['id']
                             else {'action': 'rejected', 'file': r['file'], 'reasons': r['errors']}, 'agent_reported')
