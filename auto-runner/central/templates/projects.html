@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Projects{% endblock %}
+{% block content %}
+<h1>Projects</h1>
+<p><a href="{{ url_for('auth.home') }}">Home</a></p>
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if projects %}
+<table>
+  <thead><tr><th>Slug</th><th>Name</th><th>Your role</th></tr></thead>
+  <tbody>
+  {% for p in projects %}
+    <tr>
+      <td><a href="{{ url_for('projects.members_page', slug=p.slug) }}">{{ p.slug }}</a></td>
+      <td>{{ p.name }}</td>
+      <td>{{ p.member_role or "admin" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>You are not a member of any project yet.</p>
+{% endif %}
+{% if is_admin %}
+<h2>Create a project</h2>
+<form method="post" action="{{ url_for('projects.project_create') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Slug <input type="text" name="slug" value="{{ form.slug }}" pattern="[a-z0-9-]+" maxlength="64" required></label>
+  <label>Name <input type="text" name="name" value="{{ form.name }}" maxlength="200" required></label>
+  <button type="submit">Create project</button>
+</form>
+{% endif %}
+{% endblock %}

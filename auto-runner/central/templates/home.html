@@ -3,6 +3,7 @@
 <h1>auto-runner central</h1>
 <p>Signed in as {{ account.email }}.</p>
 <ul>
+  <li><a href="{{ url_for('projects.projects_page') }}">Projects</a></li>
   <li><a href="{{ url_for('admin.own_password') }}">Change your password</a></li>
   {% if account.role == "admin" %}<li><a href="{{ url_for('admin.accounts_page') }}">Accounts</a></li>{% endif %}
 </ul>
