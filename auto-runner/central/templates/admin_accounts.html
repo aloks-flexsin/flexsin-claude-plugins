@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Accounts{% endblock %}
+{% block content %}
+<h1>Accounts</h1>
+<p><a href="{{ url_for('auth.home') }}">Home</a></p>
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+<table>
+  <thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
+  <tbody>
+  {% for a in accounts %}
+    <tr>
+      <td>{{ a.email }}</td>
+      <td>{{ a.role }}</td>
+      <td>{{ "disabled" if a.disabled else "enabled" }}</td>
+      <td>
+        <form method="post" action="{{ url_for('admin.account_disabled', account_id=a.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="disabled" value="{{ '0' if a.disabled else '1' }}">
+          <button type="submit">{{ "Enable" if a.disabled else "Disable" }}</button>
+        </form>
+        <form method="post" action="{{ url_for('admin.account_role', account_id=a.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <select name="role" aria-label="Role for {{ a.email }}">
+            {% for r in roles %}<option value="{{ r }}"{% if r == a.role %} selected{% endif %}>{{ r }}</option>{% endfor %}
+          </select>
+          <button type="submit">Change role</button>
+        </form>
+        <form method="post" action="{{ url_for('admin.account_reset_password', account_id=a.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label>New password <input type="password" name="password" autocomplete="new-password" required></label>
+          <button type="submit">Reset password</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<h2>Add an account</h2>
+<form method="post" action="{{ url_for('admin.account_add') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Email <input type="email" name="email" value="{{ form_email }}" required></label>
+  <label>Role <select name="role">{% for r in roles %}<option value="{{ r }}"{% if r == "user" %} selected{% endif %}>{{ r }}</option>{% endfor %}</select></label>
+  <label>First password <input type="password" name="password" autocomplete="new-password" required></label>
+  <button type="submit">Add account</button>
+</form>
+{% endblock %}

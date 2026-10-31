@@ -91,9 +91,11 @@ def test_roles_and_disabled_flag(conn):
     with pytest.raises(accounts.AccountError):
         accounts.create(conn, 'x@example.com', GOOD, role='owner')
     assert accounts.is_enabled(admin)
-    assert accounts.set_disabled(conn, admin['id'], True)['disabled'] == 1
-    assert not accounts.is_enabled(accounts.get(conn, admin['id']))
-    assert accounts.set_disabled(conn, admin['id'], False)['disabled'] == 0
+    # A second account, since the last enabled admin cannot be disabled (C4; see test_account_admin.py).
+    user = accounts.create(conn, 'user@example.com', GOOD)
+    assert accounts.set_disabled(conn, user['id'], True)['disabled'] == 1
+    assert not accounts.is_enabled(accounts.get(conn, user['id']))
+    assert accounts.set_disabled(conn, user['id'], False)['disabled'] == 0
     with pytest.raises(accounts.AccountError):
         accounts.set_disabled(conn, 'missing', True)
 
