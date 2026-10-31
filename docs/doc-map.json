@@ -1,0 +1,19 @@
+{
+  "entries": [
+    {
+      "name": "auto-runner modules",
+      "paths": ["auto-runner/bin/*.py"],
+      "docs": ["auto-runner/README.md"]
+    },
+    {
+      "name": "auto-runner config",
+      "paths": ["auto-runner/config.schema.json"],
+      "docs": ["auto-runner/README.md"]
+    },
+    {
+      "name": "auto-runner commands",
+      "paths": ["auto-runner/commands/*.md"],
+      "docs": ["auto-runner/README.md"]
+    }
+  ]
+}
