@@ -182,7 +182,7 @@ class HttpTransport(Transport):
     def __repr__(self):
         return f'HttpTransport({self.base_url!r})'
 
-    def _call(self, method, path, refusals=None, payload=None):
+    def _call(self, method, path, refusals=None, payload=None, timeout=None):
         """-> the JSON object of a 2xx reply. A 4xx raises refusals[status] (default TransportRefused) with the message."""
         headers = {'Authorization': f'Bearer {self._token}', 'Accept': 'application/json'}
         body = None
@@ -190,7 +190,7 @@ class HttpTransport(Transport):
             body = b'' if payload is None else json.dumps(payload).encode('utf-8')
             headers['Content-Type'] = 'application/json'
         try:
-            status, raw = self.send(method, self.base_url + path, headers, body, self.timeout)
+            status, raw = self.send(method, self.base_url + path, headers, body, timeout or self.timeout)
         except TransportUnavailable:
             raise
         except OSError as e:                      # ConnectionError, TimeoutError, ... from any `send`
@@ -222,13 +222,16 @@ class HttpTransport(Transport):
 
     def push_events(self, events):
         """POST a list of event.v1 objects to /api/v1/events (scope `ingest`) -> the service's reply."""
-        return self._call('POST', '/api/v1/events', payload=list(events))
+        return self._call('POST', '/api/v1/events', payload=list(events), timeout=max(self.timeout, PUSH_TIMEOUT))
 
 
 PUSHED = 'central-push.json'
 PUSH_SCHEMA = 'push.v1'
 PUSH_SKIPPABLE = (400, 409, 413)        # this event will never be taken; skip it rather than block every later one
-MAX_PUSH_EVENTS, MAX_PUSH_BYTES = 100, 200_000
+# The live service stores events one query at a time (about 0.4 s each when the app and the database are in different
+# regions), so a request stays small and gets longer to answer than a pull.
+MAX_PUSH_EVENTS, MAX_PUSH_BYTES = 20, 200_000
+PUSH_TIMEOUT = 30
 
 
 def _push_state(auto_dir):

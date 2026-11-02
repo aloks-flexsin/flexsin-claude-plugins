@@ -4,6 +4,12 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-02
+
+### Fixed
+- Event pushes to the central service send at most 20 events a request and wait up to 30 seconds, so a backlog no
+  longer times out against the live service.
+
 ## [0.2.0] - 2026-11-02
 
 ### Added

@@ -192,3 +192,22 @@ def test_a_blocker_raised_in_a_run_is_answered_on_the_page_and_the_item_resumes(
     assert central.blocker(b['id'])['status'] == 'RESUMED'
     out = capsys.readouterr()
     assert central.token not in out.out + out.err and 'events not sent' not in out.out
+
+
+def test_pushes_stay_small_and_wait_longer_than_pulls(central, tmp_path):
+    led = ledger(tmp_path)
+    for i in range(45):
+        led.emit('item_state', 'A1', {'from': 'queued', 'to': f's{i}'})
+    seen = []
+
+    def timed(method, url, headers, body, timeout):
+        seen.append((method, len(json.loads(body)) if body else 0, timeout))
+        return central.send(method, url, headers, body, timeout)
+
+    t = ad.HttpTransport(BASE, central.token, send=timed)
+    assert ad.push(t, tmp_path / '.auto', SLUG)['sent'] == 45
+    assert [n for _, n, _ in seen] == [20, 20, 5]
+    assert {timeout for _, _, timeout in seen} == {ad.PUSH_TIMEOUT}
+    seen.clear()
+    t.pull_pending(SLUG)
+    assert seen == [('GET', 0, 10)]

@@ -172,7 +172,7 @@ agent and the test command, added to the values redacted from events, and never 
 section, or with `enabled` false, nothing changes: answers stay local. This is proven with a fake `send` only (no real service).
 
 With central on, the runner also sends its ledger there: before each pull and once more after `run_end`, `autodeliver.push()` posts the
-lines of `.auto/events.jsonl` it has not sent yet (only events of `central.project`, up to 100 a request), and records how far it got in
+lines of `.auto/events.jsonl` it has not sent yet (only events of `central.project`, up to 20 a request, waiting up to 30 seconds for each), and records how far it got in
 `.auto/central-push.json`. A `raised` blocker event carries the blocker's content (`autoblock.content()`: question, options, recommendation,
 impacts, assumptions, evidence), so a person can answer it on the service's blocker pages. An outage or a refused token stops the push with a
 message and the next push starts again from the same line (the service drops duplicates by event id); an event the service will never take
