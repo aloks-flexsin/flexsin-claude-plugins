@@ -18,6 +18,7 @@
     "queue_file": {"$ref": "#/$defs/text", "description": "The one queue file a person reads."},
     "rules_files": {"$ref": "#/$defs/texts", "description": "Files the agent must read first."},
     "share_dirs": {"$ref": "#/$defs/texts", "description": "Folders linked into the worktree instead of copied."},
+    "env_files": {"$ref": "#/$defs/texts", "description": "Gitignored files (such as .env) copied into the worktree at the start of a run; their values are redacted from logs and events."},
     "worktree_suffix": {"$ref": "#/$defs/text"},
     "base_branch": {"$ref": "#/$defs/text", "description": "'' = detect."},
     "branch_prefix": {"$ref": "#/$defs/text"},
@@ -78,6 +79,13 @@
         "url": {"$ref": "#/$defs/text"},
         "project": {"$ref": "#/$defs/text"},
         "token_env": {"$ref": "#/$defs/text"}
+      }
+    },
+    "safety": {
+      "type": "object", "additionalProperties": false,
+      "description": "allow_env_read: true lets the agent read .env files (init skips the Read(./.env) rules and preflight stops demanding them). Default false.",
+      "properties": {
+        "allow_env_read": {"$ref": "#/$defs/flag"}
       }
     },
     "locks": {

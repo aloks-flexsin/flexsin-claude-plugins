@@ -85,7 +85,7 @@ def test_origin_head_wins_over_current_branch(tmp_path):
 SCHEMA = json.loads((BIN.parent / 'config.schema.json').read_text(encoding='utf-8'))
 OLD_ONLY = {'test_command': 'pytest -q', 'check_only': False, 'queue_file': 'q.md', 'rules_files': ['CLAUDE.md'],
             'share_dirs': ['venv'], 'worktree_suffix': '-x', 'base_branch': 'main', 'branch_prefix': 'run/',
-            'commit_trailer': 'T: x'}
+            'commit_trailer': 'T: x', 'env_files': ['.env']}
 V2_FULL = {
     'models': {'implementer': 'sonnet', 'planner': 'opus', 'plan_reviewer': 'opus', 'work_reviewer': 'claude-opus-5-5',
                'tester': 'haiku', 'scribe': 'inherit'},
@@ -95,6 +95,7 @@ V2_FULL = {
     'docs': {'adr_dir': 'docs/decisions', 'required': ['README.md']},
     'central': {'enabled': False, 'url': 'https://central.example', 'project': 'siva'},
     'locks': {'path': '.auto/run.lock', 'stale_after_minutes': 120},
+    'safety': {'allow_env_read': True},
 }
 # One wrong value per nested kind and per section shape.
 V2_BAD = [({'models': 'opus'}, '"models" must be an object'), ({'models': {'implementer': 5}}, 'models.implementer'),
@@ -166,7 +167,7 @@ def test_old_only_config_loads_exactly_as_before(tmp_path):
     assert set(cfg.DEFAULTS) == set(OLD_ONLY)
     assert cfg.DEFAULTS == {'test_command': '', 'check_only': False, 'queue_file': '.auto/queue.md', 'rules_files': [],
                             'share_dirs': [], 'worktree_suffix': '-auto', 'base_branch': '', 'branch_prefix': 'auto/',
-                            'commit_trailer': ''}
+                            'commit_trailer': '', 'env_files': []}
     _write_cfg(tmp_path, OLD_ONLY)
     assert cfg.load(tmp_path) == OLD_ONLY                     # no v2 section appears unless the file sets it
     assert all(cfg.section(cfg.load(tmp_path), s) == {} for s in cfg.SECTIONS)

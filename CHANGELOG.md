@@ -4,6 +4,16 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-02
+
+### Added
+- `env_files` in `.claude/auto.json`: gitignored files such as `.env` are copied into each run's worktree, so tests and the
+  app use the real configuration; their values are redacted from logs and events, and a file git would commit is refused.
+  Init proposes `.env` when it is ignored.
+- `"safety": {"allow_env_read": true}` (init: `--allow-env-read`) lets the agent read `.env` files: init leaves out the
+  `Read(./.env)` deny rules and preflight stops demanding them. Off by default.
+- Decision record `docs/decisions/0003-env-files.md`.
+
 ## [0.3.0] - 2026-11-02
 
 ### Added

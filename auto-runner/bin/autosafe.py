@@ -4,6 +4,10 @@ and auto_init.py uses required_rules() to write the same rules, so the two can n
 
 An unattended agent must not be able to publish or destroy work. The project's `.claude/settings.json` must therefore deny:
 git push, git remote, git reset --hard, git clean, checking out (or switching to) the base branch, and reading `.env` files.
+`"safety": {"allow_env_read": true}` drops the `.env` read rules from both lists (env_read_allowed): the project's owner has
+chosen to let the agent see those values.
+Each `env_files` entry must be a relative path inside the project, exist, be ignored by git and not be tracked
+(env_file_problems), so a file copied into the worktree can never be committed. `env_file_values` reads the values to redact.
 A rule counts if it is written for Bash or PowerShell; other rules in the file are never inspected or changed.
 With `changelog.enabled` it must also deny `git tag` (TAG_RULES, both `git tag:*` and bare `git tag`): `autochange.py release`
 prepares a release, a person tags it. Projects with the section off are not asked for these rules.
@@ -47,13 +51,20 @@ def changelog_enabled(cfg):
     return isinstance(ch, dict) and ch.get('enabled') is True
 
 
-def required_rules(base, changelog=False):
+def env_read_allowed(cfg):
+    s = cfg.get('safety') if isinstance(cfg, dict) else None
+    return isinstance(s, dict) and s.get('allow_env_read') is True
+
+
+def required_rules(base, changelog=False, env_read=False):
     """Ordered deny rules init writes and preflight demands; `base` is the branch the worktree starts from.
-    `changelog` (the section is on) adds the git tag rules: the agent prepares a release, only a person tags it."""
+    `changelog` (the section is on) adds the git tag rules: the agent prepares a release, only a person tags it.
+    `env_read` (safety.allow_env_read) leaves out the `.env` read rules."""
     rules = ['Bash(git push:*)', 'Bash(git remote:*)', 'Bash(git reset --hard:*)', 'Bash(git clean:*)']
     if base:
         rules += [f'Bash(git checkout {base}:*)', f'Bash(git switch {base}:*)']
-    rules += ['Read(./.env)', 'Read(./.env.*)']
+    if not env_read:
+        rules += ['Read(./.env)', 'Read(./.env.*)']
     if changelog:
         rules += TAG_RULES
     return rules
@@ -103,7 +114,7 @@ def _denies_env(deny):
     return False
 
 
-def missing_rules(settings, base, changelog=False):
+def missing_rules(settings, base, changelog=False, env_read=False):
     """Human labels of the deny rules that are not in `settings`."""
     deny = deny_list(settings)
     out = []
@@ -116,7 +127,7 @@ def missing_rules(settings, base, changelog=False):
             out.append(f'git checkout {base}')
         if not (_denies(deny, f'git switch {base}') or _denies(deny, 'git switch', exact=True)):
             out.append(f'git switch {base}')
-    if not _denies_env(deny):
+    if not env_read and not _denies_env(deny):
         out.append('reading .env files')
     if changelog and not (_denies(deny, 'git tag') and _denies(deny, 'git tag', exact=True)):
         out.append('git tag')
@@ -215,11 +226,64 @@ def capability_problems(project, cfg, doctor=None):
             f'; {SETUP_HINT}']
 
 
+MIN_REDACT = 8      # env values shorter than this (ports, flags, `dev`) are not secrets and would garble every log
+
+
+def env_file_values(paths):
+    """The values in dotenv files (`KEY=value`, optional `export `, quotes stripped, `#` lines skipped) that are at least
+    MIN_REDACT characters long: what the runner redacts. A file that cannot be read gives nothing."""
+    found = {}
+    for path in paths:
+        try:
+            lines = Path(path).read_text(encoding='utf-8', errors='replace').splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            key, value = line.split('=', 1)
+            key = key.strip()
+            if key.startswith('export '):
+                key = key[len('export '):].strip()
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in '"\'':
+                value = value[1:-1]
+            if len(value) >= MIN_REDACT:
+                found[f'{Path(path).name}:{key}'] = value
+    return found
+
+
+def env_file_problems(project, cfg):
+    """One message per `env_files` entry that is not a relative path inside the project, is missing, is not ignored by git,
+    or is tracked: such a file could end up in a commit."""
+    problems = []
+    project = Path(project).resolve()
+    for rel in cfg.get('env_files') or []:
+        p = Path(rel)
+        if not rel.strip() or p.is_absolute() or p.drive or p.root or '..' in p.parts:
+            problems.append(f'.claude/auto.json: "env_files" entry "{rel}" must be a path inside the project.')
+            continue
+        if not (project / p).is_file():
+            problems.append(f'.claude/auto.json: "env_files" entry "{rel}" does not exist.')
+            continue
+        posix = p.as_posix()
+        tracked = subprocess.run(['git', '-C', str(project), 'ls-files', '--error-unmatch', '--', posix],
+                                 capture_output=True).returncode == 0
+        ignored = subprocess.run(['git', '-C', str(project), 'check-ignore', '-q', '--no-index', '--', posix],
+                                 capture_output=True).returncode == 0
+        if tracked or not ignored:
+            problems.append(f'.claude/auto.json: "env_files" entry "{rel}" must be ignored by git and not committed '
+                            f'(add it to .gitignore{", then git rm --cached it" if tracked else ""}).')
+    return problems
+
+
 def preflight(project, cfg, base, doctor=None):
     """-> list of problems; empty means the runner may start. `doctor(project) -> results` is injectable for tests."""
     problems = model_problems(cfg)
     problems += base_url_problems(cfg)
     problems += central_problems(cfg)
+    problems += env_file_problems(project, cfg)
     problems += capability_problems(project, cfg, doctor)
     if not has_commit(project):
         problems.append('The repository has no commit yet (the worktree is made from a commit). Commit once, then run again.')
@@ -230,7 +294,7 @@ def preflight(project, cfg, base, doctor=None):
     if err:
         problems.append(err)
     else:
-        missing = missing_rules(settings, base, changelog_enabled(cfg))
+        missing = missing_rules(settings, base, changelog_enabled(cfg), env_read_allowed(cfg))
         if missing:
             problems.append(f'{SETTINGS_PATH.as_posix()} must deny: ' + ', '.join(missing) +
                             '. Run auto_init.py (preview, then --apply) to add the rules without touching existing ones.')

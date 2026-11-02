@@ -11,7 +11,9 @@ Set a project up for the auto-runner. Shows a preview; nothing is written withou
 What it does, and only this:
   * `.claude/settings.json`: appends the deny rules the preflight demands (git push/remote/reset --hard/clean, checkout of the base
     branch, reading .env; git tag too when `changelog.enabled`). Existing rules, other keys and the order are kept; duplicates are skipped; nothing is removed or overwritten.
-  * `.claude/auto.json`: created only if absent, with the detected test command (pytest, npm test, dotnet test, go test, cargo test).
+  * `.claude/auto.json`: created only if absent, with the detected test command (pytest, npm test, dotnet test, go test, cargo test),
+    `env_files: [".env"]` when a gitignored `.env` exists (copied into each run's worktree, values redacted), and with
+    --allow-env-read `"safety": {"allow_env_read": true}` (then the .env read deny rules are not written).
   * The central service is the default. With --central-url and --central-project, the `central` section (enabled, url, project and
     `token_env`, default AUTO_RUNNER_TOKEN_<SLUG>) goes into a new auto.json, or into an existing one that has no `central` key.
     The preview says what to create on the site and how to store the token. When the token's variable is set, init asks the
@@ -192,9 +194,10 @@ def central_plan(project, central, env=None, send=None):
     return section, notes, problems, steps
 
 
-def make_plan(project, central=None, env=None, send=None):
+def make_plan(project, central=None, env=None, send=None, allow_env_read=False):
     """-> dict describing what --apply would write. Reads only (the central check is a GET).
-    `central`: see central_plan; None means neither the service nor --local was chosen, which is refused."""
+    `central`: see central_plan; None means neither the service nor --local was chosen, which is refused.
+    `allow_env_read` (--allow-env-read) writes safety.allow_env_read into a new auto.json and leaves out the .env read rules."""
     project = Path(project).resolve()
     notes, problems = [], []
     try:
@@ -207,7 +210,12 @@ def make_plan(project, central=None, env=None, send=None):
         problems.append(err)
     have = set(autosafe.deny_list(settings))
     cfg = autocfg.load(project) if not problems else dict(autocfg.DEFAULTS)
-    rules = [r for r in autosafe.required_rules(base, autosafe.changelog_enabled(cfg)) if r not in have]
+    auto_json_exists = (project / autocfg.CONFIG_PATH).exists()
+    env_read = autosafe.env_read_allowed(cfg) or (allow_env_read and not auto_json_exists)
+    if allow_env_read and auto_json_exists and not autosafe.env_read_allowed(cfg):
+        notes.append('--allow-env-read only applies to a new .claude/auto.json: add "safety": {"allow_env_read": true} '
+                     'to the existing one yourself.')
+    rules = [r for r in autosafe.required_rules(base, autosafe.changelog_enabled(cfg), env_read) if r not in have]
     settings_exists = (project / autosafe.SETTINGS_PATH).exists()
 
     cmd, why = detect_test_command(project)
@@ -222,6 +230,17 @@ def make_plan(project, central=None, env=None, send=None):
             notes.append(f'{why}: auto.json will say check_only (results are "{autosafe.NO_TESTS}") until you set test_command.')
         if (project / 'CLAUDE.md').exists():
             new_cfg['rules_files'] = ['CLAUDE.md']
+        if env_read:
+            new_cfg['safety'] = {'allow_env_read': True}
+            notes.append('--allow-env-read: the agent may read .env files, so their values can reach its transcript.')
+        if (project / '.env').is_file():
+            env_problems = autosafe.env_file_problems(project, {'env_files': ['.env']})
+            if env_problems:
+                notes.append('.env is not copied into run worktrees: ' + env_problems[0])
+            else:
+                new_cfg['env_files'] = ['.env']
+                notes.append('env_files: .env is copied into the worktree of each run so tests use it; its values are '
+                             'redacted from logs and events. Prefer a file with test settings over production ones.')
     else:
         notes.append('.claude/auto.json exists and is left as it is' + (f' (detected test command would be: {cmd})' if cmd else ''))
     rules_file = None
@@ -425,6 +444,7 @@ def main(argv=None):
     ap.add_argument('--central-project', default='', metavar='SLUG', help="the project's slug on the central service")
     ap.add_argument('--token-env', default='', help='the variable that holds the token (default AUTO_RUNNER_TOKEN_<SLUG>)')
     ap.add_argument('--local', action='store_true', help='no central service: answer blockers on this machine')
+    ap.add_argument('--allow-env-read', action='store_true', help='let the agent read .env files (no Read(./.env) rules)')
     a = ap.parse_args(argv)
     project = Path(a.project).resolve()
     if a.remove:
@@ -444,7 +464,7 @@ def main(argv=None):
     central = {'local': True} if a.local else (
         {'url': a.central_url, 'project': a.central_project, 'token_env': a.token_env}
         if a.central_url or a.central_project else None)
-    plan = make_plan(project, central)
+    plan = make_plan(project, central, allow_env_read=a.allow_env_read)
     for line in describe(plan):
         print(line)
     if plan['problems'] or plan['central_problems']:

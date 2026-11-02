@@ -212,6 +212,19 @@ def share(project, wt, share_dirs):
             os.symlink(src, dst, target_is_directory=True)
 
 
+def copy_env_files(project, wt, env_files):
+    """Copy `env_files` (gitignored, checked by preflight) into the worktree when it has none there yet: a copy, not a link,
+    so a change in the worktree never reaches the project's own file. -> the worktree paths."""
+    out = []
+    for rel in env_files:
+        src, dst = project / rel, wt / rel
+        if src.is_file() and not dst.exists():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+        out.append(dst)
+    return out
+
+
 class Lock:
     """One run at a time: a file created exclusively. If a run died, delete the file by hand."""
 
@@ -477,11 +490,13 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
     lock.acquire()
     slug = project_slug(project, cfg)
     central_token = os.environ.get(autosafe.token_env(cfg), '').strip() if autosafe.central_enabled(cfg) else ''
+    env_values = autosafe.env_file_values([project / rel for rel in cfg['env_files']])
 
     def generated():
         """Test credentials written for this run (project or worktree) and the central token; never written to a log, an event
         or a commit."""
         found = autobrowser.known_secrets(project, wt)
+        found.update(env_values)
         if central_token:
             found[autosafe.token_env(cfg)] = central_token
         return found
@@ -558,6 +573,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             wq.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(pq, wq)
         share(project, wt, cfg['share_dirs'])
+        copy_env_files(project, wt, cfg['env_files'])
         apply_pending(project, wt, cfg, queue_rel)
         known = {i: (s, d) for i, s, d in queue.statuses(pq.read_text(encoding='utf-8'))} if pq.exists() else {}
         statuses.update({i: sd for i, sd in known.items() if sd[0] in ('blocked', 'rejected')})

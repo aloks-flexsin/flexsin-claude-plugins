@@ -38,7 +38,8 @@ When no ready item is left the run ends cleanly and lists what is blocked or wai
 Detects the test command (pytest, npm test, dotnet test, go test, cargo test) and proposes it; appends deny rules to `.claude/settings.json` (never removes or overwrites,
 skips duplicates); creates `.claude/auto.json`, `.auto/queue.md` and `.gitignore` entries; reports an existing project `auto` command or scripts without touching them;
 with `--with-rules` writes a short `AUTO_RULES.md` when there is no `CLAUDE.md`. Idempotent. `--remove` previews, and with `--apply` removes only what init added.
-It also writes the `central` section (next section) or, with `--local`, none.
+It also writes the `central` section (next section) or, with `--local`, none. When a gitignored `.env` exists it proposes
+`"env_files": [".env"]`; `--allow-env-read` writes `"safety": {"allow_env_read": true}` into a new auto.json and leaves out the `.env` read rules.
 
 ## Central-first setup (tested with the real central app through Flask's test client; never against the live service)
 The central service is the starting point for a project: an admin creates it there with its repository URL, and init connects
@@ -71,6 +72,7 @@ Every key is optional; unknown keys and wrong types are errors that name the key
 | `queue_file` | `.auto/queue.md` | The one file a person reads; each item gets a status line (queued, running, done + commit, blocked + question, rejected + reasons). |
 | `rules_files` | `[]` | Files the agent must read first. |
 | `share_dirs` | `[]` | Folders linked into the worktree instead of copied (a venv, `node_modules`). Junction on Windows, symlink elsewhere. |
+| `env_files` | `[]` | Gitignored files (such as `.env`) copied into the worktree at the start of a run, so the suite and the app use the real configuration. Preflight refuses an entry outside the project, missing, not ignored by git or tracked. Values of 8 characters or more are redacted from iteration logs and events. A copy, not a link: a change in the worktree never reaches the project's file. |
 | `worktree_suffix` | `-auto` | Worktree folder = project folder name + suffix, next to the project. |
 | `base_branch` | `""` | Branch the worktree starts from. Empty = detect: `origin/HEAD`, else the current branch if it is main/master/trunk/develop, else one answer is needed. |
 | `branch_prefix` | `auto/` | Run branches are `<prefix><stamp>`. |
@@ -86,6 +88,7 @@ Schema v2 sections (objects, every nested key optional, unknown nested keys and 
 | `budgets` | `iteration_usd`, `run_usd`, `max_iterations` |
 | `docs` | `adr_dir`, `required` (list of files), `map` (doc map path, default `docs/doc-map.json`), `check` (docs gate, default on) |
 | `central` | `enabled`, `url`, `project`, `token_env` (the name of the variable holding the token; never a token) |
+| `safety` | `allow_env_read` (`true`: the agent may read `.env` files; init leaves out the `Read(./.env)` rules and preflight stops demanding them. Default off) |
 | `locks` | `path`, `stale_after_minutes` |
 | `acceptance` | `browser`: `enabled`, `base_url`, `command`, `headless`, `exploratory`, `accounts`: `method` (`seed_command` or `signup`), `seed_command` |
 | `changelog` | `enabled` (default off), `file` (default `CHANGELOG.md`), `versioning` (only `semver`) |
@@ -95,7 +98,9 @@ Besides `models.implementer`, three sections act: `acceptance.browser` (the brow
 
 ## Safety preflight
 The runner refuses to start unless:
-- `.claude/settings.json` denies `git push`, `git remote`, `git reset --hard`, `git clean`, checking out or switching to the base branch, and reading `.env` files;
+- `.claude/settings.json` denies `git push`, `git remote`, `git reset --hard`, `git clean`, checking out or switching to the base branch, and reading `.env` files
+  (not demanded with `"safety": {"allow_env_read": true}`; the suite and the app can load `.env` either way, since the rule only stops the agent reading it, and `env_files` puts it in the worktree);
+- every `env_files` entry is inside the project, exists, is ignored by git and is not tracked;
 - a `test_command` exists, or `check_only` is true;
 - the repository has at least one commit;
 - when `central.enabled` is true: `central.url` and `central.project` are set and the token is in the environment variable

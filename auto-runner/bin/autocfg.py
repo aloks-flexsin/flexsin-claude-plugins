@@ -24,7 +24,10 @@ config with only the old keys loads exactly as before. Read them with `section(c
     docs     adr_dir, required (files a run must keep up to date), map (the doc map autodocs.py reads;
              default docs/doc-map.json, read it with `docs_map(cfg)`), check (false turns the runner's docs gate
              off; default on, and the gate runs only when the map file exists; read it with `docs_check(cfg)`)
-    central  enabled, url, project (never a token: secrets do not belong in this file)
+    central  enabled, url, project, token_env (never a token: secrets do not belong in this file)
+    safety   allow_env_read (true drops the `.env` read rules from what init writes and preflight demands; default false)
+    env_files (top level) gitignored files such as `.env` copied into the worktree at the start of a run, so tests and the
+             app use the real configuration; their values are redacted from logs and events (autosafe.env_file_problems)
     locks    path, stale_after_minutes
     acceptance  browser: enabled, base_url, command, headless, exploratory,
                          accounts: method (seed_command | signup), seed_command
@@ -51,6 +54,7 @@ DEFAULTS = {
     'queue_file': '.auto/queue.md',
     'rules_files': [],
     'share_dirs': [],
+    'env_files': [],
     'worktree_suffix': '-auto',
     'base_branch': '',
     'branch_prefix': 'auto/',
@@ -71,6 +75,7 @@ SECTIONS = {
                                'exploratory': 'flag',
                                'accounts': {'method': ('seed_command', 'signup'), 'seed_command': 'text'}}},
     'changelog': {'enabled': 'flag', 'file': 'text', 'versioning': ('semver',)},
+    'safety': {'allow_env_read': 'flag'},
 }
 # Values a section means when the file leaves a key out (section() still returns only what the file sets).
 CHANGELOG_DEFAULTS = {'enabled': False, 'file': 'CHANGELOG.md', 'versioning': 'semver'}
