@@ -4,6 +4,14 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-02
+
+### Added
+- `publish` in `.claude/auto.json`: after a clean run the runner (never the agent) pushes its own run branch to the remote,
+  without force and never the base or a `lanes.protected` branch, and with `pull_request` opens a pull request with `gh`.
+  The outcome is a `publish` event, which the central service also accepts. Off by default; merging stays with a person.
+- Decision record `docs/decisions/0004-runner-publishes-its-branch.md`.
+
 ## [0.4.0] - 2026-11-02
 
 ### Added

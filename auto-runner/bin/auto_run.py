@@ -225,6 +225,52 @@ def copy_env_files(project, wt, env_files):
     return out
 
 
+def run_pr(argv, cwd):
+    """The default `pr_runner`: one `gh` call -> (exit code, output). No `gh` on PATH is exit 127."""
+    try:
+        r = subprocess.run(argv, cwd=str(cwd), capture_output=True, text=True, env=child_env())
+    except FileNotFoundError:
+        return 127, 'gh is not installed or not on PATH'
+    return r.returncode, (r.stdout or '') + (r.stderr or '')
+
+
+def publish(project, wt, cfg, base, branch, pr_runner=run_pr):
+    """After a clean run: push the run branch to `publish.remote` and, with `publish.pull_request`, open a pull request.
+    -> None when publishing is off, else a dict for the `publish` event. Never the base branch, a `lanes.protected` branch
+    or a branch outside `branch_prefix`; never with force. A failure is reported, never raised: the work stays on the branch."""
+    s = autosafe.publish_settings(cfg)
+    if not s['push']:
+        return None
+    out = {'remote': s['remote'], 'branch': branch, 'pushed': False}
+    if branch == base or not branch.startswith(cfg['branch_prefix']) or autosafe.protected_branch(branch, cfg):
+        out['error'] = 'refused: not a run branch'
+        return out
+    ahead = int(git(wt, 'rev-list', '--count', f'{base}..{branch}', check=False) or 0)
+    out['commits'] = ahead
+    if ahead == 0:
+        out['error'] = 'nothing to publish: no commits on the run branch'
+        return out
+    env = {**child_env(), 'GIT_TERMINAL_PROMPT': '0'}           # unattended: fail instead of waiting for a password
+    r = subprocess.run(['git', '-C', str(wt), 'push', '--porcelain', s['remote'], f'refs/heads/{branch}:refs/heads/{branch}'],
+                       capture_output=True, text=True, env=env)
+    if r.returncode != 0:
+        out['error'] = 'git push failed: ' + ((r.stderr or r.stdout).strip().splitlines() or ['no output'])[-1][:300]
+        return out
+    out['pushed'] = True
+    if s['pull_request']:
+        log = git(wt, 'log', '--oneline', '--no-decorate', f'{base}..{branch}', check=False)
+        body = ('Opened by auto-runner after its own test run passed on every commit. Read the diff before merging.\n\n'
+                + '\n'.join(f'- {line}' for line in log.splitlines()))
+        code, text = pr_runner(['gh', 'pr', 'create', '--head', branch, '--base', base,
+                                '--title', f'auto-runner: {ahead} commit(s) from {branch}', '--body', body], wt)
+        urls = [w for w in text.split() if w.startswith('https://')]
+        if code == 0 and urls:
+            out['pr_url'] = urls[-1]
+        else:
+            out['pr_error'] = f'gh pr create failed (exit {code}): ' + (text.strip().splitlines() or ['no output'])[-1][:300]
+    return out
+
+
 class Lock:
     """One run at a time: a file created exclusively. If a run died, delete the file by hand."""
 
@@ -422,11 +468,12 @@ def project_slug(project, cfg):
 
 
 def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False, allow_dirty=False,
-        claude=run_claude, tests=run_tests, transport=None, browser_runner=None):
+        claude=run_claude, tests=run_tests, transport=None, browser_runner=None, pr_runner=run_pr):
     """-> exit code. 0 = finished or stopped cleanly, 1 = refused or stopped on a problem a person should look at.
     `transport` is where answers come from (default: central_transport(cfg) when `central.enabled`, else
     autodeliver.LocalTransport on this project's .auto folder).
-    `browser_runner(command, cwd, env) -> (code, output)` replaces the browser command's process (tests)."""
+    `browser_runner(command, cwd, env) -> (code, output)` replaces the browser command's process (tests).
+    `pr_runner(argv, cwd) -> (code, output)` replaces the `gh` call that opens a pull request (tests)."""
     project = Path(project).resolve()
     cfg = autocfg.load(project)
     queue_rel = cfg['queue_file']
@@ -772,6 +819,16 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         else:
             reason = 'max_iterations'
         exit_code = 0
+        published = publish(project, wt, cfg, base, branch, pr_runner)
+        if published is not None:
+            published = autobrowser.redact_obj(published, generated())
+            ledger.emit('publish', detail=published)
+            if not published['pushed']:
+                say(f"not published: {published.get('error')}")
+            elif published.get('pr_url'):
+                say(f"pushed {branch} to {published['remote']}; pull request: {published['pr_url']}")
+            else:
+                say(f"pushed {branch} to {published['remote']}" + (f" ({published['pr_error']})" if published.get('pr_error') else ''))
     finally:
         ledger.emit('run_end', detail={'exit': exit_code, 'reason': reason})
         push()

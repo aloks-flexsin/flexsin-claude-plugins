@@ -90,7 +90,7 @@ needed scope gets 403.
 
 | Endpoint | Scope | What it does |
 | --- | --- | --- |
-| `POST /api/v1/events` | `ingest` | One `event.v1` object or a list. Replies `accepted`, `duplicates`, `ids`, `duplicate_ids`. The same id with a different body gets 409, an unknown schema or bad event 400, a body over 256 KB 413, more than 120 requests a minute per token 429 (counted per process). The event's `project` must be the token's project. Secrets in `detail` are redacted before storing. |
+| `POST /api/v1/events` | `ingest` | One `event.v1` object or a list. Replies `accepted`, `duplicates`, `ids`, `duplicate_ids`. The same id with a different body gets 409, an unknown schema or bad event 400, a body over 256 KB 413, more than 120 requests a minute per token 429 (counted per process). The event's `project` must be the token's project. Run-level events (`run_start`, `run_end`, `publish`) have no item. Secrets in `detail` are redacted before storing. |
 | `GET /api/v1/project` | any | `{"slug", "name", "repo_url"}` of the token's project (`repo_url` is null for a project made before the column existed). The plugin's init and join use it to check they are pointed at the right repository. |
 | `GET /api/v1/deliveries/pending` | `pull` | `{"deliveries": [...]}`: the project's answers not yet acknowledged, oldest first; each is marked delivered. |
 | `POST /api/v1/deliveries/<delivery_id>/ack` | `pull` | Marks a delivery acknowledged (a second ack changes nothing). Unknown or another project's id: 404; never delivered: 409. |

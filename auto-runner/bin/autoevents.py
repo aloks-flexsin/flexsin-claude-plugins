@@ -26,7 +26,8 @@ from pathlib import Path
 
 SCHEMA = 'event.v1'
 FILE = 'events.jsonl'
-TYPES = ('run_start', 'run_end', 'item_state', 'tests', 'blocker', 'browser', 'findings', 'changelog', 'docs')
+TYPES = ('run_start', 'run_end', 'item_state', 'tests', 'blocker', 'browser', 'findings', 'changelog', 'docs', 'publish')
+RUN_TYPES = ('run_start', 'run_end', 'publish')    # about the whole run: no item
 EVIDENCE = ('runner_observed', 'independent_test', 'agent_reported')
 FIELDS = ('schema', 'id', 'time', 'run', 'project', 'type', 'item', 'detail', 'evidence_class')
 
@@ -60,7 +61,7 @@ def validate(event):
         errors.append(f'evidence_class: must be one of {", ".join(EVIDENCE)}')
     if not isinstance(event['detail'], dict):
         errors.append('detail: must be an object')
-    if event['type'] in ('run_start', 'run_end'):
+    if event['type'] in RUN_TYPES:
         if event['item'] is not None:
             errors.append('item: must be null for run events')
     elif not isinstance(event['item'], str) or not event['item']:

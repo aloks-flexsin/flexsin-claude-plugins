@@ -31,7 +31,8 @@ bp = Blueprint("ingest", __name__)
 
 # The service's own copy of event.v1 (see auto-runner/bin/autoevents.py; test_ingest.py checks they agree).
 SCHEMA = "event.v1"
-TYPES = ("run_start", "run_end", "item_state", "tests", "blocker", "browser", "findings", "changelog", "docs")
+TYPES = ("run_start", "run_end", "item_state", "tests", "blocker", "browser", "findings", "changelog", "docs", "publish")
+RUN_TYPES = ("run_start", "run_end", "publish")
 EVIDENCE = ("runner_observed", "independent_test", "agent_reported")
 FIELDS = ("schema", "id", "time", "run", "project", "type", "item", "detail", "evidence_class")
 
@@ -88,7 +89,7 @@ def validate(event):
         errors.append("evidence_class: must be one of %s" % ", ".join(EVIDENCE))
     if not isinstance(event["detail"], dict):
         errors.append("detail: must be an object")
-    if event["type"] in ("run_start", "run_end"):
+    if event["type"] in RUN_TYPES:
         if event["item"] is not None:
             errors.append("item: must be null for run events")
     elif not isinstance(event["item"], str) or not event["item"]:

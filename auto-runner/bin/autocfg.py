@@ -25,6 +25,9 @@ config with only the old keys loads exactly as before. Read them with `section(c
              default docs/doc-map.json, read it with `docs_map(cfg)`), check (false turns the runner's docs gate
              off; default on, and the gate runs only when the map file exists; read it with `docs_check(cfg)`)
     central  enabled, url, project, token_env (never a token: secrets do not belong in this file)
+    publish  push, pull_request, remote (default origin): after a run that ends cleanly the runner (not the agent) pushes its
+             own run branch, never the base or a `lanes.protected` branch and never with force, and may open a pull
+             request with `gh`; merging stays with a person (auto_run.publish, autosafe.publish_problems)
     safety   allow_env_read (true drops the `.env` read rules from what init writes and preflight demands; default false)
     env_files (top level) gitignored files such as `.env` copied into the worktree at the start of a run, so tests and the
              app use the real configuration; their values are redacted from logs and events (autosafe.env_file_problems)
@@ -76,6 +79,7 @@ SECTIONS = {
                                'accounts': {'method': ('seed_command', 'signup'), 'seed_command': 'text'}}},
     'changelog': {'enabled': 'flag', 'file': 'text', 'versioning': ('semver',)},
     'safety': {'allow_env_read': 'flag'},
+    'publish': {'push': 'flag', 'pull_request': 'flag', 'remote': 'text'},
 }
 # Values a section means when the file leaves a key out (section() still returns only what the file sets).
 CHANGELOG_DEFAULTS = {'enabled': False, 'file': 'CHANGELOG.md', 'versioning': 'semver'}

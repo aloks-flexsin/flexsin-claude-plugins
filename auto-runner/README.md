@@ -88,6 +88,7 @@ Schema v2 sections (objects, every nested key optional, unknown nested keys and 
 | `budgets` | `iteration_usd`, `run_usd`, `max_iterations` |
 | `docs` | `adr_dir`, `required` (list of files), `map` (doc map path, default `docs/doc-map.json`), `check` (docs gate, default on) |
 | `central` | `enabled`, `url`, `project`, `token_env` (the name of the variable holding the token; never a token) |
+| `publish` | `push`, `pull_request` (flags, default off), `remote` (default `origin`): see "Publishing a run" |
 | `safety` | `allow_env_read` (`true`: the agent may read `.env` files; init leaves out the `Read(./.env)` rules and preflight stops demanding them. Default off) |
 | `locks` | `path`, `stale_after_minutes` |
 | `acceptance` | `browser`: `enabled`, `base_url`, `command`, `headless`, `exploratory`, `accounts`: `method` (`seed_command` or `signup`), `seed_command` |
@@ -96,11 +97,24 @@ Schema v2 sections (objects, every nested key optional, unknown nested keys and 
 Besides `models.implementer`, three sections act: `acceptance.browser` (the browser stage below), `changelog` (the changelog step) and
 `docs.map`/`docs.check` (the docs gate). Each does nothing when the file does not turn it on.
 
+## Publishing a run (tested with a local bare remote and a fake `gh`; never against GitHub)
+The agent can never push (the deny rules stay). With `"publish": {"push": true}` the runner itself, a plain Python step with
+your own git credentials, does it after a run that ends cleanly (exit 0, every commit passed the runner's own test run):
+
+- `git push --porcelain <remote> refs/heads/<run branch>:refs/heads/<run branch>`: only the run's own branch (it must start
+  with `branch_prefix` and not match `lanes.protected`), never the base branch, never with force, with `GIT_TERMINAL_PROMPT=0`
+  so it fails rather than waits for a password. A run with no commits pushes nothing.
+- With `"pull_request": true` it then runs `gh pr create --head <branch> --base <base>` with the commit list as the body.
+- The outcome is a `publish` event (`pushed`, `commits`, `pr_url` or `pr_error`, or `error`) in `.auto/events.jsonl` and,
+  with central on, on the central service. A failed push or pull request is reported and never fails the run.
+- A red run, or one stopped on a problem, publishes nothing. Merging, tagging and deploying stay with a person.
+
 ## Safety preflight
 The runner refuses to start unless:
 - `.claude/settings.json` denies `git push`, `git remote`, `git reset --hard`, `git clean`, checking out or switching to the base branch, and reading `.env` files
   (not demanded with `"safety": {"allow_env_read": true}`; the suite and the app can load `.env` either way, since the rule only stops the agent reading it, and `env_files` puts it in the worktree);
 - every `env_files` entry is inside the project, exists, is ignored by git and is not tracked;
+- with `publish.push`: the remote exists, `branch_prefix` is set, run branches are neither the base branch nor match `lanes.protected`, and `publish.pull_request` is only on together with `push`;
 - a `test_command` exists, or `check_only` is true;
 - the repository has at least one commit;
 - when `central.enabled` is true: `central.url` and `central.project` are set and the token is in the environment variable
@@ -113,9 +127,9 @@ Every run also appends to `.auto/events.jsonl` (schema `event.v1`, `bin/autoeven
 ## Modules (all stdlib, all unverified beyond fakes)
 | File | What it does |
 |---|---|
-| `bin/auto_run.py` | The runner (worktree, one ready item per iteration, independent test run, lock, STOP, events, blockers, delivery). |
+| `bin/auto_run.py` | The runner (worktree, one ready item per iteration, independent test run, lock, STOP, events, blockers, delivery, `publish` of its own branch). |
 | `bin/queue.py`, `bin/autocfg.py`, `bin/autosafe.py` | Queue grammar and readiness (`*Depends on:*`), config loader (v1 keys + v2 sections), safety preflight. |
-| `bin/autoevents.py` | Append-only `.auto/events.jsonl`, schema `event.v1`. |
+| `bin/autoevents.py` | Append-only `.auto/events.jsonl`, schema `event.v1` (`RUN_TYPES` such as `publish` carry no item). |
 | `bin/autoblock.py` | `blocker.v1` / `decision.v1`, lifecycle state machine, local store; `list [--state S]`, `answer ID --option/--text`, `view`. |
 | `bin/autodeliver.py` | `Transport` interface, `LocalTransport`, `HttpTransport` (central service; `project_info()` reads `GET /api/v1/project`), event push to central, inbox writer, resume packets; `resume ID` rebuilds a packet. |
 | `bin/autostale.py` | Artifact front-matter (`version`, `hash`, `built_from`, `status`), `scan`, `status`, `revalidate`; stale artifacts refuse a resume. |

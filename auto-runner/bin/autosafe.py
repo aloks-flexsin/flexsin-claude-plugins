@@ -8,6 +8,9 @@ git push, git remote, git reset --hard, git clean, checking out (or switching to
 chosen to let the agent see those values.
 Each `env_files` entry must be a relative path inside the project, exist, be ignored by git and not be tracked
 (env_file_problems), so a file copied into the worktree can never be committed. `env_file_values` reads the values to redact.
+With `publish.push` the remote must exist, `branch_prefix` must be set, and neither the base branch nor any run branch may
+match `lanes.protected`; `publish.pull_request` needs `publish.push` (publish_problems). The agent's deny rules stay: only the
+runner pushes, and only its own run branch.
 A rule counts if it is written for Bash or PowerShell; other rules in the file are never inspected or changed.
 With `changelog.enabled` it must also deny `git tag` (TAG_RULES, both `git tag:*` and bare `git tag`): `autochange.py release`
 prepares a release, a person tags it. Projects with the section off are not asked for these rules.
@@ -278,12 +281,49 @@ def env_file_problems(project, cfg):
     return problems
 
 
+def publish_settings(cfg):
+    """{'push', 'pull_request', 'remote'} with defaults (off, off, origin)."""
+    s = cfg.get('publish') if isinstance(cfg, dict) else None
+    s = s if isinstance(s, dict) else {}
+    return {'push': s.get('push') is True, 'pull_request': s.get('pull_request') is True,
+            'remote': (s.get('remote') or '').strip() or 'origin'}
+
+
+def protected_branch(name, cfg):
+    """True when `name` matches one of `lanes.protected` (fnmatch patterns)."""
+    import fnmatch
+    lanes = cfg.get('lanes') if isinstance(cfg, dict) else None
+    patterns = lanes.get('protected', []) if isinstance(lanes, dict) else []
+    return any(fnmatch.fnmatchcase(name, p) for p in patterns)
+
+
+def publish_problems(project, cfg, base):
+    """Messages when `publish` is on but cannot be done safely; [] when it is off or fine."""
+    s = publish_settings(cfg)
+    if s['pull_request'] and not s['push']:
+        return ['.claude/auto.json: "publish.pull_request" needs "publish.push": true (a pull request needs the pushed branch).']
+    if not s['push']:
+        return []
+    problems = []
+    prefix = (cfg.get('branch_prefix') or '').strip()
+    if not prefix:
+        problems.append('.claude/auto.json: "publish.push" needs a "branch_prefix", so the runner only ever pushes its own branches.')
+    elif base and (base.startswith(prefix) or protected_branch(prefix + '20000101-0000', cfg)):
+        problems.append(f'.claude/auto.json: run branches ("{prefix}...") must not be the base branch or match "lanes.protected".')
+    if not re.fullmatch(r'[A-Za-z0-9._-]+', s['remote']):
+        problems.append('.claude/auto.json: "publish.remote" must be a remote name such as origin.')
+    elif subprocess.run(['git', '-C', str(project), 'remote', 'get-url', s['remote']], capture_output=True).returncode != 0:
+        problems.append(f'"publish.push" is on but this repository has no remote "{s["remote"]}".')
+    return problems
+
+
 def preflight(project, cfg, base, doctor=None):
     """-> list of problems; empty means the runner may start. `doctor(project) -> results` is injectable for tests."""
     problems = model_problems(cfg)
     problems += base_url_problems(cfg)
     problems += central_problems(cfg)
     problems += env_file_problems(project, cfg)
+    problems += publish_problems(project, cfg, base)
     problems += capability_problems(project, cfg, doctor)
     if not has_commit(project):
         problems.append('The repository has no commit yet (the worktree is made from a commit). Commit once, then run again.')
