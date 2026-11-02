@@ -12,6 +12,12 @@ TABLES = (
     "plan", "blocker", "decision", "delivery", "issue", "audit",
 )
 
+# Columns added to a table after it first shipped: (table, column, type). init_db adds each one that is missing
+# (nullable, so existing rows stay valid). Keep schema.sql's CREATE TABLE in step.
+COLUMNS_ADDED = (
+    ("project", "repo_url", "VARCHAR(500)"),
+)
+
 
 def parse_url(url):
     """Return ('sqlite', path) or ('postgres', url). Raise ValueError for anything else."""
@@ -79,6 +85,11 @@ class Database:
         row = self.execute(sql, params).fetchone()
         return dict(row) if row is not None else None
 
+    def columns(self, table):
+        """The column names of `table` (lower case), read from an empty result so it works on SQLite and Postgres."""
+        cur = self.execute("SELECT * FROM %s WHERE 1 = 0" % table)
+        return {col[0].lower() for col in cur.description}
+
     def executescript(self, script):
         for statement in split_script(script):
             self.execute(statement)
@@ -105,16 +116,29 @@ def connect(url):
     return Database(psycopg.connect(target, row_factory=dict_row), kind)
 
 
+def add_missing_columns(db):
+    """ALTER TABLE ... ADD COLUMN for each COLUMNS_ADDED entry the database lacks; return what was added."""
+    added = []
+    for table, column, kind in COLUMNS_ADDED:
+        if column not in db.columns(table):
+            db.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, column, kind))
+            added.append("%s.%s" % (table, column))
+    return added
+
+
 def init_db(url):
-    """Apply schema.sql (idempotent: every table is CREATE TABLE IF NOT EXISTS)."""
+    """Apply schema.sql (idempotent: every table is CREATE TABLE IF NOT EXISTS), then add each COLUMNS_ADDED column
+    an older database lacks. Return the columns added ("table.column")."""
     with open(SCHEMA_PATH, encoding="utf-8") as f:
         script = f.read()
     db = connect(url)
     try:
         db.executescript(script)
+        added = add_missing_columns(db)
         db.commit()
     finally:
         db.close()
+    return added
 
 
 def get_db():

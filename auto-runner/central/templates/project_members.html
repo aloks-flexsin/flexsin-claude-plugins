@@ -4,6 +4,15 @@
 <h1>{{ project.name }} <small>({{ project.slug }})</small></h1>
 <p><a href="{{ url_for('projects.projects_page') }}">Projects</a> · <a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}">Blockers</a> · Your role: {{ my_role }}{% if can_tokens %} · <a href="{{ url_for('projects.tokens_page', slug=project.slug) }}">API tokens</a>{% endif %}</p>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
+<h2>Repository</h2>
+<p>{% if project.repo_url %}<code>{{ project.repo_url }}</code>{% else %}Not set yet: the plugin's init and join need it.{% endif %}</p>
+{% if can_manage %}
+<form method="post" action="{{ url_for('projects.repo_url_set', slug=project.slug) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Repository URL <input type="text" name="repo_url" value="{{ project.repo_url or '' }}" maxlength="500" required></label>
+  <button type="submit">Save repository URL</button>
+</form>
+{% endif %}
 <h2>Members</h2>
 <table>
   <thead><tr><th>Email</th><th>Role</th>{% if can_manage %}<th>Actions</th>{% endif %}</tr></thead>

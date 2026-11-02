@@ -1,15 +1,19 @@
 """Project pages and the `project_access(min_role)` guard (the rules are in projects.py).
 
-- `/projects` lists the projects the signed-in person may see; admins also get a form to create one.
-- `/projects/<slug>` is the members page (any member); owners and admins add, re-role and remove members there.
+- `/projects` lists the projects the signed-in person may see; admins also get a form to create one, which needs the
+  project's repository URL (see projects.normalize_repo_url).
+- `/projects/<slug>` is the members page (any member) and shows the repository URL; owners and admins add, re-role and
+  remove members there and change the repository URL (`POST /projects/<slug>/repo`, audited as `project.repo_url`).
 - The guard answers 404 to anyone signed out, to non-members and to members below `min_role`: never 403.
 - Project creation and every membership change (and refusal) write an audit row with the project's id.
 - `/projects/<slug>/tokens` (managers, owners and admins) creates, revokes and rotates API tokens (see tokens.py);
   a new token appears once, on the page that answers its creation or rotation, and is never in an audit row.
+- `GET /api/v1/project` (a project token with any scope) answers the token's project: slug, name and repo_url, so the
+  plugin's init and join can check they are pointed at the right repository.
 """
 import functools
 
-from flask import Blueprint, abort, g, make_response, redirect, render_template, request, url_for
+from flask import Blueprint, abort, g, jsonify, make_response, redirect, render_template, request, url_for
 
 from . import audit, auth, projects, sessions, tokens
 from .db import get_db
@@ -60,12 +64,14 @@ def project_create():
         abort(404)
     db = get_db()
     slug, name = request.form.get("slug", ""), request.form.get("name", "")
+    repo_url = request.form.get("repo_url", "")
     try:
-        project = projects.create(db, slug, name, _at())
+        project = projects.create(db, slug, name, _at(), repo_url)
     except projects.ProjectError as exc:
+        # The refused URL is not shown again: it may hold a credential someone pasted by mistake.
         return _list_page(error=str(exc), status=400, form={"slug": slug.strip()[:64], "name": name.strip()[:200]})
     audit.record(db, "project.create", _at(), account_id=account["id"], project_id=project["id"],
-                 detail={"slug": project["slug"], "name": project["name"]})
+                 detail={"slug": project["slug"], "name": project["name"], "repo_url": project["repo_url"]})
     db.commit()
     return redirect(url_for("projects.members_page", slug=project["slug"]))
 
@@ -88,6 +94,28 @@ def _record(db, action, detail):
 @project_access("viewer")
 def members_page(slug):
     return _members_page()
+
+
+@bp.post("/projects/<slug>/repo")
+@project_access("owner")
+def repo_url_set(slug):
+    db = get_db()
+    try:
+        before = projects.set_repo_url(db, g.project["id"], request.form.get("repo_url", ""))
+    except projects.ProjectError as exc:
+        # Neither the refused value nor any part of it goes in the audit row: it may hold a credential.
+        _record(db, "project.repo_url.refused", {"reason": str(exc)})
+        return _members_page(error=str(exc), status=400)
+    after = projects.get_by_slug(db, slug)["repo_url"]
+    _record(db, "project.repo_url", {"from": before, "to": after})
+    return redirect(url_for("projects.members_page", slug=slug))
+
+
+@bp.get("/api/v1/project")
+@tokens.bearer_token(None)
+def api_project():
+    project = g.token_project
+    return jsonify(slug=project["slug"], name=project["name"], repo_url=project.get("repo_url"))
 
 
 @bp.post("/projects/<slug>/members")

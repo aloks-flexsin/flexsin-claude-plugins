@@ -26,6 +26,8 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <label>Slug <input type="text" name="slug" value="{{ form.slug }}" pattern="[a-z0-9-]+" maxlength="64" required></label>
   <label>Name <input type="text" name="name" value="{{ form.name }}" maxlength="200" required></label>
+  <label>Repository URL <input type="text" name="repo_url" maxlength="500" required
+    placeholder="https://github.com/owner/repo.git or git@github.com:owner/repo.git"></label>
   <button type="submit">Create project</button>
 </form>
 {% endif %}

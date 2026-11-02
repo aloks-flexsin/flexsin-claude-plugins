@@ -23,6 +23,8 @@ Check the manifest with `claude plugin validate ./auto-runner` (needs the `claud
 
 ## Use
 1. `/auto-runner:init` shows a preview of what the project needs and asks before writing anything (it runs `bin/auto_init.py`; `--apply` writes).
+   It connects the project to the central service unless you choose `--local` (see "Central-first setup").
+   `/auto-runner:join <slug>` clones a project registered on the central service and then runs init there.
 2. `/auto-runner:auto <task>` plans first. When you accept the plan it writes the request to `.auto/pending/<slug>/items.md` and starts the runner.
 3. `/auto-runner:status` and `/auto-runner:log` are read-only reports (counts by state, the running item, blocked questions, recorded spend; the last iterations and log tails; `--full N` prints one whole log).
 
@@ -36,6 +38,28 @@ When no ready item is left the run ends cleanly and lists what is blocked or wai
 Detects the test command (pytest, npm test, dotnet test, go test, cargo test) and proposes it; appends deny rules to `.claude/settings.json` (never removes or overwrites,
 skips duplicates); creates `.claude/auto.json`, `.auto/queue.md` and `.gitignore` entries; reports an existing project `auto` command or scripts without touching them;
 with `--with-rules` writes a short `AUTO_RULES.md` when there is no `CLAUDE.md`. Idempotent. `--remove` previews, and with `--apply` removes only what init added.
+It also writes the `central` section (next section) or, with `--local`, none.
+
+## Central-first setup (tested with the real central app through Flask's test client; never against the live service)
+The central service is the starting point for a project: an admin creates it there with its repository URL, and init connects
+the checkout to it.
+
+- `auto_init.py --central-url URL --central-project SLUG [--token-env NAME]` adds `"central": {"enabled": true, "url", "project",
+  "token_env"}` to a new `.claude/auto.json`, or to an existing one with no `central` key (recorded, so `--remove` takes it out
+  again unless it was edited). `token_env` defaults to `AUTO_RUNNER_TOKEN_<SLUG>` (upper case, `-` to `_`).
+- Without those options and without `--local`, init refuses: a project can no longer slip into local mode unnoticed. An existing
+  `central` section is never changed and needs no options.
+- While the token variable is empty, the preview lists what to create on the site (the project with this folder's `origin` as its
+  repository URL, a token with `ingest` and `pull`) and the PowerShell line that stores the token without echoing it:
+  `$t = Read-Host 'Token for SLUG' -AsSecureString; [Environment]::SetEnvironmentVariable('AUTO_RUNNER_TOKEN_SLUG', [System.Net.NetworkCredential]::new('', $t).Password, 'User')`.
+- Once it is set, init calls `GET /api/v1/project` and refuses, writing nothing, unless the token is that project's, the project has
+  a repository URL, and `git remote get-url origin` is that repository. `autocentral.repo_key()` compares `https://host/o/r(.git)`,
+  `ssh://[user@]host[:port]/o/r` and `user@host:o/r` as `host/o/r` (lower case); credentials in an https remote are never shown.
+  A refused token (401/403) or an unreachable service also stops init. The same check runs for an existing enabled section.
+- `auto_join.py SLUG --central-url URL [--dest FOLDER] [--token-env NAME] [--apply]` (`/auto-runner:join`) reads the project's
+  repository URL from the service, refuses a folder that exists and any URL that is not https://, ssh:// or `user@host:o/r`,
+  runs `git clone -- <url> <folder>` with your own git credentials (only with `--apply`), then prints init's preview there and
+  the `auto_init.py ... --apply` line that writes it. The central service never holds git credentials.
 
 ## Config: `.claude/auto.json`
 Every key is optional; unknown keys and wrong types are errors that name the key.
@@ -88,10 +112,12 @@ Every run also appends to `.auto/events.jsonl` (schema `event.v1`, `bin/autoeven
 | `bin/queue.py`, `bin/autocfg.py`, `bin/autosafe.py` | Queue grammar and readiness (`*Depends on:*`), config loader (v1 keys + v2 sections), safety preflight. |
 | `bin/autoevents.py` | Append-only `.auto/events.jsonl`, schema `event.v1`. |
 | `bin/autoblock.py` | `blocker.v1` / `decision.v1`, lifecycle state machine, local store; `list [--state S]`, `answer ID --option/--text`, `view`. |
-| `bin/autodeliver.py` | `Transport` interface, `LocalTransport`, `HttpTransport` (central service), event push to central, inbox writer, resume packets; `resume ID` rebuilds a packet. |
+| `bin/autodeliver.py` | `Transport` interface, `LocalTransport`, `HttpTransport` (central service; `project_info()` reads `GET /api/v1/project`), event push to central, inbox writer, resume packets; `resume ID` rebuilds a packet. |
 | `bin/autostale.py` | Artifact front-matter (`version`, `hash`, `built_from`, `status`), `scan`, `status`, `revalidate`; stale artifacts refuse a resume. |
 | `bin/autoeval.py` | Evaluation harness: `run --benchmark ID --runner fake`, `validate`, `validate-results FILE`. |
-| `bin/auto_init.py`, `bin/auto_report.py` | Init (preview/apply/remove) and the status/log reports. |
+| `bin/auto_init.py`, `bin/auto_report.py` | Init (preview/apply/remove, the `central` section and its repository check) and the status/log reports. |
+| `bin/autocentral.py` | What init and join share: `default_token_env`, `repo_key` / `clean_url`, `remote_url`, `lookup` (`GET /api/v1/project`), `check`, `token_steps`. |
+| `bin/auto_join.py` | Join: repository URL from the central service, `git clone` into a folder you confirm, then init's preview. |
 | `bin/autosetup.py` | Capability registry and `doctor` (read-only), `plan` / `apply` / `remove` for setup. |
 | `bin/autobrowser.py` | Host policy (`check_base_url`), throwaway accounts, `redact` / `scan_diff`, `browser.v1` results and the Layer 1 stage, `finding.v1` and the Layer 2 explorer. |
 | `bin/automail.py` | Stdlib SMTP sink bound to 127.0.0.1; messages stored as JSON under `.auto/run/mail/`. |

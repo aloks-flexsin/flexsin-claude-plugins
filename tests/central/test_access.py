@@ -8,6 +8,7 @@ from central import access, accounts, audit, db, projects
 PW = 'violet-anchor-58-tide'
 START = datetime.datetime(2026, 10, 31, 9, 0, tzinfo=datetime.timezone.utc)
 MEMBER_ROLES = ('viewer', 'developer', 'manager', 'owner')
+REPO = 'https://github.com/example/gamma.git'
 WHO = MEMBER_ROLES + ('admin', 'stranger', 'anonymous')
 
 
@@ -62,8 +63,8 @@ def world(guarded_app, conn):
     for who in MEMBER_ROLES + ('stranger',):
         accts[who] = accounts.create(conn, '%s@example.com' % who, PW)
     accts['admin'] = accounts.create(conn, 'admin@example.com', PW, role='admin')
-    alpha = projects.create(conn, 'alpha', 'Alpha', '2026-10-31T09:00:00Z')
-    beta = projects.create(conn, 'beta', 'Beta', '2026-10-31T09:00:00Z')
+    alpha = projects.create(conn, 'alpha', 'Alpha', '2026-10-31T09:00:00Z', 'https://github.com/example/repo.git')
+    beta = projects.create(conn, 'beta', 'Beta', '2026-10-31T09:00:00Z', 'https://github.com/example/repo.git')
     for role in MEMBER_ROLES:
         projects.add_member(conn, alpha['id'], '%s@example.com' % role, role, '2026-10-31T09:00:00Z')
     projects.add_member(conn, beta['id'], 'stranger@example.com', 'owner', '2026-10-31T09:00:00Z')
@@ -168,20 +169,21 @@ def test_disabled_admin_and_member_lose_access(world, conn):
 
 def test_only_admins_create_projects(world, conn):
     for who in MEMBER_ROLES + ('stranger',):
-        assert post(world['clients'][who], '/projects', slug='gamma', name='Gamma').status_code == 404
+        assert post(world['clients'][who], '/projects', slug='gamma', name='Gamma', repo_url=REPO).status_code == 404
     assert projects.get_by_slug(conn, 'gamma') is None
-    resp = post(world['clients']['admin'], '/projects', slug='Gamma', name='Gamma')
+    resp = post(world['clients']['admin'], '/projects', slug='Gamma', name='Gamma', repo_url=' %s ' % REPO)
     assert resp.status_code == 302 and resp.headers['Location'].endswith('/projects/gamma')
     gamma = projects.get_by_slug(conn, 'gamma')
     [row] = audit.rows(conn, 'project.create')
     assert row['account_id'] == world['accounts']['admin']['id'] and row['project_id'] == gamma['id']
-    assert row['detail'] == {'slug': 'gamma', 'name': 'Gamma'}
+    assert row['detail'] == {'slug': 'gamma', 'name': 'Gamma', 'repo_url': REPO}
+    assert gamma['repo_url'] == REPO
 
 
 @pytest.mark.parametrize('slug,name', [('gamma', ''), ('-bad', 'X'), ('has space', 'X'), ('alpha', 'Dup'),
                                        ('a' * 65, 'X'), ('ok', 'n' * 201)])
 def test_create_refuses_bad_input(world, conn, slug, name):
-    resp = post(world['clients']['admin'], '/projects', slug=slug, name=name)
+    resp = post(world['clients']['admin'], '/projects', slug=slug, name=name, repo_url=REPO)
     assert resp.status_code == 400 and 'role="alert"' in resp.get_data(as_text=True)
     assert len(conn.query('SELECT * FROM project')) == 2
     assert audit.rows(conn, 'project.create') == []

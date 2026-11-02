@@ -220,6 +220,13 @@ class HttpTransport(Transport):
         from urllib.parse import quote
         return self._call('POST', f'/api/v1/deliveries/{quote(did, safe="")}/ack', {404: KeyError, 409: ValueError})
 
+    def project_info(self):
+        """GET /api/v1/project (any scope) -> {'slug', 'name', 'repo_url'} of the token's project (repo_url may be None)."""
+        data = self._call('GET', '/api/v1/project')
+        if not isinstance(data.get('slug'), str) or not isinstance(data.get('repo_url'), (str, type(None))):
+            raise TransportUnavailable('GET /api/v1/project: unreadable reply')
+        return data
+
     def push_events(self, events):
         """POST a list of event.v1 objects to /api/v1/events (scope `ingest`) -> the service's reply."""
         return self._call('POST', '/api/v1/events', payload=list(events), timeout=max(self.timeout, PUSH_TIMEOUT))

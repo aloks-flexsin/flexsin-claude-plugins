@@ -6,9 +6,13 @@
 - Anyone else who is not a member with at least the needed role gets 404, never 403, so a project's existence is
   not revealed to people outside it.
 - Owners and admins manage members. The last owner of a project cannot be removed or demoted.
+- A project names its git repository (`repo_url`), so a runner can check it is pointed at the right checkout. Only
+  `https://host/owner/repo`, `ssh://[user@]host[:port]/owner/repo` and `user@host:owner/repo` forms are taken, never
+  with a password or token in them: the service never holds git credentials. Owners and admins change it.
 """
 import re
 import secrets
+from urllib.parse import urlsplit
 
 from . import accounts
 
@@ -17,6 +21,11 @@ RANK = {role: rank for rank, role in enumerate(MEMBER_ROLES)}
 ADMIN = "admin"
 SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 MAX_NAME = 200
+MAX_REPO_URL = 500
+_REPO_PATH_RE = re.compile(r"^[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)+/?$")
+_HOST_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$")
+_USER_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+_SCP_RE = re.compile(r"^(?P<user>[A-Za-z0-9._-]+)@(?P<host>[^:/@]+):(?P<path>[^/].*)$")
 
 
 class ProjectError(ValueError):
@@ -30,18 +39,66 @@ def normalize_slug(slug):
     return slug
 
 
-def create(db, slug, name, now):
+REPO_URL_HELP = ("the repository URL must be https://host/owner/repo, ssh://host/owner/repo or git@host:owner/repo,"
+                 " with no password or token in it")
+
+
+def _repo_parts_ok(host, path):
+    return bool(host and _HOST_RE.match(host) and _REPO_PATH_RE.match(path) and ".." not in path.split("/"))
+
+
+def normalize_repo_url(url):
+    """The trimmed repository URL, or ProjectError. Credentials (`user:pass@`, any user in an https URL), queries,
+    fragments, other schemes and local paths are refused."""
+    url = (url or "").strip()
+    if not url or len(url) > MAX_REPO_URL or any(ch.isspace() or ord(ch) < 32 for ch in url):
+        raise ProjectError(REPO_URL_HELP)
+    scp = _SCP_RE.match(url)
+    if scp and "://" not in url:
+        if not _repo_parts_ok(scp.group("host"), scp.group("path")):
+            raise ProjectError(REPO_URL_HELP)
+        return url
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        raise ProjectError(REPO_URL_HELP) from None
+    if parts.scheme not in ("https", "ssh") or "?" in url or "#" in url:
+        raise ProjectError(REPO_URL_HELP)
+    if parts.password is not None or (parts.scheme == "https" and "@" in parts.netloc):
+        raise ProjectError(REPO_URL_HELP)
+    if parts.username is not None and not _USER_RE.match(parts.username):
+        raise ProjectError(REPO_URL_HELP)
+    if port == 0 or not parts.path.startswith("/") or not _repo_parts_ok(parts.hostname, parts.path[1:]):
+        raise ProjectError(REPO_URL_HELP)
+    return url
+
+
+def create(db, slug, name, now, repo_url):
     """Create and commit a project; return its row."""
     slug = normalize_slug(slug)
     name = (name or "").strip()
     if not name or len(name) > MAX_NAME:
         raise ProjectError("the name must be 1-%d characters" % MAX_NAME)
+    repo_url = normalize_repo_url(repo_url)
     if get_by_slug(db, slug) is not None:
         raise ProjectError("a project with that slug already exists")
     project_id = secrets.token_hex(16)
-    db.execute("INSERT INTO project (id, slug, name, created_at) VALUES (?, ?, ?, ?)", (project_id, slug, name, now))
+    db.execute("INSERT INTO project (id, slug, name, repo_url, created_at) VALUES (?, ?, ?, ?, ?)",
+               (project_id, slug, name, repo_url, now))
     db.commit()
     return get_by_slug(db, slug)
+
+
+def set_repo_url(db, project_id, repo_url):
+    """Change a project's repository URL and commit; return the previous value (None when it was not set)."""
+    repo_url = normalize_repo_url(repo_url)
+    before = db.query_one("SELECT repo_url FROM project WHERE id = ?", (project_id,))
+    if before is None:
+        raise ProjectError("no such project")
+    db.execute("UPDATE project SET repo_url = ? WHERE id = ?", (repo_url, project_id))
+    db.commit()
+    return before["repo_url"]
 
 
 def get_by_slug(db, slug):

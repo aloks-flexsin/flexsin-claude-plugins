@@ -42,8 +42,8 @@ def conn(app, db_url):
 
 @pytest.fixture
 def world(app, conn, clock):
-    alpha = projects.create(conn, 'alpha', 'Alpha', '2026-10-31T09:00:00Z')
-    beta = projects.create(conn, 'beta', 'Beta', '2026-10-31T09:00:00Z')
+    alpha = projects.create(conn, 'alpha', 'Alpha', '2026-10-31T09:00:00Z', 'https://github.com/example/repo.git')
+    beta = projects.create(conn, 'beta', 'Beta', '2026-10-31T09:00:00Z', 'https://github.com/example/repo.git')
     ingest_raw, _ = tokens.create(conn, alpha['id'], ['ingest'], None, '2026-10-31T09:00:00Z')
     pull_raw, _ = tokens.create(conn, alpha['id'], ['pull'], None, '2026-10-31T09:00:00Z')
     beta_raw, _ = tokens.create(conn, beta['id'], ['ingest'], None, '2026-10-31T09:00:00Z')

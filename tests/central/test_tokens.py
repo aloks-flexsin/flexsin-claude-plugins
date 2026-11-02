@@ -62,8 +62,8 @@ def world(api_app, conn):
     for who in MEMBER_ROLES + ('stranger',):
         accts[who] = accounts.create(conn, '%s@example.com' % who, PW)
     accts['admin'] = accounts.create(conn, 'admin@example.com', PW, role='admin')
-    alpha = projects.create(conn, 'alpha', 'Alpha', '2026-10-31T09:00:00Z')
-    beta = projects.create(conn, 'beta', 'Beta', '2026-10-31T09:00:00Z')
+    alpha = projects.create(conn, 'alpha', 'Alpha', '2026-10-31T09:00:00Z', 'https://github.com/example/repo.git')
+    beta = projects.create(conn, 'beta', 'Beta', '2026-10-31T09:00:00Z', 'https://github.com/example/repo.git')
     for role in MEMBER_ROLES:
         projects.add_member(conn, alpha['id'], '%s@example.com' % role, role, '2026-10-31T09:00:00Z')
     projects.add_member(conn, beta['id'], 'stranger@example.com', 'owner', '2026-10-31T09:00:00Z')

@@ -58,8 +58,8 @@ def w(app, conn):
     for who in ROLES + ('stranger',):
         accounts.create(conn, '%s@example.com' % who, PW)
     accounts.create(conn, 'admin@example.com', PW, role='admin')
-    alpha = projects.create(conn, 'alpha', 'Alpha', AT)
-    beta = projects.create(conn, 'beta', 'Beta', AT)
+    alpha = projects.create(conn, 'alpha', 'Alpha', AT, 'https://github.com/example/repo.git')
+    beta = projects.create(conn, 'beta', 'Beta', AT, 'https://github.com/example/repo.git')
     for role in ROLES:
         projects.add_member(conn, alpha['id'], '%s@example.com' % role, role, AT)
     projects.add_member(conn, beta['id'], 'stranger@example.com', 'owner', AT)

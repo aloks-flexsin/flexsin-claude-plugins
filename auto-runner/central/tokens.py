@@ -4,8 +4,8 @@
   keeps only its sha256 and a short prefix for display, so a lost token cannot be shown again, only replaced.
 - Scopes: `ingest` (send events) and `pull` (fetch and acknowledge deliveries). A token has one or both.
 - Revoke sets `revoked_at`; rotate revokes the old token and creates a new one with the same scopes, in one commit.
-- `bearer_token(scope)` answers 401 for a missing, unknown or revoked token and 403 when the token lacks the scope.
-  It sets `g.token` (the row) and `g.token_project` (the project row).
+- `bearer_token(scope)` answers 401 for a missing, unknown or revoked token and 403 when the token lacks the scope;
+  `bearer_token(None)` takes a token with any scope. It sets `g.token` (the row) and `g.token_project` (the project row).
 """
 import functools
 import hashlib
@@ -121,8 +121,8 @@ def _bearer():
 
 
 def bearer_token(scope):
-    """Decorate an API view: 401 without a valid active token, 403 when the token lacks `scope`."""
-    if scope not in SCOPES:
+    """Decorate an API view: 401 without a valid active token, 403 when the token lacks `scope` (None: any scope)."""
+    if scope is not None and scope not in SCOPES:
         raise ValueError("unknown token scope: %r" % (scope,))
 
     def decorate(view):
@@ -133,7 +133,7 @@ def bearer_token(scope):
             project = db.query_one("SELECT * FROM project WHERE id = ?", (row["project_id"],)) if row else None
             if project is None:
                 _fail(401, "a valid bearer token is required")
-            if scope not in scopes_of(row):
+            if scope is not None and scope not in scopes_of(row):
                 _fail(403, "this token does not have the %s scope" % scope)
             g.token, g.token_project = row, project
             return view(*args, **kwargs)

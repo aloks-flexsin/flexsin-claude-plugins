@@ -16,17 +16,19 @@ def build_parser():
     sub = parser.add_subparsers(dest="command", required=True)
     admin = sub.add_parser("create-admin", help="create an admin account (asks for the password twice)")
     admin.add_argument("--email", required=True)
-    sub.add_parser("init-db", help="apply schema.sql to DATABASE_URL (safe to run again)")
+    sub.add_parser("init-db", help="apply schema.sql to DATABASE_URL and add columns an older database lacks (safe to run again)")
     return parser
 
 
 def init_db(url, out=sys.stdout, err=sys.stderr):
     try:
-        db.init_db(url)
+        added = db.init_db(url)
     except ValueError as exc:
         print(str(exc), file=err)
         return 2
     print("schema applied (%d tables)" % len(db.TABLES), file=out)
+    for column in added:
+        print("added column %s" % column, file=out)
     return 0
 
 

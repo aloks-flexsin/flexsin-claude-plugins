@@ -33,7 +33,7 @@ class Central:
         self.app = central.create_app({'TESTING': True, 'DATABASE_URL': url})
         self.conn = db.connect(url)
         self.client = self.app.test_client()
-        self.project = projects.create(self.conn, SLUG, 'Acme web', AT)
+        self.project = projects.create(self.conn, SLUG, 'Acme web', AT, 'https://github.com/example/repo.git')
         accounts.create(self.conn, 'owner@example.com', PW)
         projects.add_member(self.conn, self.project['id'], 'owner@example.com', 'owner', AT)
         self.token, self.token_row = tokens.create(self.conn, self.project['id'], ['ingest', 'pull'], None, AT)
