@@ -2,5 +2,10 @@
   "test_command": "python -m pytest -q",
   "rules_files": [
     "CLAUDE.md"
-  ]
+  ],
+  "central": {
+    "enabled": true,
+    "url": "https://auto-runner-central.vercel.app",
+    "project": "flexsin-claude-plugins"
+  }
 }
