@@ -4,6 +4,8 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-02
+
 ### Added
 - Central service (`auto-runner/central/`): a Flask app with its own accounts, project access, per-project API tokens,
   `event.v1` ingest and the delivery endpoints. Deployment is unverified.
