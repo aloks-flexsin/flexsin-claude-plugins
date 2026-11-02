@@ -66,6 +66,7 @@ key, so SSO can be added later as another way to sign in to the same accounts.
   follow-up.
 - **Lockout as denial of service:** anyone who knows an email can lock that account for 15 minutes by failing its password
   repeatedly. This is the usual cost of per-account lockout and is accepted for a small team.
-- **Not yet wired:** the runner pulls answers over HTTP (`HttpTransport`) but does not push its events to the service yet, and
-  there are no pages for viewing and answering blockers yet. Both are follow-ups.
+- **Event push and blocker pages (added 2026-11-02):** the runner sends its ledger to the service when `central` is on, and
+  `raised` events carry the blocker's content (question, options, recommendation, impacts) so it can be answered on the
+  blocker pages. That content is agent-written text: it is stored after redaction and shown escaped, never run.
 - **Unverified:** the Postgres driver path, the Vercel deployment and the production config have only been tested with fakes.

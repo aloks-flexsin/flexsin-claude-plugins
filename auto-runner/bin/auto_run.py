@@ -497,6 +497,20 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             ledger.emit('item_state', item, {'from': prev, 'to': state})
 
     source = transport or central_transport(cfg) or autodeliver.LocalTransport(auto)
+    pusher = source if isinstance(source, autodeliver.HttpTransport) else None
+
+    def push():
+        """Send the ledger's new events to the central service (only when it is on); a failure never stops the run."""
+        if pusher is None:
+            return
+        try:
+            sent = autodeliver.push(pusher, auto, slug)
+        except (OSError, ValueError) as e:
+            sent = {'skipped': [], 'error': type(e).__name__}
+        if sent['skipped']:
+            say(f"central service refused event(s) {', '.join(sent['skipped'])}: skipped")
+        if sent['error']:
+            say(f"events not sent to the central service ({sent['error']}): will try again at the next push")
 
     def hold_stale(item, paths):
         detail = f'{STALE_NOTE} {", ".join(paths)}: revalidate (autostale.py revalidate) before it resumes'
@@ -506,7 +520,9 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         set_state(item, 'blocked', detail)
 
     def deliver():
-        """Pull answers into the inbox; an item whose blockers are all answered goes back to queued. -> True if anything arrived."""
+        """Push new events, then pull answers into the inbox; an item whose blockers are all answered goes back to queued.
+        -> True if anything arrived."""
+        push()
         try:
             got = autodeliver.pull(source, auto, slug)
         except autodeliver.TransportUnavailable as e:
@@ -629,9 +645,10 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             creds = generated()
             log.write_text(autobrowser.redact(log_text, creds), encoding='utf-8')
             raised = autoblock.ingest(new_dirs, auto, item, stamp, slug)
+            store = autoblock.Store(auto)
             for r in raised:
-                ledger.emit('blocker', item, {'action': 'raised', 'id': r['id']} if r['id']
-                            else {'action': 'rejected', 'file': r['file'], 'reasons': r['errors']}, 'agent_reported')
+                ledger.emit('blocker', item, {'action': 'raised', 'id': r['id'], 'blocker': autoblock.content(store.load(r['id']))}
+                            if r['id'] else {'action': 'rejected', 'file': r['file'], 'reasons': r['errors']}, 'agent_reported')
             if raised:
                 autoblock.write_view(auto)
             after_head = git(wt, 'rev-parse', 'HEAD')
@@ -739,6 +756,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         exit_code = 0
     finally:
         ledger.emit('run_end', detail={'exit': exit_code, 'reason': reason})
+        push()
         lock.release()
     say(f'done. Review: git log {base}..{branch} --oneline   and   git diff {base}...{branch}')
     say('Merge only after reading the diff.')

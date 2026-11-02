@@ -96,6 +96,9 @@ HISTORY_FIELDS = ('from', 'to', 'by', 'time', 'key', 'reason')
 _TEXT = ('id', 'project', 'task', 'run', 'agent_role', 'stage', 'question', 'why_needed', 'prevents',
          'impact_if_delayed', 'impact_if_wrong', 'created_at', 'owner_role', 'idempotency_key')
 _ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$')
+# What a person needs to answer a blocker away from the terminal; sent with the `raised` event (see content()).
+CONTENT_FIELDS = ('question', 'why_needed', 'prevents', 'impact_if_delayed', 'impact_if_wrong', 'class', 'owner_role',
+                  'options', 'recommendation', 'assumptions', 'evidence', 'due')
 
 
 class IllegalTransition(ValueError):
@@ -152,6 +155,11 @@ def new_blocker(**fields):
     b['idempotency_key'] = b['id']
     b.update(fields)
     return b
+
+
+def content(b):
+    """-> the parts of a blocker a person needs to answer it (CONTENT_FIELDS); runner bookkeeping and history stay local."""
+    return {f: b[f] for f in CONTENT_FIELDS if f in b}
 
 
 def validate_blocker(b):

@@ -2,7 +2,7 @@
 {% block title %}{{ project.name }} members{% endblock %}
 {% block content %}
 <h1>{{ project.name }} <small>({{ project.slug }})</small></h1>
-<p><a href="{{ url_for('projects.projects_page') }}">Projects</a> · Your role: {{ my_role }}{% if can_tokens %} · <a href="{{ url_for('projects.tokens_page', slug=project.slug) }}">API tokens</a>{% endif %}</p>
+<p><a href="{{ url_for('projects.projects_page') }}">Projects</a> · <a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}">Blockers</a> · Your role: {{ my_role }}{% if can_tokens %} · <a href="{{ url_for('projects.tokens_page', slug=project.slug) }}">API tokens</a>{% endif %}</p>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 <h2>Members</h2>
 <table>

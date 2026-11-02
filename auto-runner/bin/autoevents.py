@@ -10,7 +10,7 @@ Schema `event.v1` (every field present, nothing else):
     type            run_start | run_end | item_state | tests | blocker | browser | findings | changelog | docs
     item            queue item ID, or null for run_start / run_end
     detail          a small JSON object (item_state: {"from", "to"}; tests: {"result": "pass"|"fail", "exit"}; run_end: {"exit", "reason"};
-                    blocker: {"action": "raised", "id"} or {"action": "rejected", "file", "reasons"} or
+                    blocker: {"action": "raised", "id", "blocker": autoblock.content()} or {"action": "rejected", "file", "reasons"} or
                     {"action": "delivered", "id", "delivery"} or {"action": "resumed", "id"};
                     browser: {"result": "pass"|"fail"|"invalid", "evidence": "E1"|"E3"|null, "failed", "counts", "errors"};
                     docs: {"result": "pass"|"fail", "map", "failures", "stale"})

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} blockers{% endblock %}
+{% block content %}
+<h1>{{ project.name }} <small>({{ project.slug }})</small> blockers</h1>
+<p><a href="{{ url_for('projects.members_page', slug=project.slug) }}">Project</a></p>
+{% if blockers %}
+<table>
+  <thead><tr><th>Blocker</th><th>Item</th><th>Question</th><th>State</th><th>Raised</th></tr></thead>
+  <tbody>
+  {% for b in blockers %}
+    <tr>
+      <td><a href="{{ url_for('blockers.blocker_page', slug=project.slug, blocker_id=b.blocker_id) }}">{{ b.blocker_id }}</a></td>
+      <td>{{ b.task or "" }}</td>
+      <td>{{ b.question or "(no question sent)" }}</td>
+      <td>{% if b.waiting %}<strong>{{ b.describe }}</strong>{% else %}{{ b.describe }}{% endif %}</td>
+      <td>{{ b.created_at }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No blockers yet. They appear here when the runner raises one and sends its events to this service.</p>
+{% endif %}
+{% endblock %}

@@ -12,6 +12,8 @@ next iteration on the item gets a resume packet built from files. Rules:
   last_error). `HttpTransport(base_url, token)` talks to the central service (`auto-runner/central/`) over HTTP;
   `tests/auto_runner/fake_central.py` is an in-memory fake of it. All three are held to `auto-runner/docs/delivery-contract.md`
   by the same tests (the HTTP one through the real app's Flask test client, no socket).
+- `push()` sends the ledger (`events.jsonl`) to the central service through `HttpTransport.push_events`, from the line recorded in
+  `.auto/central-push.json`, so blockers (with the content a person needs, see `autoblock.content`) show up there to be answered.
 - A decision made at the central service arrives while the local blocker is still OPEN: `pull()` first stores a copy
   (`Store.receive`, same transition keys as a local answer). A row whose project or task differs from the local blocker is ignored.
 - Either call may raise `TransportUnavailable`; `pull()` and `resume()` let it through having changed nothing for that delivery,
@@ -138,6 +140,10 @@ class TransportRefused(RuntimeError):
     """The service answered, but refused the call (401 bad token, 403 wrong scope, another 4xx). Not an outage: a person
     has to fix the configuration. The message holds the status and the service's error text, never the token."""
 
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
+
 
 def urllib_send(method, url, headers, body, timeout):
     """The default `send` of HttpTransport: one HTTP request with the standard library -> (status, body bytes).
@@ -176,12 +182,13 @@ class HttpTransport(Transport):
     def __repr__(self):
         return f'HttpTransport({self.base_url!r})'
 
-    def _call(self, method, path, refusals=None):
+    def _call(self, method, path, refusals=None, payload=None):
         """-> the JSON object of a 2xx reply. A 4xx raises refusals[status] (default TransportRefused) with the message."""
         headers = {'Authorization': f'Bearer {self._token}', 'Accept': 'application/json'}
         body = None
         if method == 'POST':
-            body, headers['Content-Type'] = b'', 'application/json'
+            body = b'' if payload is None else json.dumps(payload).encode('utf-8')
+            headers['Content-Type'] = 'application/json'
         try:
             status, raw = self.send(method, self.base_url + path, headers, body, self.timeout)
         except TransportUnavailable:
@@ -200,7 +207,8 @@ class HttpTransport(Transport):
             return data
         error = data.get('error') if isinstance(data, dict) else None
         message = f'{method} {path}: {status}' + (f' {str(error)[:200]}' if error else '')
-        raise (refusals or {}).get(status, TransportRefused)(message)
+        refused = (refusals or {}).get(status)
+        raise refused(message) if refused else TransportRefused(message, status)
 
     def pull_pending(self, project):
         items = self._call('GET', '/api/v1/deliveries/pending').get('deliveries')
@@ -211,6 +219,81 @@ class HttpTransport(Transport):
     def ack(self, did):
         from urllib.parse import quote
         return self._call('POST', f'/api/v1/deliveries/{quote(did, safe="")}/ack', {404: KeyError, 409: ValueError})
+
+    def push_events(self, events):
+        """POST a list of event.v1 objects to /api/v1/events (scope `ingest`) -> the service's reply."""
+        return self._call('POST', '/api/v1/events', payload=list(events))
+
+
+PUSHED = 'central-push.json'
+PUSH_SCHEMA = 'push.v1'
+PUSH_SKIPPABLE = (400, 409, 413)        # this event will never be taken; skip it rather than block every later one
+MAX_PUSH_EVENTS, MAX_PUSH_BYTES = 100, 200_000
+
+
+def _push_state(auto_dir):
+    try:
+        state = json.loads((Path(auto_dir) / PUSHED).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        state = None
+    if not (isinstance(state, dict) and isinstance(state.get('lines'), int) and isinstance(state.get('skipped'), list)):
+        state = {'schema': PUSH_SCHEMA, 'lines': 0, 'skipped': []}
+    return state
+
+
+def push(transport, auto_dir, project):
+    """Send the ledger lines not sent yet (`.auto/events.jsonl`, from the line `.auto/central-push.json` records) to the central
+    service in batches -> {sent, skipped, error}. Only events of `project` are sent; the service is idempotent by event id, so
+    sending one twice is harmless. The cursor moves only past lines the service took or refused for good: an outage
+    (TransportUnavailable) or a refusal of the whole call (401, 403, 429, ...) stops here, and the next push starts again from
+    the same line. An event refused on its own (400, 409, 413) is skipped and its id kept in `skipped`."""
+    auto = Path(auto_dir)
+    path = auto / 'events.jsonl'
+    lines = (path.read_text(encoding='utf-8') if path.exists() else '').split('\n')[:-1]   # whole lines only
+    state = _push_state(auto)
+    at = state['lines'] if state['lines'] <= len(lines) else 0
+    sent, skipped, error = 0, [], None
+
+    while at < len(lines) and error is None:
+        batch, size, end, refused = [], 0, at, []
+        while end < len(lines) and len(batch) < MAX_PUSH_EVENTS and size < MAX_PUSH_BYTES:
+            try:
+                event = json.loads(lines[end])
+            except ValueError:
+                event = None
+            if isinstance(event, dict) and event.get('project') == project:
+                batch.append((end, event))
+                size += len(lines[end])
+            end += 1
+        try:
+            if batch:
+                transport.push_events([e for _, e in batch])
+            sent, at = sent + len(batch), end
+        except TransportUnavailable as e:
+            error = str(e)
+        except TransportRefused as e:
+            if e.status not in PUSH_SKIPPABLE:
+                error = str(e)
+            else:
+                for line, event in batch:            # one at a time, to find the event(s) it will never take
+                    try:
+                        transport.push_events([event])
+                        sent += 1
+                    except TransportRefused as one:
+                        if one.status not in PUSH_SKIPPABLE:
+                            error = str(one)
+                            break
+                        refused.append(str(event.get('id')))
+                    except TransportUnavailable as one:
+                        error = str(one)
+                        break
+                    at = line + 1
+                else:
+                    at = end
+        skipped += refused
+        state.update(schema=PUSH_SCHEMA, lines=at, skipped=(state['skipped'] + refused)[-100:])
+        autoblock.write_json_atomic(auto / PUSHED, state)
+    return {'sent': sent, 'skipped': skipped, 'error': error}
 
 
 def inbox(auto_dir):

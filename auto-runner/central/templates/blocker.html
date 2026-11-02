@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ blocker.blocker_id }}{% endblock %}
+{% block content %}
+<h1>{{ blocker.blocker_id }}</h1>
+<p><a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}">All blockers of {{ project.name }}</a></p>
+<p>Item {{ blocker.task or "?" }} · State: <strong>{{ describe }}</strong> · Raised {{ blocker.created_at }}</p>
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+
+<h2>Question</h2>
+<p>{{ content.question or blocker.question or "The runner sent no question for this blocker (an older runner sends only its id); see QUESTIONS.md in the project." }}</p>
+{% if content.why_needed %}<h3>Why it is needed</h3><p>{{ content.why_needed }}</p>{% endif %}
+{% if content.prevents %}<h3>What it prevents</h3><p>{{ content.prevents }}</p>{% endif %}
+{% if content.impact_if_delayed %}<h3>If the answer is late</h3><p>{{ content.impact_if_delayed }}</p>{% endif %}
+{% if content.impact_if_wrong %}<h3>If the answer is wrong</h3><p>{{ content.impact_if_wrong }}</p>{% endif %}
+{% if options %}
+<h3>Options</h3>
+<ul>
+  {% for o in options %}<li><strong>{{ o.label }}</strong>{% if o.tradeoffs %}: {{ o.tradeoffs }}{% endif %}</li>{% endfor %}
+</ul>
+{% endif %}
+{% if content.recommendation %}<h3>Recommendation</h3><p>{{ content.recommendation }}</p>{% endif %}
+{% if assumptions %}<h3>Assumptions</h3><ul>{% for a in assumptions %}<li>{{ a }}</li>{% endfor %}</ul>{% endif %}
+{% if evidence %}<h3>Evidence</h3><ul>{% for e in evidence %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+
+{% if can_answer %}
+<h2>Answer</h2>
+<form method="post" action="{{ url_for('blockers.blocker_answer', slug=project.slug, blocker_id=blocker.blocker_id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% if options %}
+  <fieldset>
+    <legend>Option</legend>
+    {% for o in options %}
+    <label><input type="radio" name="option" value="{{ o.label }}"{% if form.option == o.label %} checked{% endif %}> {{ o.label }}</label><br>
+    {% endfor %}
+  </fieldset>
+  {% endif %}
+  <label>Answer or instructions<br><textarea name="text" rows="6" cols="80" maxlength="5000">{{ form.text }}</textarea></label><br>
+  <button type="submit">Send answer</button>
+</form>
+<p>The answer is data for the agent's next iteration, never a command. It reaches the runner the next time it pulls.</p>
+{% endif %}
+
+{% if decisions %}
+<h2>Answers</h2>
+<table>
+  <thead><tr><th>Version</th><th>By</th><th>Option</th><th>Answer</th><th>When</th><th>Delivery</th></tr></thead>
+  <tbody>
+  {% for d in decisions %}
+    <tr><td>{{ d.version }}</td><td>{{ d.email or "" }}</td><td>{{ d.option_label or "" }}</td><td>{{ d.text or "" }}</td>
+        <td>{{ d.created_at }}</td><td>{{ d.delivery or "" }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

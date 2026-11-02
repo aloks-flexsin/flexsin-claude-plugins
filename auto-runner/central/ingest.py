@@ -10,7 +10,9 @@
   Bodies are compared after redaction, as stored (canonical JSON, sha256).
 - Before storing, string values in `detail` that look like secrets are replaced with `[redacted]`, and so is
   every value under a key that names a secret (password, token, api_key, ...).
-- A `blocker` event with action `raised` creates or updates the blocker row (project, task = item, blocker id).
+- A `blocker` event with action `raised` creates or updates the blocker row (project, task = item, blocker id); the
+  question comes from `detail.blocker.question` when the runner sends the blocker's content (it does from this
+  version on). Action `resumed` moves a known blocker row to RESUMED.
 """
 import collections
 import datetime
@@ -37,6 +39,7 @@ MAX_BODY = 256 * 1024
 RATE_LIMIT = 120
 RATE_WINDOW = datetime.timedelta(minutes=1)
 MAX_ID = 128
+MAX_QUESTION = 2000
 BLOCKER_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 REDACTED = "[redacted]"
 
@@ -196,17 +199,33 @@ def _upsert_task(db, project_id, item, at):
     return task_id
 
 
+def _question(event):
+    content = event["detail"].get("blocker")
+    question = content.get("question") if isinstance(content, dict) else None
+    return question[:MAX_QUESTION] if isinstance(question, str) and question.strip() else None
+
+
 def _upsert_blocker(db, project_id, event, body, at):
     task_id = _upsert_task(db, project_id, event["item"], at)
     blocker_id = event["detail"]["id"]
+    question = _question(event)
     row = db.query_one("SELECT id FROM blocker WHERE project_id = ? AND blocker_id = ?", (project_id, blocker_id))
     if row:
-        db.execute("UPDATE blocker SET task_id = ?, body = ?, updated_at = ? WHERE id = ?",
-                   (task_id, body, at, row["id"]))
+        db.execute("UPDATE blocker SET task_id = ?, question = COALESCE(?, question), body = ?, updated_at = ?"
+                   " WHERE id = ?", (task_id, question, body, at, row["id"]))
     else:
-        db.execute("INSERT INTO blocker (id, project_id, task_id, blocker_id, body, status, created_at, updated_at)"
-                   " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                   (secrets.token_hex(16), project_id, task_id, blocker_id, body, "OPEN", at, at))
+        db.execute("INSERT INTO blocker (id, project_id, task_id, blocker_id, question, body, status, created_at,"
+                   " updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                   (secrets.token_hex(16), project_id, task_id, blocker_id, question, body, "OPEN", at, at))
+
+
+def _resumed_blocker(event):
+    return event.get("type") == "blocker" and isinstance(event.get("detail"), dict)         and event["detail"].get("action") == "resumed" and isinstance(event["detail"].get("id"), str)
+
+
+def _mark_resumed(db, project_id, event, at):
+    db.execute("UPDATE blocker SET status = ?, updated_at = ? WHERE project_id = ? AND blocker_id = ?",
+               ("RESUMED", at, project_id, event["detail"]["id"]))
 
 
 def store(db, project, events, at):
@@ -237,6 +256,8 @@ def store(db, project, events, at):
                        (clean["id"], project["id"], clean["type"], clean["time"], body, digest, at))
             if _raised_blocker(clean):
                 _upsert_blocker(db, project["id"], clean, body, at)
+            elif _resumed_blocker(clean):
+                _mark_resumed(db, project["id"], clean, at)
     except Exception:
         db.rollback()
         raise

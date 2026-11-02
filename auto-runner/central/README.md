@@ -7,8 +7,9 @@ runner picks up the answers. It implements `auto-runner/docs/delivery-contract.m
 **Status: unverified.** Everything below is proven only by tests on SQLite through the Flask test client. Nothing has run on
 Vercel, against a real Postgres, or with a real runner talking to a deployed service.
 
-Not built yet: pages for viewing and answering blockers (decisions are recorded through `deliveries.record_decision`), and
-the runner pushing its events to the service.
+The runner sends its events here when `central` is on in its project's `.claude/auto.json` (see the plugin README,
+"Delivery contract"); a blocker it raises then shows on the project's **Blockers** page with its question and options,
+and an owner, manager or admin answers it there.
 
 ## Layout
 
@@ -23,6 +24,7 @@ the runner pushing its events to the service.
 | `access.py`, `projects.py` | Projects, members, the access guard, token pages |
 | `tokens.py` | Per-project API tokens and the `bearer_token(scope)` guard |
 | `ingest.py` | `POST /api/v1/events` |
+| `blockers.py` | Blocker list, blocker page and the answer form |
 | `deliveries.py` | Decisions and the delivery endpoints |
 | `audit.py` | The audit log |
 | `cli.py` | `python -m central init-db` and `python -m central create-admin --email X` |
@@ -65,6 +67,17 @@ may not stick over plain http. The API endpoints do not use the cookie.
 - Sessions expire after 12 hours, or 2 hours idle. A password change or reset signs the person out everywhere.
 - Global roles `admin` and `user`; project roles `owner`, `manager`, `developer`, `viewer`. Non-members get 404.
 - Every sign-in (success and failure, never the password) and every account, token, membership and decision action is audited.
+
+## Blockers
+
+- `/projects/<slug>/blockers` (any member): the project's blockers, the ones waiting for an answer first.
+- `/projects/<slug>/blockers/<blocker_id>` (any member): the question, why it is needed, the options with their
+  trade-offs, the recommendation, assumptions and evidence, as the runner sent them (redacted at ingest), and the
+  answers so far with their delivery state. A blocker raised by a runner older than this version shows only its id.
+- Owners, managers and admins answer a waiting (OPEN or ESCALATED) blocker with one of its options and/or text. The
+  answer is stored as a `decision.v1`, queued as a delivery and audited; the runner picks it up at its next pull, and
+  the blocker shows RESUMED once the runner reports that it took the item up again. A blocker cannot be answered twice
+  from the page.
 
 ## API
 

@@ -488,7 +488,7 @@ def test_valid_blocker_file_blocks_its_item_and_the_run_moves_on(project):
     assert f'*Status:* blocked ({b["id"]})' in (project / '.auto' / 'queue.md').read_text(encoding='utf-8')
     assert [(r['item'], r['result']) for r in runs(project)] == [('A1', 'blocked'), ('A2', 'done')]
     ev = [e for e in events(project) if e['type'] == 'blocker']
-    assert len(ev) == 1 and ev[0]['item'] == 'A1' and ev[0]['detail'] == {'action': 'raised', 'id': b['id']}
+    assert len(ev) == 1 and ev[0]['item'] == 'A1' and ev[0]['detail'] == {'action': 'raised', 'id': b['id'], 'blocker': ar.autoblock.content(b)}
     assert ar.autoevents.validate(ev[0]) == []
     assert not list((worktree(project) / '.auto' / 'blockers' / 'new').iterdir())       # taken, not left to be raised twice
     view = (project / '.auto' / 'QUESTIONS.md').read_text(encoding='utf-8')

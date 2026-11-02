@@ -88,7 +88,7 @@ Every run also appends to `.auto/events.jsonl` (schema `event.v1`, `bin/autoeven
 | `bin/queue.py`, `bin/autocfg.py`, `bin/autosafe.py` | Queue grammar and readiness (`*Depends on:*`), config loader (v1 keys + v2 sections), safety preflight. |
 | `bin/autoevents.py` | Append-only `.auto/events.jsonl`, schema `event.v1`. |
 | `bin/autoblock.py` | `blocker.v1` / `decision.v1`, lifecycle state machine, local store; `list [--state S]`, `answer ID --option/--text`, `view`. |
-| `bin/autodeliver.py` | `Transport` interface, `LocalTransport`, `HttpTransport` (central service), inbox writer, resume packets; `resume ID` rebuilds a packet. |
+| `bin/autodeliver.py` | `Transport` interface, `LocalTransport`, `HttpTransport` (central service), event push to central, inbox writer, resume packets; `resume ID` rebuilds a packet. |
 | `bin/autostale.py` | Artifact front-matter (`version`, `hash`, `built_from`, `status`), `scan`, `status`, `revalidate`; stale artifacts refuse a resume. |
 | `bin/autoeval.py` | Evaluation harness: `run --benchmark ID --runner fake`, `validate`, `validate-results FILE`. |
 | `bin/auto_init.py`, `bin/auto_report.py` | Init (preview/apply/remove) and the status/log reports. |
@@ -170,6 +170,15 @@ the runner pulls and acknowledges answers through `HttpTransport` instead of `Lo
 `central.project` (which must equal the token's project) instead of the folder name. The token is removed from the environment of the
 agent and the test command, added to the values redacted from events, and never written to a log, an event or a file. Without the
 section, or with `enabled` false, nothing changes: answers stay local. This is proven with a fake `send` only (no real service).
+
+With central on, the runner also sends its ledger there: before each pull and once more after `run_end`, `autodeliver.push()` posts the
+lines of `.auto/events.jsonl` it has not sent yet (only events of `central.project`, up to 100 a request), and records how far it got in
+`.auto/central-push.json`. A `raised` blocker event carries the blocker's content (`autoblock.content()`: question, options, recommendation,
+impacts, assumptions, evidence), so a person can answer it on the service's blocker pages. An outage or a refused token stops the push with a
+message and the next push starts again from the same line (the service drops duplicates by event id); an event the service will never take
+(400, 409, 413) is skipped and its id kept in the cursor file. A push never stops a run. While central is on, answer blockers on the service:
+`autoblock.py answer` saves a local decision the runner no longer reads. Proven through the real app's Flask test client (no socket), not over
+a real network.
 
 ## Evaluation harness (no real-model run yet)
 `eval/` holds a rubric, a smoke benchmark and seven benchmark briefs with held-out test descriptions kept out of the agent's view. A criterion passes
