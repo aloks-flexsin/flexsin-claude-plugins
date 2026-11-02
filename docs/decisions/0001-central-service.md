@@ -45,8 +45,8 @@ key, so SSO can be added later as another way to sign in to the same accounts.
 - Someone who is not a member of a project gets **404**, never 403, so the existence of a project is not revealed.
 - The last enabled admin cannot be disabled or demoted.
 - The runner uses per-project API tokens (`art_` prefix), shown once and stored only as their sha256, with the scopes
-  `ingest` and `pull`, revocable and rotatable. The runner reads its token only from `AUTO_RUNNER_CENTRAL_TOKEN`, never from
-  `.claude/auto.json`.
+  `ingest` and `pull`, revocable and rotatable. The runner reads its token only from the environment
+  (`AUTO_RUNNER_CENTRAL_TOKEN`, or the variable a project names in `central.token_env`), never from `.claude/auto.json`.
 
 ### Data kept and redacted
 - Kept: accounts (email, password hash, role, disabled flag, lockout counters), session hashes, projects and members, token

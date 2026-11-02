@@ -64,7 +64,7 @@ SECTIONS = {
     'review': {'model': 'text', 'max_plan_revisions': 'count', 'max_fix_rounds': 'count', 'max_budget_usd': 'amount'},
     'budgets': {'iteration_usd': 'amount', 'run_usd': 'amount', 'max_iterations': 'count'},
     'docs': {'adr_dir': 'text', 'required': 'texts', 'map': 'text', 'check': 'flag'},
-    'central': {'enabled': 'flag', 'url': 'text', 'project': 'text'},
+    'central': {'enabled': 'flag', 'url': 'text', 'project': 'text', 'token_env': 'text'},
     'locks': {'path': 'text', 'stale_after_minutes': 'count'},
     # A dict kind is a nested object (same rules, deeper path); a tuple kind is one of those words.
     'acceptance': {'browser': {'enabled': 'flag', 'base_url': 'text', 'command': 'text', 'headless': 'flag',

@@ -72,11 +72,12 @@
     },
     "central": {
       "type": "object", "additionalProperties": false,
-      "description": "Central service; never holds a token.",
+      "description": "Central service; never holds a token. token_env names the environment variable holding this project's token (default AUTO_RUNNER_CENTRAL_TOKEN).",
       "properties": {
         "enabled": {"$ref": "#/$defs/flag"},
         "url": {"$ref": "#/$defs/text"},
-        "project": {"$ref": "#/$defs/text"}
+        "project": {"$ref": "#/$defs/text"},
+        "token_env": {"$ref": "#/$defs/text"}
       }
     },
     "locks": {

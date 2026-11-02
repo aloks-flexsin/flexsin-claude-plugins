@@ -4,6 +4,12 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-02
+
+### Added
+- `central.token_env` in `.claude/auto.json` names the environment variable that holds a project's central token, so
+  several projects can each keep their own token set at once (default stays `AUTO_RUNNER_CENTRAL_TOKEN`).
+
 ## [0.2.1] - 2026-11-02
 
 ### Fixed

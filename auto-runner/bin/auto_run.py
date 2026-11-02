@@ -105,8 +105,10 @@ def git(cwd, *args, check=True):
 
 
 def child_env():
-    """This process's environment without the central token: the agent and the suite never see it."""
-    return {k: v for k, v in os.environ.items() if k != autosafe.CENTRAL_TOKEN_ENV}
+    """This process's environment without central tokens: the agent and the suite never see one, whatever variable holds it
+    (the default variable, a project's own `central.token_env`, or any value that is a token)."""
+    return {k: v for k, v in os.environ.items()
+            if k != autosafe.CENTRAL_TOKEN_ENV and not v.strip().startswith(autosafe.CENTRAL_TOKEN_PREFIX)}
 
 
 def run_claude(cmd, cwd):
@@ -393,11 +395,11 @@ def record(project, entry):
 
 def central_transport(cfg, env=None):
     """-> HttpTransport when `central.enabled` (url and project from the config, the token only from the environment variable
-    autosafe.CENTRAL_TOKEN_ENV), else None (answers stay local). Preflight has already refused a missing url, project or token."""
+    autosafe.token_env(cfg)), else None (answers stay local). Preflight has already refused a missing url, project or token."""
     if not autosafe.central_enabled(cfg):
         return None
     env = os.environ if env is None else env
-    return autodeliver.HttpTransport(cfg['central']['url'], env.get(autosafe.CENTRAL_TOKEN_ENV, '').strip())
+    return autodeliver.HttpTransport(cfg['central']['url'], env.get(autosafe.token_env(cfg), '').strip())
 
 
 def project_slug(project, cfg):
@@ -474,14 +476,14 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
 
     lock.acquire()
     slug = project_slug(project, cfg)
-    central_token = os.environ.get(autosafe.CENTRAL_TOKEN_ENV, '').strip() if autosafe.central_enabled(cfg) else ''
+    central_token = os.environ.get(autosafe.token_env(cfg), '').strip() if autosafe.central_enabled(cfg) else ''
 
     def generated():
         """Test credentials written for this run (project or worktree) and the central token; never written to a log, an event
         or a commit."""
         found = autobrowser.known_secrets(project, wt)
         if central_token:
-            found[autosafe.CENTRAL_TOKEN_ENV] = central_token
+            found[autosafe.token_env(cfg)] = central_token
         return found
 
     ledger = autoevents.Ledger(auto, stamp, slug, redact=lambda d: autobrowser.redact_obj(d, generated()))

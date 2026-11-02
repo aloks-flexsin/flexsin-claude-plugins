@@ -166,3 +166,62 @@ def test_central_outage_during_a_run_changes_nothing_and_is_retried(project, mon
     assert ar.run(project, max_iterations=1, claude=fake_agent()) == 0
     out = capsys.readouterr().out
     assert 'answer service unavailable' in out and TOKEN not in out
+
+
+# --- each project can name its own token variable (central.token_env) ---------------------------------------------------
+
+OWN = 'AUTO_RUNNER_TOKEN_ACME'
+OTHER_TOKEN = 'art_' + 'OtherProjectTok' * 3
+
+
+def test_token_env_defaults_to_the_shared_name_and_can_be_set_per_project():
+    assert ar.autosafe.token_env({'central': dict(CENTRAL)}) == ENV
+    assert ar.autosafe.token_env({'central': {**CENTRAL, 'token_env': f' {OWN} '}}) == OWN
+
+
+def test_the_transport_reads_the_projects_own_variable_not_the_shared_one():
+    cfg = {'central': {**CENTRAL, 'token_env': OWN}}
+    t = ar.central_transport(cfg, env={ENV: OTHER_TOKEN, OWN: TOKEN})
+    assert t._token == TOKEN
+
+
+def test_preflight_names_the_projects_own_variable():
+    cfg = {'central': {**CENTRAL, 'token_env': OWN}}
+    problems = ar.autosafe.central_problems(cfg, env={ENV: OTHER_TOKEN})
+    assert len(problems) == 1 and OWN in problems[0] and OTHER_TOKEN not in problems[0]
+    assert ar.autosafe.central_problems(cfg, env={OWN: TOKEN}) == []
+
+
+@pytest.mark.parametrize('value,named', [(TOKEN, 'holds a token'), ('MY-TOKEN', 'environment variable name'),
+                                         ('1ABC', 'environment variable name')])
+def test_a_token_or_a_bad_name_in_token_env_is_refused(value, named):
+    problems = ar.autosafe.central_problems({'central': {**CENTRAL, 'token_env': value}}, env={ENV: TOKEN})
+    assert len(problems) == 1 and named in problems[0] and TOKEN not in problems[0]
+
+
+def test_token_env_is_a_known_config_key(project):
+    set_cfg(project, central={**CENTRAL, 'token_env': OWN})
+    assert ar.autocfg.load(project)['central']['token_env'] == OWN
+
+
+def test_children_never_get_a_token_from_any_variable(monkeypatch):
+    monkeypatch.setenv(ENV, TOKEN)
+    monkeypatch.setenv(OWN, OTHER_TOKEN)
+    monkeypatch.setenv('AUTO_RUNNER_UNRELATED', 'keep me')
+    env = ar.child_env()
+    assert ENV not in env and OWN not in env and env['AUTO_RUNNER_UNRELATED'] == 'keep me'
+    assert not any(v.strip().startswith('art_') for v in env.values())
+
+
+def test_a_run_with_its_own_variable_uses_that_token_and_never_writes_it(project, monkeypatch, capsys):
+    monkeypatch.setenv(ENV, OTHER_TOKEN)                  # another project's token in the shared variable
+    monkeypatch.setenv(OWN, TOKEN)
+    central, seen = FakeCentral(), []
+    monkeypatch.setattr(ad, 'urllib_send', fake_send(central, seen))
+    set_cfg(project, central={**CENTRAL, 'token_env': OWN})
+    assert ar.run(project, max_iterations=1, claude=fake_agent()) == 0
+    assert seen and all(h['Authorization'] == f'Bearer {TOKEN}' for _, _, h in seen)
+    out = capsys.readouterr()
+    assert TOKEN not in out.out + out.err
+    for path, data in every_file_text(project, worktree(project)):
+        assert TOKEN.encode() not in data, path

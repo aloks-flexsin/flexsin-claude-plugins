@@ -19,7 +19,8 @@ loaded only in that case, so projects without browser acceptance are unaffected.
 `acceptance.browser.base_url` must pass `autobrowser.check_base_url` (local or test hosts only), else the run is refused naming it.
 
 When `central.enabled` is true, `central.url` and `central.project` must be set and the token must be in the environment variable
-CENTRAL_TOKEN_ENV (never in the config file), else the run is refused naming what is missing. The token's value is never printed.
+named by `central.token_env` (default CENTRAL_TOKEN_ENV; never the token itself in the config file), else the run is refused naming
+what is missing. A `token_env` that is not a variable name, or that holds a token, is refused. The token's value is never printed.
 """
 import importlib.util
 import json
@@ -37,6 +38,8 @@ MODEL_ALIASES = ('opus', 'sonnet', 'haiku', 'inherit')
 FULL_MODEL = re.compile(r'claude-[A-Za-z0-9._\[\]-]+')
 TAG_RULES = ['Bash(git tag:*)', 'Bash(git tag)']
 CENTRAL_TOKEN_ENV = 'AUTO_RUNNER_CENTRAL_TOKEN'
+CENTRAL_TOKEN_PREFIX = 'art_'
+ENV_NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,127}$')
 
 
 def changelog_enabled(cfg):
@@ -172,14 +175,28 @@ def central_enabled(cfg):
     return isinstance(c, dict) and c.get('enabled') is True
 
 
+def token_env(cfg):
+    """The name of the environment variable that holds this project's central token: `central.token_env`, else
+    CENTRAL_TOKEN_ENV. Each project can name its own, so several projects can each have their token set at once."""
+    c = cfg.get('central') if isinstance(cfg, dict) else None
+    name = (c.get('token_env') or '').strip() if isinstance(c, dict) else ''
+    return name or CENTRAL_TOKEN_ENV
+
+
 def central_problems(cfg, env=None):
     """One message naming what is missing when `central.enabled` is true; [] otherwise. `env` defaults to os.environ."""
     if not central_enabled(cfg):
         return []
     env = os.environ if env is None else env
+    name = token_env(cfg)
+    if name.startswith(CENTRAL_TOKEN_PREFIX):
+        return ['.claude/auto.json: "central.token_env" holds a token. Put the token in an environment variable and only that '
+                'variable\'s name in "central.token_env"; replace (rotate) the token, since it was written to a file.']
+    if not ENV_NAME.match(name):
+        return ['.claude/auto.json: "central.token_env" must be an environment variable name (letters, digits and _).']
     missing = [f'"central.{k}"' for k in ('url', 'project') if not (cfg['central'].get(k) or '').strip()]
-    if not (env.get(CENTRAL_TOKEN_ENV) or '').strip():
-        missing.append(f'the environment variable {CENTRAL_TOKEN_ENV} (the token never goes in .claude/auto.json)')
+    if not (env.get(name) or '').strip():
+        missing.append(f'the environment variable {name} (the token never goes in .claude/auto.json)')
     if not missing:
         return []
     return ['.claude/auto.json sets "central.enabled" but the central service cannot be used without '

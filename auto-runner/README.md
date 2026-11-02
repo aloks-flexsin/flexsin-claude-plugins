@@ -61,7 +61,7 @@ Schema v2 sections (objects, every nested key optional, unknown nested keys and 
 | `review` | `model`, `max_plan_revisions`, `max_fix_rounds`, `max_budget_usd` |
 | `budgets` | `iteration_usd`, `run_usd`, `max_iterations` |
 | `docs` | `adr_dir`, `required` (list of files), `map` (doc map path, default `docs/doc-map.json`), `check` (docs gate, default on) |
-| `central` | `enabled`, `url`, `project` (never a token) |
+| `central` | `enabled`, `url`, `project`, `token_env` (the name of the variable holding the token; never a token) |
 | `locks` | `path`, `stale_after_minutes` |
 | `acceptance` | `browser`: `enabled`, `base_url`, `command`, `headless`, `exploratory`, `accounts`: `method` (`seed_command` or `signup`), `seed_command` |
 | `changelog` | `enabled` (default off), `file` (default `CHANGELOG.md`), `versioning` (only `semver`) |
@@ -75,8 +75,8 @@ The runner refuses to start unless:
 - a `test_command` exists, or `check_only` is true;
 - the repository has at least one commit;
 - when `central.enabled` is true: `central.url` and `central.project` are set and the token is in the environment variable
-  `AUTO_RUNNER_CENTRAL_TOKEN` (the message names what is missing; the token is never read from `.claude/auto.json`, where a
-  `central.token` key is refused as unknown).
+  named by `central.token_env` (default `AUTO_RUNNER_CENTRAL_TOKEN`; the message names what is missing; the token is never read
+  from `.claude/auto.json`, where a `central.token` key is refused as unknown, and a `token_env` that holds a token is refused).
 
 It also stops on a red suite, a STOP file, uncommitted leftovers, or two iterations without progress. Cost per iteration is recorded in `.auto/runs.jsonl` only when the CLI reports it; otherwise it is `null`.
 Every run also appends to `.auto/events.jsonl` (schema `event.v1`, `bin/autoevents.py`): run start and end (with exit code and reason), each item state change (from, to) and each independent test result, one line per event, never rewritten. `runs.jsonl` keeps its old shape.
@@ -166,9 +166,10 @@ hashes, last evidence, failed attempts, ledger excerpt). Outages change nothing 
 it through the real app's Flask test client; it has not run over a real network.
 
 With `"central": {"enabled": true, "url": "...", "project": "<slug>"}` in `.claude/auto.json` and `AUTO_RUNNER_CENTRAL_TOKEN` set,
-the runner pulls and acknowledges answers through `HttpTransport` instead of `LocalTransport`, and events, blockers and pulls carry
+or `"token_env": "<VARIABLE>"` added and that variable set (one variable per project, so several projects can each keep their own
+token set at the same time), the runner pulls and acknowledges answers through `HttpTransport` instead of `LocalTransport`, and events, blockers and pulls carry
 `central.project` (which must equal the token's project) instead of the folder name. The token is removed from the environment of the
-agent and the test command, added to the values redacted from events, and never written to a log, an event or a file. Without the
+agent and the test command (every variable whose value is a token, under any name), added to the values redacted from events, and never written to a log, an event or a file. Without the
 section, or with `enabled` false, nothing changes: answers stay local. This is proven with a fake `send` only (no real service).
 
 With central on, the runner also sends its ledger there: before each pull and once more after `run_end`, `autodeliver.push()` posts the

@@ -1,6 +1,6 @@
 {
   "name": "auto-runner",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Plan a task, queue it, and let Claude work through the queue unattended in an isolated git worktree, one tested commit per item.",
   "author": { "name": "Flexsin" },
   "license": "UNLICENSED"

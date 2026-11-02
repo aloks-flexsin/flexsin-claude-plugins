@@ -115,7 +115,9 @@ None of these steps has been tried. Check each result before going on.
    ```json
    "central": {"enabled": true, "url": "https://<PUBLIC_URL host>", "project": "<slug>"}
    ```
-   and set `AUTO_RUNNER_CENTRAL_TOKEN` in the environment the runner starts from. Never put the token in `auto.json`.
+   and set `AUTO_RUNNER_CENTRAL_TOKEN` in the environment the runner starts from. With more than one project, give each its
+   own variable: add `"token_env": "AUTO_RUNNER_TOKEN_<NAME>"` to its `central` section and set that variable instead.
+   Never put the token in `auto.json`.
 6. **Check.** Start a run; its preflight refuses with a reason if the url, project or token is missing.
 
 Known limits: see "Consequences and known limits" in `docs/decisions/0001-central-service.md`.
