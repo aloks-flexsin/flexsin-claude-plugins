@@ -14,6 +14,11 @@
       "name": "auto-runner commands",
       "paths": ["auto-runner/commands/*.md"],
       "docs": ["auto-runner/README.md"]
+    },
+    {
+      "name": "central service",
+      "paths": ["auto-runner/central/**"],
+      "docs": ["auto-runner/central/README.md"]
     }
   ]
 }
