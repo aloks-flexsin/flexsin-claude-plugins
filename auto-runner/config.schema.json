@@ -90,6 +90,15 @@
         "remote": {"$ref": "#/$defs/text"}
       }
     },
+    "principles": {
+      "type": "object", "additionalProperties": false,
+      "description": "Engineering principles for planning and every iteration. enabled (default true); file (relative to the project; default the plugin's docs/engineering-principles.md); require_slices (default true: every new queue item needs a *Slice:* line).",
+      "properties": {
+        "enabled": {"$ref": "#/$defs/flag"},
+        "file": {"$ref": "#/$defs/text"},
+        "require_slices": {"$ref": "#/$defs/flag"}
+      }
+    },
     "safety": {
       "type": "object", "additionalProperties": false,
       "description": "allow_env_read: true lets the agent read .env files (init skips the Read(./.env) rules and preflight stops demanding them). Default false.",

@@ -28,6 +28,8 @@ config with only the old keys loads exactly as before. Read them with `section(c
     publish  push, pull_request, remote (default origin): after a run that ends cleanly the runner (not the agent) pushes its
              own run branch, never the base or a `lanes.protected` branch and never with force, and may open a pull
              request with `gh`; merging stays with a person (auto_run.publish, autosafe.publish_problems)
+    principles  enabled (default true), file (default: the plugin's docs/engineering-principles.md), require_slices
+             (default true while enabled: every new queue item needs a `*Slice:*` line). Read them with `principles(cfg)`.
     safety   allow_env_read (true drops the `.env` read rules from what init writes and preflight demands; default false)
     env_files (top level) gitignored files such as `.env` copied into the worktree at the start of a run, so tests and the
              app use the real configuration; their values are redacted from logs and events (autosafe.env_file_problems)
@@ -80,6 +82,7 @@ SECTIONS = {
     'changelog': {'enabled': 'flag', 'file': 'text', 'versioning': ('semver',)},
     'safety': {'allow_env_read': 'flag'},
     'publish': {'push': 'flag', 'pull_request': 'flag', 'remote': 'text'},
+    'principles': {'enabled': 'flag', 'file': 'text', 'require_slices': 'flag'},
 }
 # Values a section means when the file leaves a key out (section() still returns only what the file sets).
 CHANGELOG_DEFAULTS = {'enabled': False, 'file': 'CHANGELOG.md', 'versioning': 'semver'}
@@ -174,6 +177,27 @@ def section(cfg, name):
 def changelog(cfg):
     """The changelog section with its defaults filled in (off, CHANGELOG.md, semver)."""
     return {**CHANGELOG_DEFAULTS, **section(cfg, 'changelog')}
+
+
+PRINCIPLES_FILE = Path(__file__).resolve().parent.parent / 'docs' / 'engineering-principles.md'
+PRINCIPLES_MAX = 12000      # characters: the text goes into every iteration's prompt
+
+
+def principles(cfg):
+    """{'enabled', 'file', 'require_slices'} with defaults: on, the plugin's own file (an absolute Path), slices required.
+    `file` from the config is relative to the project."""
+    s = section(cfg, 'principles')
+    enabled = s.get('enabled', True)
+    return {'enabled': enabled, 'file': s.get('file') or '',
+            'require_slices': enabled and s.get('require_slices', True)}
+
+
+def principles_path(project_dir, cfg):
+    """The principles file to use (None when off)."""
+    p = principles(cfg)
+    if not p['enabled']:
+        return None
+    return Path(project_dir) / p['file'] if p['file'] else PRINCIPLES_FILE
 
 
 def docs_map(cfg):

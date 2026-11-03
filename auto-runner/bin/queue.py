@@ -25,6 +25,10 @@ order, comma-separated names). It opts the item into the runner's browser stage 
 An item may carry one kind line, `  *Kind:* feature` (feature | fix | breaking | internal, any case), the changelog heading its
 change goes under. No line reads as `internal`; `validate(..., require_kind=True)` (used when the changelog is on) asks for one.
 
+An item may carry one slice line, `  *Slice:* 2 Customers export orders as CSV` (a number from 1, then the slice's name): the
+vertical slice it belongs to (docs/engineering-principles.md). `validate(..., require_slice=True)` asks every new item for
+one, and for the slices of one request to come in order (all of slice 1, then slice 2, ...).
+
 Note: this file is called queue.py because the plugin layout asks for it. Never put its folder on sys.path ahead of the standard
 library (it would shadow `import queue`); load it by path, as scripts/auto_queue.py and the tests do.
 """
@@ -45,6 +49,8 @@ BROWSER = re.compile(r'^\s*\*Browser:\*\s*(.*)$', re.I)
 BROWSER_PART = re.compile(r'^\s*(journeys|roles)\s*:\s*(.*)$', re.I)
 KIND = re.compile(r'^\s*\*Kind:\*\s*(.*)$', re.I)
 KINDS = ('feature', 'fix', 'breaking', 'internal')
+SLICE = re.compile(r'^\s*\*Slice:\*\s*(.*)$', re.I)
+SLICE_VALUE = re.compile(r'^(\d+)\b\s*[-:.)]?\s*(.*)$')
 
 
 def open_count(queue_text):
@@ -183,14 +189,28 @@ def set_status(queue_text, item_id, state, detail=''):
     return '\n'.join(out).rstrip('\n') + '\n'
 
 
-def validate(queue_text, items_text, require_kind=False):
+def parse_slice(block):
+    """-> (number, name) from the item's `*Slice:*` line, or None when it has none. A line without a number raises ValueError."""
+    for line in block.splitlines():
+        m = SLICE.match(line)
+        if m:
+            v = SLICE_VALUE.match(m.group(1).strip())
+            if not v or int(v.group(1)) < 1:
+                raise ValueError(f'*Slice:* "{m.group(1).strip()}" must start with the slice number (1, 2, ...), then its name')
+            return int(v.group(1)), v.group(2).strip()
+    return None
+
+
+def validate(queue_text, items_text, require_kind=False, require_slice=False):
     """-> (items, errors). Errors are plain sentences for the person who wrote the items.
-    `require_kind` (the changelog is on) makes a missing `*Kind:*` line an error; off, old items without one stay valid."""
+    `require_kind` (the changelog is on) makes a missing `*Kind:*` line an error; off, old items without one stay valid.
+    `require_slice` (principles on) makes a missing `*Slice:*` line an error, and slices must not go backwards."""
     existing = {i for i, _, _ in parse_items(queue_text)}
     items, errors = parse_items(items_text), []
     if not items:
         return items, ['No items found. Each one starts with: - [ ] **A1 Short title.** what to build']
     seen = set()
+    last_slice = 0
     for item_id, checked, block in items:
         if checked:
             errors.append(f'{item_id}: new items must start open ([ ]), not ticked')
@@ -209,6 +229,18 @@ def validate(queue_text, items_text, require_kind=False):
             errors.append(f'{item_id}: {e}')
         if require_kind and not has_kind(block):
             errors.append(f'{item_id}: add a *Kind:* line ({", ".join(KINDS)}) so the changelog knows where the change goes')
+        try:
+            sl = parse_slice(block)
+        except ValueError as e:
+            errors.append(f'{item_id}: {e}')
+            sl = ()
+        if require_slice and sl is None:
+            errors.append(f'{item_id}: add a *Slice:* line (for example "*Slice:* 1 Sign up with email"): plan the work as '
+                          'vertical slices, each one usable on its own')
+        elif sl:
+            if sl[0] < last_slice:
+                errors.append(f'{item_id}: slice {sl[0]} comes after slice {last_slice}; list all of one slice\'s items before the next')
+            last_slice = max(last_slice, sl[0])
         if len(block) < 80:
             errors.append(f'{item_id}: too short to work from; say what to build, where, and what must not change')
     return items, errors

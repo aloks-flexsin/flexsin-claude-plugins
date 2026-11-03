@@ -89,6 +89,7 @@ Schema v2 sections (objects, every nested key optional, unknown nested keys and 
 | `docs` | `adr_dir`, `required` (list of files), `map` (doc map path, default `docs/doc-map.json`), `check` (docs gate, default on) |
 | `central` | `enabled`, `url`, `project`, `token_env` (the name of the variable holding the token; never a token) |
 | `publish` | `push`, `pull_request` (flags, default off), `remote` (default `origin`): see "Publishing a run" |
+| `principles` | `enabled` (default on), `file` (default the plugin's `docs/engineering-principles.md`), `require_slices` (default on): see "Engineering principles" |
 | `safety` | `allow_env_read` (`true`: the agent may read `.env` files; init leaves out the `Read(./.env)` rules and preflight stops demanding them. Default off) |
 | `locks` | `path`, `stale_after_minutes` |
 | `acceptance` | `browser`: `enabled`, `base_url`, `command`, `headless`, `exploratory`, `accounts`: `method` (`seed_command` or `signup`), `seed_command` |
@@ -96,6 +97,22 @@ Schema v2 sections (objects, every nested key optional, unknown nested keys and 
 
 Besides `models.implementer`, three sections act: `acceptance.browser` (the browser stage below), `changelog` (the changelog step) and
 `docs.map`/`docs.check` (the docs gate). Each does nothing when the file does not turn it on.
+
+## Engineering principles (tested with a fake agent; no real model has been given them yet)
+`docs/engineering-principles.md` ships with the plugin and applies to every project unless it says otherwise:
+**build in vertical slices** (each slice runs end to end and ends usable: it could be pushed, deployed and used) and
+**use what exists before building** (the project's own components and UI library, such as shadcn/ui, then maintained,
+permissively licensed open-source packages; building it yourself needs a reason in the commit).
+
+- `/auto-runner:auto` reads the file while planning, lists the slices first and gives every queue item a `*Slice:*` line
+  (`  *Slice:* 1 Sign up with email`).
+- The runner refuses a request whose items have no `*Slice:*` line, or whose slices go backwards (`queue.validate(...,
+  require_slice=True)`). Items already in a queue are not checked again.
+- Every iteration's prompt carries the file's text in a `<principles>` block (`auto_run.principles_text`, at most 12,000
+  characters). The item and the project's rules files win where they differ.
+- `"principles": {"file": "docs/our-principles.md"}` uses the project's own file instead (preflight refuses one that is not
+  a file inside the project). `"require_slices": false` keeps the text but drops the `*Slice:*` check, and
+  `"enabled": false` turns both off: the prompt is then exactly as before.
 
 ## Publishing a run (tested with a local bare remote and a fake `gh`; never against GitHub)
 The agent can never push (the deny rules stay). With `"publish": {"push": true}` the runner itself, a plain Python step with
@@ -128,7 +145,7 @@ Every run also appends to `.auto/events.jsonl` (schema `event.v1`, `bin/autoeven
 | File | What it does |
 |---|---|
 | `bin/auto_run.py` | The runner (worktree, one ready item per iteration, independent test run, lock, STOP, events, blockers, delivery, `publish` of its own branch). |
-| `bin/queue.py`, `bin/autocfg.py`, `bin/autosafe.py` | Queue grammar and readiness (`*Depends on:*`), config loader (v1 keys + v2 sections), safety preflight. |
+| `bin/queue.py`, `bin/autocfg.py`, `bin/autosafe.py` | Queue grammar and readiness (`*Depends on:*`, `*Slice:*`), config loader (v1 keys + v2 sections, `principles()`), safety preflight. |
 | `bin/autoevents.py` | Append-only `.auto/events.jsonl`, schema `event.v1` (`RUN_TYPES` such as `publish` carry no item). |
 | `bin/autoblock.py` | `blocker.v1` / `decision.v1`, lifecycle state machine, local store; `list [--state S]`, `answer ID --option/--text`, `view`. |
 | `bin/autodeliver.py` | `Transport` interface, `LocalTransport`, `HttpTransport` (central service; `project_info()` reads `GET /api/v1/project`), event push to central, inbox writer, resume packets; `resume ID` rebuilds a packet. |

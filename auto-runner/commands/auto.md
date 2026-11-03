@@ -10,12 +10,26 @@ Follow these steps in order. Do not skip the plan, and do not start the run befo
 ## 1. Plan first
 Switch to plan mode now (the EnterPlanMode tool; if it is only listed as deferred, load it with ToolSearch first). In plan mode, read the project's rules files
 (the `rules_files` key of `.claude/auto.json`, usually `CLAUDE.md`) and the queue file (the `queue_file` key, default `.auto/queue.md`). Note the IDs already used there and
-in `${CLAUDE_PROJECT_DIR}/.auto/pending/`, and the "Needs a person" list. Then explore the code the task touches. If the task is trivial (about ten minutes of work),
+in `${CLAUDE_PROJECT_DIR}/.auto/pending/`, and the "Needs a person" list. Read the engineering principles: the file named by `principles.file`
+in `.claude/auto.json` (relative to the project), else `${CLAUDE_PLUGIN_ROOT}/docs/engineering-principles.md`; skip this only when
+`principles.enabled` is false. Then explore the code the task touches, including what it already has to build on (its components, UI
+library, helpers and packages), so the plan reuses them instead of writing new code. If the task is trivial (about ten minutes of work),
 say so in the plan and propose doing it directly instead of queueing it.
 
-Write the plan in the usual way (context, approach, files, risks, how it will be verified), and end it with a section **Queue items** that contains the items exactly as they will go into the queue file:
+Write the plan in the usual way (context, approach, files, risks, how it will be verified). Under the principles:
+
+- **Vertical slices.** List the slices first: Slice 1, Slice 2, ... Each one is a thin end-to-end piece (UI, API, logic, data as needed)
+  that ends in something a person could push, deploy and use. Slice 1 is the smallest useful version. Say for each slice what a
+  user can do once it is done. Never plan by layer ("all tables, then all endpoints, then all screens").
+- **Libraries first.** Name the existing components and the open-source packages (with their licences) the work will use, and say
+  why for anything you plan to build yourself.
+
+End the plan with a section **Queue items** that contains the items exactly as they will go into the queue file:
 
 - One item per iteration of work: small enough to finish, test and commit in one sitting. Split anything bigger; a split item must not depend on a later one.
+- Each item has an indented `*Slice:*` line, the slice number then its name (`  *Slice:* 1 Sign up with email`). All items of slice 1 come
+  before slice 2's, and so on. The last item of each slice is the one that makes it usable, and its *Acceptance:* line proves a behaviour
+  a user can see. While `principles.require_slices` is on (the default), the runner refuses items without a `*Slice:*` line.
 - Each item is `- [ ] **ID Title.** what to build, where, and what must not change` followed by an indented `*Acceptance:*` line that says what proves it is done (a named test or a command), not "works".
 - When `.claude/auto.json` has `"changelog": {"enabled": true}`, give each item an indented `*Kind:*` line: `feature`, `fix`, `breaking` or `internal` (the changelog heading its change goes under; the runner refuses items without one while the changelog is on).
 - IDs: a letter plus the next free number not used in the queue file and not used by any waiting request. Use one new letter for the whole task.

@@ -4,6 +4,15 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-03
+
+### Added
+- Engineering principles ship with the plugin (`docs/engineering-principles.md`): build in vertical slices that are each
+  usable on their own, and use the project's components and established open-source libraries before building from
+  scratch. Planning follows them and every iteration's prompt carries them. A project can use its own file or turn them off.
+- Queue items take a `*Slice:*` line; new requests without one are refused while the principles are on.
+- Decision record `docs/decisions/0005-engineering-principles.md`.
+
 ## [0.5.0] - 2026-11-02
 
 ### Added

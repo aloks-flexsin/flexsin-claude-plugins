@@ -317,6 +317,18 @@ def publish_problems(project, cfg, base):
     return problems
 
 
+def principles_problems(project, cfg):
+    """One message when `principles.file` is set but is not a readable file inside the project."""
+    s = cfg.get('principles') if isinstance(cfg, dict) else None
+    rel = (s.get('file') or '').strip() if isinstance(s, dict) and s.get('enabled', True) else ''
+    if not rel:
+        return []
+    p = Path(rel)
+    if p.is_absolute() or p.drive or p.root or '..' in p.parts or not (Path(project) / p).is_file():
+        return [f'.claude/auto.json: "principles.file" ("{rel}") must be a file inside the project.']
+    return []
+
+
 def preflight(project, cfg, base, doctor=None):
     """-> list of problems; empty means the runner may start. `doctor(project) -> results` is injectable for tests."""
     problems = model_problems(cfg)
@@ -324,6 +336,7 @@ def preflight(project, cfg, base, doctor=None):
     problems += central_problems(cfg)
     problems += env_file_problems(project, cfg)
     problems += publish_problems(project, cfg, base)
+    problems += principles_problems(project, cfg)
     problems += capability_problems(project, cfg, doctor)
     if not has_commit(project):
         problems.append('The repository has no commit yet (the worktree is made from a commit). Commit once, then run again.')

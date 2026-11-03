@@ -212,7 +212,7 @@ def test_enqueue_adds_between_iterations_and_rejects_bad_requests(project):
     good.mkdir(parents=True)
     (good / 'items.md').write_text(
         '- [ ] **A3 Third thing.** Build the third thing in a small file, with enough words to pass any length rule we might have.\n'
-        '  *Acceptance:* the file exists.\n', encoding='utf-8')
+        '  *Acceptance:* the file exists.\n  *Slice:* 1 The third thing\n', encoding='utf-8')
     bad = project / '.auto' / 'pending' / 'bad'
     bad.mkdir()
     (bad / 'items.md').write_text('- [ ] **A1 Duplicate.** short\n', encoding='utf-8')
@@ -237,7 +237,7 @@ def test_enqueue_waits_while_a_run_holds_the_lock(project):
     good.mkdir(parents=True)
     (good / 'items.md').write_text(
         '- [ ] **A3 Third thing.** Build the third thing in a small file, with enough words to pass any length rule we might have.\n'
-        '  *Acceptance:* the file exists.\n', encoding='utf-8')
+        '  *Acceptance:* the file exists.\n  *Slice:* 1 The third thing\n', encoding='utf-8')
     (project / '.auto' / 'lock').write_text('1', encoding='utf-8')
     assert ar.run(project, enqueue='more', claude=fake_agent()) == 0
     assert good.exists() and not worktree(project).exists()
@@ -604,7 +604,7 @@ def test_enqueue_requires_a_kind_only_with_the_changelog_on(project):
     req = project / '.auto' / 'pending' / 'k' / 'items.md'
     req.parent.mkdir(parents=True)
     req.write_text('- [ ] **Z1 Kindless.** Build a small thing in the app, in enough words to pass the length check here.\n'
-                   '  *Acceptance:* a test.\n', encoding='utf-8')
+                   '  *Acceptance:* a test.\n  *Slice:* 1 A small thing\n', encoding='utf-8')
     set_cfg(project, changelog={'enabled': True})
     assert ar.run(project, enqueue='k', dry_run=True, claude=fake_agent()) == 1
     req.write_text(req.read_text(encoding='utf-8') + '  *Kind:* feature\n', encoding='utf-8')
