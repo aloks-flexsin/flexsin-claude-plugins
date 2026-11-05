@@ -146,7 +146,7 @@ COMMANDS = sorted((PLUGIN / 'commands').glob('*.md'))
 
 
 def test_expected_commands_exist():
-    assert {c.name for c in COMMANDS} == {'auto.md', 'init.md', 'status.md', 'log.md', 'resume.md', 'setup.md', 'doctor.md', 'join.md'}
+    assert {c.name for c in COMMANDS} == {'auto.md', 'init.md', 'status.md', 'log.md', 'resume.md', 'setup.md', 'doctor.md', 'join.md', 'update.md'}
 
 
 @pytest.mark.parametrize('cmd', COMMANDS, ids=lambda c: c.name)

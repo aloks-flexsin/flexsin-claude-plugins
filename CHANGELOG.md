@@ -4,6 +4,12 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-05
+
+### Added
+- `/auto-runner:update`: checks the marketplace for a newer auto-runner, shows the changelog entries since the installed
+  version and, after you agree, installs it; restart Claude to load it.
+
 ## [0.6.0] - 2026-11-03
 
 ### Added

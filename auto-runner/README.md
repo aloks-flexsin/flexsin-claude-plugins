@@ -26,6 +26,8 @@ Check the manifest with `claude plugin validate ./auto-runner` (needs the `claud
    It connects the project to the central service unless you choose `--local` (see "Central-first setup").
    `/auto-runner:join <slug>` clones a project registered on the central service and then runs init there.
 2. `/auto-runner:auto <task>` plans first. When you accept the plan it writes the request to `.auto/pending/<slug>/items.md` and starts the runner.
+   `/auto-runner:update` checks the marketplace for a newer auto-runner, shows the changelog entries in between and, after you
+   agree, installs it (`bin/autoupdate.py check` / `apply`, both through the `claude plugin` command line); restart Claude to load it.
 3. `/auto-runner:status` and `/auto-runner:log` are read-only reports (counts by state, the running item, blocked questions, recorded spend; the last iterations and log tails; `--full N` prints one whole log).
 
 The runner can also be started by hand: `python bin/auto_run.py [--project DIR] [--max-iterations 8] [--max-budget-usd 5] [--enqueue SLUG] [--dry-run] [--allow-dirty]`.
@@ -154,6 +156,7 @@ Every run also appends to `.auto/events.jsonl` (schema `event.v1`, `bin/autoeven
 | `bin/auto_init.py`, `bin/auto_report.py` | Init (preview/apply/remove, the `central` section and its repository check) and the status/log reports. |
 | `bin/autocentral.py` | What init and join share: `default_token_env`, `repo_key` / `clean_url`, `remote_url`, `lookup` (`GET /api/v1/project`), `check`, `token_steps`. |
 | `bin/auto_join.py` | Join: repository URL from the central service, `git clone` into a folder you confirm, then init's preview. |
+| `bin/autoupdate.py` | Update: `check` refreshes the marketplace and lists the changelog between the installed and the available version; `apply` runs `claude plugin update`. |
 | `bin/autosetup.py` | Capability registry and `doctor` (read-only), `plan` / `apply` / `remove` for setup. |
 | `bin/autobrowser.py` | Host policy (`check_base_url`), throwaway accounts, `redact` / `scan_diff`, `browser.v1` results and the Layer 1 stage, `finding.v1` and the Layer 2 explorer. |
 | `bin/automail.py` | Stdlib SMTP sink bound to 127.0.0.1; messages stored as JSON under `.auto/run/mail/`. |
