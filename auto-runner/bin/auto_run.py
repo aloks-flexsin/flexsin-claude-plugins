@@ -98,7 +98,7 @@ def say(msg):
 
 
 def git(cwd, *args, check=True):
-    r = subprocess.run(['git', '-C', str(cwd), *args], capture_output=True, text=True)
+    r = subprocess.run(['git', '-C', str(cwd), *args], capture_output=True, text=True, encoding='utf-8', errors='replace')
     if check and r.returncode != 0:
         raise RunnerError(f'git {" ".join(args)} failed: {r.stderr.strip() or r.stdout.strip()}')
     return r.stdout.strip()
@@ -106,20 +106,23 @@ def git(cwd, *args, check=True):
 
 def child_env():
     """This process's environment without central tokens: the agent and the suite never see one, whatever variable holds it
-    (the default variable, a project's own `central.token_env`, or any value that is a token)."""
-    return {k: v for k, v in os.environ.items()
-            if k != autosafe.CENTRAL_TOKEN_ENV and not v.strip().startswith(autosafe.CENTRAL_TOKEN_PREFIX)}
+    (the default variable, a project's own `central.token_env`, or any value that is a token). Python children write UTF-8
+    to the pipe (PYTHONIOENCODING, unless set already), which is how the runner reads every child's output."""
+    env = {k: v for k, v in os.environ.items()
+           if k != autosafe.CENTRAL_TOKEN_ENV and not v.strip().startswith(autosafe.CENTRAL_TOKEN_PREFIX)}
+    env.setdefault('PYTHONIOENCODING', 'utf-8')
+    return env
 
 
 def run_claude(cmd, cwd):
     """-> (returncode, output). The only place the agent is started."""
-    r = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True, env=child_env())
+    r = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True, encoding='utf-8', errors='replace', env=child_env())
     return r.returncode, (r.stdout or '') + (r.stderr or '')
 
 
 def run_tests(command, cwd):
     """-> (returncode, output) of the independent suite run."""
-    r = subprocess.run(command, cwd=str(cwd), shell=True, capture_output=True, text=True, env=child_env())
+    r = subprocess.run(command, cwd=str(cwd), shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace', env=child_env())
     return r.returncode, (r.stdout or '') + (r.stderr or '')
 
 
@@ -246,7 +249,7 @@ def copy_env_files(project, wt, env_files):
 def run_pr(argv, cwd):
     """The default `pr_runner`: one `gh` call -> (exit code, output). No `gh` on PATH is exit 127."""
     try:
-        r = subprocess.run(argv, cwd=str(cwd), capture_output=True, text=True, env=child_env())
+        r = subprocess.run(argv, cwd=str(cwd), capture_output=True, text=True, encoding='utf-8', errors='replace', env=child_env())
     except FileNotFoundError:
         return 127, 'gh is not installed or not on PATH'
     return r.returncode, (r.stdout or '') + (r.stderr or '')
@@ -270,7 +273,7 @@ def publish(project, wt, cfg, base, branch, pr_runner=run_pr):
         return out
     env = {**child_env(), 'GIT_TERMINAL_PROMPT': '0'}           # unattended: fail instead of waiting for a password
     r = subprocess.run(['git', '-C', str(wt), 'push', '--porcelain', s['remote'], f'refs/heads/{branch}:refs/heads/{branch}'],
-                       capture_output=True, text=True, env=env)
+                       capture_output=True, text=True, encoding='utf-8', errors='replace', env=env)
     if r.returncode != 0:
         out['error'] = 'git push failed: ' + ((r.stderr or r.stdout).strip().splitlines() or ['no output'])[-1][:300]
         return out

@@ -144,6 +144,10 @@ It also stops on a red suite, a STOP file, uncommitted leftovers, or two iterati
 Every run also appends to `.auto/events.jsonl` (schema `event.v1`, `bin/autoevents.py`): run start and end (with exit code and reason), each item state change (from, to) and each independent test result, one line per event, never rewritten. `runs.jsonl` keeps its old shape.
 
 ## Modules (all stdlib, all unverified beyond fakes)
+Every child process (the agent, the test command, git) is read as UTF-8, with an undecodable byte replaced rather than
+fatal, and Python children are asked to write UTF-8 (`PYTHONIOENCODING`, unless the project sets it), so non-English text
+such as `₹` never breaks a run on Windows.
+
 | File | What it does |
 |---|---|
 | `bin/auto_run.py` | The runner (worktree, one ready item per iteration, independent test run, lock, STOP, events, blockers, delivery, `publish` of its own branch). |

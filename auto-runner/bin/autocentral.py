@@ -84,7 +84,7 @@ def clean_url(url):
 
 
 def remote_url(project_dir):
-    r = subprocess.run(['git', '-C', str(project_dir), 'remote', 'get-url', 'origin'], capture_output=True, text=True)
+    r = subprocess.run(['git', '-C', str(project_dir), 'remote', 'get-url', 'origin'], capture_output=True, text=True, encoding='utf-8', errors='replace')
     return (r.stdout.strip() or None) if r.returncode == 0 else None
 
 

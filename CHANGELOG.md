@@ -4,6 +4,13 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-05
+
+### Fixed
+- On Windows the runner read the agent's, the test command's and git's output in the ANSI code page, so UTF-8 text such
+  as `₹` or `ā` raised `UnicodeDecodeError` and the iteration lost its cost figure. Every child's output is now read as
+  UTF-8 (an invalid byte is replaced, never fatal) and Python children are asked to write UTF-8.
+
 ## [0.7.0] - 2026-11-05
 
 ### Added

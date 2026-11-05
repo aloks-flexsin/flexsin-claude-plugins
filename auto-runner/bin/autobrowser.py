@@ -121,14 +121,14 @@ class ProvisionError(RuntimeError):
 
 def _git_ignored(project, rel):
     try:
-        r = subprocess.run(['git', '-C', str(project), 'check-ignore', '-q', '--no-index', rel], capture_output=True, text=True)
+        r = subprocess.run(['git', '-C', str(project), 'check-ignore', '-q', '--no-index', rel], capture_output=True, text=True, encoding='utf-8', errors='replace')
     except OSError:
         return False
     return r.returncode == 0
 
 
 def _run_seed(command, cwd, env):
-    r = subprocess.run(command, cwd=str(cwd), shell=True, capture_output=True, text=True, env={**os.environ, **env})
+    r = subprocess.run(command, cwd=str(cwd), shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace', env={**os.environ, **env})
     return r.returncode, (r.stdout or '') + (r.stderr or '')
 
 
@@ -555,14 +555,14 @@ def explore_prompt(item, base_url):
 
 def _git_status(wt):
     try:
-        r = subprocess.run(['git', '-C', str(wt), 'status', '--porcelain'], capture_output=True, text=True)
+        r = subprocess.run(['git', '-C', str(wt), 'status', '--porcelain'], capture_output=True, text=True, encoding='utf-8', errors='replace')
     except OSError:
         return None
     return r.stdout if r.returncode == 0 else None
 
 
 def _run_claude(cmd, cwd):
-    r = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True)
+    r = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True, encoding='utf-8', errors='replace')
     return r.returncode, (r.stdout or '') + (r.stderr or '')
 
 

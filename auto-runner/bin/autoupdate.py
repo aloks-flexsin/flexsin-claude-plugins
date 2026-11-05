@@ -78,7 +78,7 @@ def claude(args, run=subprocess.run, which=shutil.which):
     if not exe:
         raise UpdateError('the `claude` command was not found on PATH. Run by hand: ' + ' ; '.join(BY_HAND))
     try:
-        r = run([exe, *args, '--json'], capture_output=True, text=True, timeout=TIMEOUT)
+        r = run([exe, *args, '--json'], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=TIMEOUT)
     except (OSError, subprocess.TimeoutExpired) as e:
         raise UpdateError(f'`claude {" ".join(args)}` did not finish ({type(e).__name__}). Run by hand: ' + ' ; '.join(BY_HAND))
     lines = [ln for ln in (r.stdout or '').splitlines() if ln.strip()]

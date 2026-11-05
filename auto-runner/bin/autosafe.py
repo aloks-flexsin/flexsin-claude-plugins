@@ -138,7 +138,7 @@ def missing_rules(settings, base, changelog=False, env_read=False):
 
 
 def has_commit(project):
-    r = subprocess.run(['git', '-C', str(project), 'rev-parse', '--verify', '-q', 'HEAD'], capture_output=True, text=True)
+    r = subprocess.run(['git', '-C', str(project), 'rev-parse', '--verify', '-q', 'HEAD'], capture_output=True, text=True, encoding='utf-8', errors='replace')
     return r.returncode == 0
 
 
