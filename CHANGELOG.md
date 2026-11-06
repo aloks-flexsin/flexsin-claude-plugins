@@ -4,6 +4,14 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-06
+
+### Added
+- A third engineering principle, first in the file: think like a senior technical manager. Start from the intent, own
+  the outcome end to end (data, security, deployment, rollback, monitoring, docs), decide technical choices yourself with
+  the reasons written down, and ask a person only about product, cost or anything hard to undo. Plans now open with an
+  **Intent** section and a **Key decisions** section.
+
 ## [0.7.1] - 2026-11-05
 
 ### Fixed

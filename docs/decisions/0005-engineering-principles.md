@@ -30,3 +30,11 @@ or open-source packages, so it was free to write its own.
 - Whether a slice really is usable is judged by its acceptance line and the runner's test run. Nothing checks it beyond
   that.
 - The prompt grows by the file's length (capped at 12,000 characters) on every iteration.
+
+## Amendment (2026-11-06): the technical manager mindset
+
+A third principle now comes first in the file: think like a senior technical manager. The agent starts from the intent,
+owns the outcome end to end, and decides reversible technical choices itself with the reasons written down. It raises a
+blocker only for product behaviour, cost or licences, or anything hard to undo. Plans open with **Intent** and **Key
+decisions** sections. This is guidance, not something the runner can check: the plan review is where a person sees it.
+It also aims to cut blockers about technical choices the agent should have made itself.

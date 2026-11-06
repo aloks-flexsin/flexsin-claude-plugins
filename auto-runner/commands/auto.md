@@ -18,6 +18,13 @@ say so in the plan and propose doing it directly instead of queueing it.
 
 Write the plan in the usual way (context, approach, files, risks, how it will be verified). Under the principles:
 
+- **Intent first.** Open the plan with an **Intent** section: the outcome the user wants, for whom, how success will be seen,
+  and what is out of scope. If the request's wording and its intent differ, say which you followed and why.
+- **Key decisions.** Add a **Key decisions** section: for each decision that matters, the options, your choice and why.
+  Decide the technical ones yourself. Mark the few only a person can make (product behaviour the request leaves open, cost
+  or licences, anything hard to undo) and put them under **Needs a person** with your recommendation.
+- **End to end.** Cover what it takes to work in real use, not only the code: data and migrations, security, errors,
+  configuration, deployment and rollback, monitoring and docs. Say what is left out on purpose.
 - **Vertical slices.** List the slices first: Slice 1, Slice 2, ... Each one is a thin end-to-end piece (UI, API, logic, data as needed)
   that ends in something a person could push, deploy and use. Slice 1 is the smallest useful version. Say for each slice what a
   user can do once it is done. Never plan by layer ("all tables, then all endpoints, then all screens").

@@ -23,6 +23,21 @@ def test_the_plugin_ships_both_principles():
     assert len(text) < ar.autocfg.PRINCIPLES_MAX
 
 
+def test_the_plugin_ships_the_technical_manager_mindset_first():
+    text = ar.autocfg.PRINCIPLES_FILE.read_text(encoding='utf-8')
+    headings = [line for line in text.splitlines() if line.startswith('## ')]
+    assert headings == ['## 1. Think like a senior technical manager', '## 2. Build in vertical slices',
+                        '## 3. Use what exists before you build']
+    for needle in ('Start from the intent', 'end to end', 'Decide what is yours to decide', 'trade-offs',
+                   'Record the decisions'):
+        assert needle in text
+
+
+def test_the_planning_command_asks_for_intent_and_key_decisions():
+    text = (ar.HERE.parent / 'commands' / 'auto.md').read_text(encoding='utf-8')
+    assert '**Intent**' in text and '**Key decisions**' in text and 'deployment and rollback' in text
+
+
 def test_the_planning_command_asks_for_slices_and_libraries():
     text = (ar.HERE.parent / 'commands' / 'auto.md').read_text(encoding='utf-8')
     assert 'engineering-principles.md' in text and '*Slice:*' in text and 'Libraries first' in text

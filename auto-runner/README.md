@@ -102,7 +102,9 @@ Besides `models.implementer`, three sections act: `acceptance.browser` (the brow
 
 ## Engineering principles (tested with a fake agent; no real model has been given them yet)
 `docs/engineering-principles.md` ships with the plugin and applies to every project unless it says otherwise:
-**build in vertical slices** (each slice runs end to end and ends usable: it could be pushed, deployed and used) and
+**think like a senior technical manager** (start from the intent, own the outcome end to end, decide technical choices
+yourself with the reasons written down, ask a person only about product, cost or anything hard to undo; plans open with
+**Intent** and **Key decisions** sections), **build in vertical slices** (each slice runs end to end and ends usable: it could be pushed, deployed and used) and
 **use what exists before building** (the project's own components and UI library, such as shadcn/ui, then maintained,
 permissively licensed open-source packages; building it yourself needs a reason in the commit).
 
