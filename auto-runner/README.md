@@ -142,6 +142,10 @@ The runner refuses to start unless:
   named by `central.token_env` (default `AUTO_RUNNER_CENTRAL_TOKEN`; the message names what is missing; the token is never read
   from `.claude/auto.json`, where a `central.token` key is refused as unknown, and a `token_env` that holds a token is refused).
 
+The agent is asked to run only the tests that cover its change (the whole suite once, if it changed shared code or setup):
+the runner's own run of `test_command` after the iteration is the gate, so the suite no longer runs twice per item.
+Each iteration's log (`.auto/logs/<run>-iter<N>.log`) holds the agent's full `stream-json` transcript, every tool call and its
+result, redacted like the rest of the log, followed by the runner's test and stage output.
 It also stops on a red suite, a STOP file, uncommitted leftovers, or two iterations without progress. Cost per iteration is recorded in `.auto/runs.jsonl` only when the CLI reports it; otherwise it is `null`.
 Every run also appends to `.auto/events.jsonl` (schema `event.v1`, `bin/autoevents.py`): run start and end (with exit code and reason), each item state change (from, to) and each independent test result, one line per event, never rewritten. `runs.jsonl` keeps its old shape.
 

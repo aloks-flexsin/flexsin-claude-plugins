@@ -4,6 +4,14 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-12
+
+### Changed
+- The agent runs only the tests that cover its change (the whole suite once if it touched shared code or setup); the
+  runner's independent full-suite run after each item stays the gate. This stops the suite running twice per item.
+- Iteration logs keep the agent's full `stream-json` transcript (every tool call and result) instead of only the final
+  summary, so it shows which tests ran, whether subagents were used and where an item's time went.
+
 ## [0.8.0] - 2026-11-06
 
 ### Added

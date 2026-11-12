@@ -572,7 +572,9 @@ def test_prompt_names_the_picked_item_and_keeps_the_old_wording_without_one():
 OLD_PROMPT_B7 = (
     "You are running unattended. Read RULES.md, then open .auto/queue.md.\n"
     "Do ONLY item B7 (its box is '[ ]'; open items before it are blocked or waiting, leave them alone). Finish it fully: "
-    "implementation, tests, the whole suite green (npm test), one git commit on this branch, then tick the box in the same commit. "
+    "implementation, tests, the tests that cover your change passing (run only those: the runner runs the whole suite, npm test, "
+    "itself after you finish, and a red suite stops the run; if you changed shared code or setup, run the whole suite once "
+    "before you commit), one git commit on this branch, then tick the box in the same commit. "
     "Do not start a second item. Stay inside the limits in the rules.\n"
     "If you are blocked or the item needs a decision only the product owner can make, write the question to the project's "
     "questions file (or the item's status line), leave the box unticked, and stop.\n"

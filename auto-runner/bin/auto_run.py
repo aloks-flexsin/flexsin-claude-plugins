@@ -178,7 +178,9 @@ def build_prompt(cfg, queue_rel, item=None, packet='', principles=''):
     rules = ', '.join(cfg['rules_files'])
     read = f'Read {rules}, then open {queue_rel}.' if rules else f'Open {queue_rel}.'
     if cfg['test_command'] and not cfg['check_only']:
-        green = f'the whole suite green ({cfg["test_command"]})'
+        green = (f'the tests that cover your change passing (run only those: the runner runs the whole suite, '
+                 f'{cfg["test_command"]}, itself after you finish, and a red suite stops the run; if you changed shared code '
+                 f'or setup, run the whole suite once before you commit)')
     else:
         green = 'every check you can run passing (this project has no tests: say "unverified: no tests" in your report)'
     which = (f"Do ONLY item {item} (its box is '[ ]'; open items before it are blocked or waiting, leave them alone)."
@@ -698,7 +700,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             set_state(item, 'running')
             sync_back(wq, pq, statuses)
             t0 = time.time()
-            cmd = ['claude', '-p', prompt, '--permission-mode', 'acceptEdits', '--output-format', 'json',
+            cmd = ['claude', '-p', prompt, '--permission-mode', 'acceptEdits', '--output-format', 'stream-json', '--verbose',
                    '--allowedTools', *allowed, '--max-budget-usd', str(max_budget_usd), *model]
             code, out = claude(cmd, wt)
             entry = {'time': datetime.now().isoformat(timespec='seconds'), 'item': item, 'result': None, 'commit': None,
