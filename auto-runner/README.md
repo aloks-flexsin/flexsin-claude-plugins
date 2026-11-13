@@ -94,6 +94,7 @@ Schema v2 sections (objects, every nested key optional, unknown nested keys and 
 | `principles` | `enabled` (default on), `file` (default the plugin's `docs/engineering-principles.md`), `require_slices` (default on): see "Engineering principles" |
 | `safety` | `allow_env_read` (`true`: the agent may read `.env` files; init leaves out the `Read(./.env)` rules and preflight stops demanding them. Default off) |
 | `locks` | `path`, `stale_after_minutes` |
+| `usage_limit` | `wait` (default false), `max_wait_minutes` (default 360): wait for Claude's usage limit to reset and continue, instead of stopping |
 | `acceptance` | `browser`: `enabled`, `base_url`, `command`, `headless`, `exploratory`, `accounts`: `method` (`seed_command` or `signup`), `seed_command` |
 | `changelog` | `enabled` (default off), `file` (default `CHANGELOG.md`), `versioning` (only `semver`) |
 
@@ -146,6 +147,16 @@ The agent is asked to run only the tests that cover its change (the whole suite 
 the runner's own run of `test_command` after the iteration is the gate, so the suite no longer runs twice per item.
 Each iteration's log (`.auto/logs/<run>-iter<N>.log`) holds the agent's full `stream-json` transcript, every tool call and its
 result, redacted like the rest of the log, followed by the runner's test and stage output.
+Claude's usage limit is recognised from the agent's final result (or, when the CLI left none, its last lines), never from the
+work's own output: the item's uncommitted changes are stashed (`git stash list` in the worktree; the queue and `.auto/` are
+left alone), the item goes back to queued, no suite runs, and the run stops with exit code 75 and reason `usage_limit`
+instead of being reported as red, leftovers or no progress. With `"usage_limit": {"wait": true}` it waits until the reset
+(read from the message; every 15 minutes when it gives none), checking the STOP file every 30 seconds, and carries on; the
+interrupted try does not use up an iteration, and a reset beyond `max_wait_minutes` stops the run as above.
+A reused worktree whose branch is already merged into the base branch is fast-forwarded to it at the start, so new work
+never starts from old code; a branch with unmerged work of its own is left as it is, with a warning naming how far the base
+is ahead. A runner older than the installed auto-runner (Claude's `installed_plugins.json`) refuses to start and names the
+installed copy's `auto_run.py`. The end of a run prints the suite's own totals line from its last independent run.
 It also stops on a red suite, a STOP file, uncommitted leftovers, or two iterations without progress. Cost per iteration is recorded in `.auto/runs.jsonl` only when the CLI reports it; otherwise it is `null`.
 Every run also appends to `.auto/events.jsonl` (schema `event.v1`, `bin/autoevents.py`): run start and end (with exit code and reason), each item state change (from, to) and each independent test result, one line per event, never rewritten. `runs.jsonl` keeps its old shape.
 

@@ -58,7 +58,7 @@ import shutil
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -79,6 +79,7 @@ autosafe = _load('autorunner_safe', 'autosafe.py')
 autoevents = _load('autorunner_events', 'autoevents.py')
 autoblock = _load('autorunner_block', 'autoblock.py')
 autodeliver = _load('autorunner_deliver', 'autodeliver.py')
+autoupdate = _load('autorunner_update', 'autoupdate.py')
 autobrowser = _load('autorunner_browser', 'autobrowser.py')
 autochange = _load('autorunner_change', 'autochange.py')
 autodocs = _load('autorunner_docs', 'autodocs.py')
@@ -112,6 +113,98 @@ def child_env():
            if k != autosafe.CENTRAL_TOKEN_ENV and not v.strip().startswith(autosafe.CENTRAL_TOKEN_PREFIX)}
     env.setdefault('PYTHONIOENCODING', 'utf-8')
     return env
+
+
+# --- usage limits, a reused worktree's branch, the suite's totals --------------------------------------------------------
+
+LIMIT_TEXT = re.compile(r'usage limit reached|hit your (?:usage |session |weekly )?limit|limit reached\s*[\u2219\u00b7\u2022|-]'
+                        r'|limit will reset|rate_limit_error', re.I)
+LIMIT_EPOCH = re.compile(r'limit reached\|(\d{9,11})', re.I)
+LIMIT_CLOCK = re.compile(r'resets?(?: at)?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?', re.I)
+USAGE_LIMIT_EXIT = 75                      # EX_TEMPFAIL: a wrapper may simply start the run again later
+LIMIT_POLL_MINUTES = 15                    # how long to wait between tries when the reset time is not given
+USAGE_LIMIT_DEFAULTS = {'wait': False, 'max_wait_minutes': 360}
+
+
+def _limit_text(output):
+    """The text a usage-limit message can be in: the final result object (the transcript's tool output is ignored, so code
+    that merely mentions limits never trips this) and, when the CLI died without one, its last lines."""
+    for line in reversed(output.splitlines()):
+        line = line.strip()
+        if line.startswith('{') and '"type"' in line and '"result"' in line:
+            try:
+                obj = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(obj, dict) and obj.get('type') == 'result':
+                return ' '.join(str(obj.get(k) or '') for k in ('result', 'error', 'subtype')) if obj.get('is_error') else ''
+    return '\n'.join(ln for ln in output.splitlines()[-20:] if not ln.lstrip().startswith('{'))
+
+
+def usage_limit(output, now=None):
+    """-> {'reset': aware datetime or None, 'message': str} when the agent stopped on Claude's usage limit, else None.
+    The reset time is read from `...limit reached|<epoch>` or `resets 3pm` / `resets at 15:30` (taken as local time, the
+    next such time after `now`); anything else gives None and the waiting falls back to polling."""
+    text = _limit_text(output)
+    if not LIMIT_TEXT.search(text):
+        return None
+    now = now or datetime.now().astimezone()
+    reset = None
+    m = LIMIT_EPOCH.search(text)
+    if m:
+        reset = datetime.fromtimestamp(int(m.group(1)), tz=now.tzinfo)
+    else:
+        m = LIMIT_CLOCK.search(text)
+        if m:
+            hour, minute, half = int(m.group(1)), int(m.group(2) or 0), (m.group(3) or '').lower()
+            hour = hour % 12 + (12 if half == 'pm' else 0) if half else hour
+            if hour < 24 and minute < 60:
+                reset = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                if reset <= now:
+                    reset += timedelta(days=1)
+    line = next((ln.strip() for ln in text.splitlines() if LIMIT_TEXT.search(ln)), text.strip())
+    return {'reset': reset, 'message': line[:200]}
+
+
+def set_aside(wt, cfg, item, stamp):
+    """Stash the iteration's uncommitted work (tracked and new files, never the queue, .auto/ or shared folders, which are
+    the runner's) so the worktree is clean -> the stash's label, or None when there was nothing to keep. Commits the agent
+    already made stay on the branch; the item stays open."""
+    if not leftovers(wt, cfg):
+        return None
+    label = f'auto-runner: {item} unfinished at a usage limit ({stamp})'
+    keep = [cfg['queue_file'].replace('\\', '/'), AUTO_DIR, *[d.replace('\\', '/').rstrip('/') for d in cfg['share_dirs']]]
+    git(wt, 'stash', 'push', '--include-untracked', '-m', label, '--', '.', *[f':(exclude){k}' for k in keep])
+    return label
+
+
+def catch_up(wt, base):
+    """A reused worktree's branch against the local base branch -> (action, n). ('advanced', n): every commit of the branch
+    was already in the base (it was merged), so it is fast-forwarded n commits to the base. ('behind', n): the branch has
+    its own commits and the base has n the branch lacks; nothing is changed. ('current', 0): nothing to do."""
+    ahead = int(git(wt, 'rev-list', '--count', f'HEAD..{base}') or 0)
+    if not ahead:
+        return 'current', 0
+    if _is_ancestor(wt, 'HEAD', base):
+        git(wt, 'merge', '--ff-only', '-q', base)
+        return 'advanced', ahead
+    return 'behind', ahead
+
+
+def _is_ancestor(cwd, a, b):
+    r = subprocess.run(['git', '-C', str(cwd), 'merge-base', '--is-ancestor', a, b], capture_output=True)
+    return r.returncode == 0
+
+
+SUITE_TOTAL = re.compile(r'\b\d+ (?:passed|failed|skipped|errors?|xfailed|xpassed|passing|failing|pending|tests?)\b', re.I)
+
+
+def suite_summary(output):
+    """The suite's own totals line (pytest, jest, mocha and the like) from the end of its output, or ''."""
+    for line in reversed(output.splitlines()):
+        if SUITE_TOTAL.search(line):
+            return line.strip().strip('=').strip()
+    return ''
 
 
 def run_claude(cmd, cwd):
@@ -492,13 +585,19 @@ def project_slug(project, cfg):
 
 
 def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False, allow_dirty=False,
-        claude=run_claude, tests=run_tests, transport=None, browser_runner=None, pr_runner=run_pr):
-    """-> exit code. 0 = finished or stopped cleanly, 1 = refused or stopped on a problem a person should look at.
+        claude=run_claude, tests=run_tests, transport=None, browser_runner=None, pr_runner=run_pr, sleep=time.sleep):
+    """-> exit code. 0 = finished or stopped cleanly, 1 = refused or stopped on a problem a person should look at,
+    75 (USAGE_LIMIT_EXIT) = stopped by Claude's usage limit; start it again after the reset.
     `transport` is where answers come from (default: central_transport(cfg) when `central.enabled`, else
     autodeliver.LocalTransport on this project's .auto folder).
     `browser_runner(command, cwd, env) -> (code, output)` replaces the browser command's process (tests).
     `pr_runner(argv, cwd) -> (code, output)` replaces the `gh` call that opens a pull request (tests)."""
     project = Path(project).resolve()
+    newer = autoupdate.newer_installed()
+    if newer:
+        mine = autoupdate.installed_version()
+        raise RunnerError(f'This runner is auto-runner {mine}, but {newer[0]} is installed. Start the installed one instead: '
+                          f'python "{Path(newer[1]) / "bin" / "auto_run.py"}" (or restart Claude so /auto-runner:auto uses it).')
     cfg = autocfg.load(project)
     queue_rel = cfg['queue_file']
     pq = project / queue_rel
@@ -541,6 +640,22 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
     if wt.exists():
         branch = git(wt, 'branch', '--show-current')
         say(f'reusing worktree {wt} on branch {branch}')
+        if dry_run:
+            behind = int(git(wt, 'rev-list', '--count', f'HEAD..{base}') or 0)
+            if behind:
+                say(f'{base} has {behind} commit(s) {branch} lacks: '
+                    + ('it would be moved up to them (its own work is already merged)' if _is_ancestor(wt, 'HEAD', base)
+                       else 'merge them into it yourself'))
+        else:
+            try:
+                action, n = catch_up(wt, base)
+            except RunnerError as e:
+                raise RunnerError(f'could not bring {branch} up to {base}: {e}')
+            if action == 'advanced':
+                say(f'{branch} was already merged into {base}: moved it up {n} commit(s) to {base}, so new work starts from it')
+            elif action == 'behind':
+                say(f'warning: {base} has {n} commit(s) that {branch} lacks and {branch} has unmerged work of its own; '
+                    f'merge {base} into it if this run needs them')
     else:
         branch = f'{cfg["branch_prefix"]}{stamp}'
         say(f'would create worktree {wt} on new branch {branch} (from {base})' if dry_run
@@ -576,6 +691,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
     ledger = autoevents.Ledger(auto, stamp, slug, redact=lambda d: autobrowser.redact_obj(d, generated()))
     ledger.emit('run_start', detail={'branch': branch, 'base': base, 'max_iterations': max_iterations})
     exit_code, reason = None, 'error'
+    last_suite = ''
     statuses = {}
 
     def set_state(item, state, detail=''):
@@ -657,7 +773,16 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
 
         (auto / 'logs').mkdir(parents=True, exist_ok=True)
         stuck = 0
-        for i in range(1, max_iterations + 1):
+        limits = {**USAGE_LIMIT_DEFAULTS, **autocfg.section(cfg, 'usage_limit')}
+        waited = 0.0
+        budget = [max_iterations]
+
+        def iterations():
+            n = 0
+            while n < budget[0]:
+                n += 1
+                yield n
+        for i in iterations():
             if stop.exists():
                 say('STOP file found: stopping.')
                 reason = 'stop_file'
@@ -706,10 +831,39 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             entry = {'time': datetime.now().isoformat(timespec='seconds'), 'item': item, 'result': None, 'commit': None,
                      'duration_s': None, 'cost_usd': parse_cost(out)}
             log_text = out + ('' if code == 0 else f'\n--- claude exited with {code} ---\n')
+            hit = usage_limit(out)
+            if hit is not None:
+                kept = set_aside(wt, cfg, item, stamp)
+                entry.update(result='usage_limit', duration_s=round(time.time() - t0, 1),
+                             commit=(lambda h: h[:10] if h != head else None)(git(wt, 'rev-parse', 'HEAD')))
+                log_text += f'\n--- usage limit ---\n{hit["message"]}\n' + (f'unfinished work stashed as "{kept}"\n' if kept else '')
+                log.write_text(autobrowser.redact(log_text, generated()), encoding='utf-8')
+                record(project, entry)
+                when = hit['reset'].strftime('%H:%M %Z').strip() if hit['reset'] else 'an unknown time'
+                set_state(item, 'queued', f'interrupted by a usage limit (resets {when}); runs again')
+                sync_back(wq, pq, statuses)
+                say(f'usage limit reached during {item} (resets {when}).'
+                    + (f' Its unfinished changes are stashed: git -C "{wt}" stash list' if kept else ''))
+                pause = ((hit['reset'] - datetime.now().astimezone()).total_seconds() + 60 if hit['reset']
+                         else LIMIT_POLL_MINUTES * 60)
+                if limits['wait'] and waited + max(pause, 0) <= limits['max_wait_minutes'] * 60:
+                    say(f'waiting {max(pause, 0) / 60:.0f} minute(s) for the limit to reset (create {stop} to stop instead)')
+                    left = max(pause, 0)
+                    while left > 0 and not stop.exists():
+                        sleep(min(30, left))
+                        left -= min(30, left)
+                    waited += max(pause, 0)
+                    budget[0] += 1                     # the interrupted try does not use up an iteration
+                    continue
+                say('stopping; start the run again after the reset'
+                    + ('' if limits['wait'] else ' (or set "usage_limit": {"wait": true} to wait automatically)'))
+                exit_code, reason = USAGE_LIMIT_EXIT, 'usage_limit'
+                return USAGE_LIMIT_EXIT
             red = False
             if not check_only:
                 tcode, tout = tests(cfg['test_command'], wt)
                 log_text += '\n--- independent test run ---\n' + '\n'.join(tout.splitlines()[-5:]) + '\n'
+                last_suite = suite_summary(tout) or last_suite
                 red = tcode != 0
                 ledger.emit('tests', item, {'result': 'fail' if red else 'pass', 'exit': tcode}, 'independent_test')
             else:
@@ -858,6 +1012,8 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         ledger.emit('run_end', detail={'exit': exit_code, 'reason': reason})
         push()
         lock.release()
+        if last_suite:
+            say(f'suite at the last independent run: {autobrowser.redact(last_suite, generated())}')
     say(f'done. Review: git log {base}..{branch} --oneline   and   git diff {base}...{branch}')
     say('Merge only after reading the diff.')
     return 0

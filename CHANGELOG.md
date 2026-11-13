@@ -4,6 +4,19 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-13
+
+### Added
+- Usage limits: when Claude's usage limit stops an item, the runner recognises it (instead of reporting a red suite,
+  leftovers or no progress), stashes the item's unfinished changes, puts the item back in the queue and stops with exit
+  code 75. With `"usage_limit": {"wait": true}` it waits for the reset (up to `max_wait_minutes`) and carries on.
+- The end of a run prints the suite's totals line from the last independent test run.
+
+### Fixed
+- A reused worktree whose branch was already merged is moved up to the base branch at the start, so a run no longer
+  builds on old code; a branch with unmerged work gets a warning.
+- A runner started from an older copy than the installed auto-runner refuses to start and names the installed one.
+
 ## [0.8.1] - 2026-11-12
 
 ### Changed

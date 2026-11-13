@@ -113,6 +113,14 @@
         "stale_after_minutes": {"$ref": "#/$defs/count"}
       }
     },
+    "usage_limit": {
+      "type": "object", "additionalProperties": false,
+      "description": "When Claude's usage limit stops an item: wait for the reset (up to max_wait_minutes, default 360) and continue, instead of stopping. Off by default.",
+      "properties": {
+        "wait": {"$ref": "#/$defs/flag"},
+        "max_wait_minutes": {"$ref": "#/$defs/count"}
+      }
+    },
     "acceptance": {
       "type": "object", "additionalProperties": false,
       "description": "Browser acceptance. A set base_url must be local or a test/staging host (autobrowser.check_base_url).",

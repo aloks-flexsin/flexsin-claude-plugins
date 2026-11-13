@@ -116,6 +116,23 @@ def apply(run=subprocess.run, which=shutil.which):
     return {'old': reply.get('oldVersion'), 'new': reply.get('newVersion'), 'outcome': reply.get('updateOutcome')}
 
 
+def newer_installed(env=None, plugin_dir=HERE.parent):
+    """-> (installed version, its install path) when Claude has a newer auto-runner installed than this copy, else None.
+    Read from `plugins/installed_plugins.json` in Claude's config folder; anything unreadable counts as "nothing newer"."""
+    try:
+        data = json.loads((config_dir(env) / 'plugins' / 'installed_plugins.json').read_text(encoding='utf-8'))
+        entries = data['plugins'][PLUGIN_ID]
+        mine = parse_version(installed_version(plugin_dir))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    best = None
+    for e in entries if isinstance(entries, list) else []:
+        v = parse_version(str(e.get('version'))) if isinstance(e, dict) else None
+        if v and mine and v > mine and (best is None or v > parse_version(best[0])):
+            best = (e['version'], e.get('installPath') or '')
+    return best
+
+
 def main(argv=None, out=sys.stdout, **deps):
     ap = argparse.ArgumentParser(prog='autoupdate.py', description=__doc__.strip().splitlines()[0])
     ap.add_argument('action', choices=('check', 'apply'))

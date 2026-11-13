@@ -75,6 +75,7 @@ SECTIONS = {
     'docs': {'adr_dir': 'text', 'required': 'texts', 'map': 'text', 'check': 'flag'},
     'central': {'enabled': 'flag', 'url': 'text', 'project': 'text', 'token_env': 'text'},
     'locks': {'path': 'text', 'stale_after_minutes': 'count'},
+    'usage_limit': {'wait': 'flag', 'max_wait_minutes': 'count'},
     # A dict kind is a nested object (same rules, deeper path); a tuple kind is one of those words.
     'acceptance': {'browser': {'enabled': 'flag', 'base_url': 'text', 'command': 'text', 'headless': 'flag',
                                'exploratory': 'flag',
