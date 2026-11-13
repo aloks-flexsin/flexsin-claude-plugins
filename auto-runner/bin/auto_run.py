@@ -83,6 +83,7 @@ autoupdate = _load('autorunner_update', 'autoupdate.py')
 autobrowser = _load('autorunner_browser', 'autobrowser.py')
 autochange = _load('autorunner_change', 'autochange.py')
 autodocs = _load('autorunner_docs', 'autodocs.py')
+autojourney = _load('autorunner_journey', 'autojourney.py')
 
 AUTO_DIR = '.auto'
 STALE_NOTE = '(stale artifact)'
@@ -205,6 +206,64 @@ def suite_summary(output):
         if SUITE_TOTAL.search(line):
             return line.strip().strip('=').strip()
     return ''
+
+
+# --- journeys ------------------------------------------------------------------------------------------------------------
+
+def item_letter(item_id):
+    return re.match(r'[A-Z]+', item_id).group(0)
+
+
+def request_journeys(items_text, journeys_text):
+    """-> (letter, journeys, errors) for a request's journeys.md; ('', [], []) when it has none."""
+    if not journeys_text.strip():
+        return '', [], []
+    try:
+        journeys = autojourney.parse(journeys_text)
+    except ValueError as e:
+        return '', [], [f'journeys.md: {e}']
+    items = queue.parse_items(items_text)
+    letters = {item_letter(i) for i, _, _ in items}
+    if len(letters) != 1:
+        return '', [], ['journeys.md: the request\'s items must share one letter (the journeys belong to it)']
+    slices = set()
+    for _, _, block in items:
+        try:
+            sl = queue.parse_slice(block)
+        except ValueError:
+            sl = None
+        if sl:
+            slices.add(sl[0])
+    errors = [f'journeys.md: {j["id"]} checks slice {j["slice"]}, which no item of this request belongs to'
+              for j in journeys if j['slice'] not in slices]
+    return letters.pop(), journeys, errors
+
+
+def slice_done(queue_text, item):
+    """-> (letter, slice number, slice name) when `item` was the last open item of its slice, else None."""
+    items = queue.parse_items(queue_text)
+    block = next((b for i, _, b in items if i == item), '')
+    try:
+        mine = queue.parse_slice(block)
+    except ValueError:
+        return None
+    if not mine:
+        return None
+    letter = item_letter(item)
+    same = []
+    for i, checked, b in items:
+        try:
+            sl = queue.parse_slice(b)
+        except ValueError:
+            continue
+        if item_letter(i) == letter and sl and sl[0] == mine[0]:
+            same.append(checked)
+    return (letter, mine[0], mine[1]) if same and all(same) else None
+
+
+def next_item_id(queue_text, letter):
+    nums = [int(i[len(letter):]) for i, _, _ in queue.parse_items(queue_text) if item_letter(i) == letter]
+    return f'{letter}{max(nums, default=0) + 1}'
 
 
 def run_claude(cmd, cwd):
@@ -434,6 +493,17 @@ def apply_pending(project, wt, cfg, queue_rel):
             shutil.move(str(d), str(dest))
             say(f"request '{d.name}' failed the check and was moved to {AUTO_DIR}/rejected")
             continue
+        jfile = d / 'journeys.md'
+        letter, journeys, jerrors = request_journeys(itext, jfile.read_text(encoding='utf-8') if jfile.exists() else '')
+        if jerrors:
+            dest = project / AUTO_DIR / 'rejected' / f'{d.name}-{stamp}'
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            (d / 'REASONS.txt').write_text('\n'.join(jerrors) + '\n', encoding='utf-8')
+            shutil.move(str(d), str(dest))
+            say(f"request '{d.name}' failed the check and was moved to {AUTO_DIR}/rejected")
+            continue
+        if journeys:
+            autojourney.save(project, letter, d.name, journeys)
         wq.write_text(queue.insert(qtext, itext), encoding='utf-8')
         files = [queue_rel] if tracked else []
         plan = d / 'plan.md'
@@ -585,7 +655,8 @@ def project_slug(project, cfg):
 
 
 def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False, allow_dirty=False,
-        claude=run_claude, tests=run_tests, transport=None, browser_runner=None, pr_runner=run_pr, sleep=time.sleep):
+        claude=run_claude, tests=run_tests, transport=None, browser_runner=None, pr_runner=run_pr, sleep=time.sleep,
+        journey_hooks=None):
     """-> exit code. 0 = finished or stopped cleanly, 1 = refused or stopped on a problem a person should look at,
     75 (USAGE_LIMIT_EXIT) = stopped by Claude's usage limit; start it again after the reset.
     `transport` is where answers come from (default: central_transport(cfg) when `central.enabled`, else
@@ -622,6 +693,9 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         _, errors = queue.validate(qsrc.read_text(encoding='utf-8'), req.read_text(encoding='utf-8'),
                                    require_kind=autocfg.changelog(cfg)['enabled'],
                                    require_slice=autocfg.principles(cfg)['require_slices'])
+        jfile = req.parent / 'journeys.md'
+        errors += request_journeys(req.read_text(encoding='utf-8'),
+                                   jfile.read_text(encoding='utf-8') if jfile.exists() else '')[2]
         if errors:
             say('Not added:\n- ' + '\n- '.join(errors))
             return 1
@@ -772,6 +846,101 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         say(f'{queue.open_count(wq.read_text(encoding="utf-8"))} open item(s) in {queue_rel}')
 
         (auto / 'logs').mkdir(parents=True, exist_ok=True)
+        rounds_file = auto / 'run' / 'journeys.json'
+
+        def journey_check(item):
+            """After a done item: when it ended its slice, click through the slice's journeys (and earlier slices').
+            -> False when the run must stop (the check could not be done, or a journey failed past its fix rounds)."""
+            qtext = wq.read_text(encoding='utf-8')
+            done_slice = slice_done(qtext, item)
+            if not done_slice:
+                return True
+            letter, n, name = done_slice
+            journeys = [j for j in autojourney.load(project, letter) if j['slice'] <= n]
+            if not journeys:
+                say(f'slice {n} of {letter} is done; it has no journeys to check')
+                return True
+            key = f'{letter}-slice-{n}'
+            acc = autocfg.section(cfg, 'acceptance')
+            jcfg = autojourney.settings(acc.get('journeys'))
+            hooks = journey_hooks or {}
+            say(f'slice {n} of {letter} is done: checking journeys {", ".join(j["id"] for j in journeys)} on the running app')
+            res = autojourney.run_check(project, wt, key, journeys, acc.get('browser') or {}, jcfg, autobrowser,
+                                        claude=hooks.get('claude'), start=hooks.get('start'), ready=hooks.get('ready'),
+                                        runner=browser_runner)
+            secrets = {**generated(), **res['secrets']}
+            jlog = auto / 'logs' / f'{stamp}-journeys-{key}.log'
+            jlog.write_text(autobrowser.redact(res['output'] + '\n--- journey check ---\n' + res['status'] + '\n'
+                                               + '\n'.join(res['errors'] + [json.dumps(f) for f in res['failed']]),
+                                               secrets), encoding='utf-8')
+            ledger.emit('browser', item, autobrowser.redact_obj({'layer': 'journey', 'key': key, 'result': res['status'],
+                                                                 'failed': [f['id'] for f in res['failed']],
+                                                                 'errors': res['errors'], 'evidence': res['evidence']},
+                                                                secrets), 'independent_test')
+            try:
+                rounds = json.loads(rounds_file.read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                rounds = {}
+            if res['status'] == 'invalid':
+                say(f'journey check after slice {n} could not be done: ' + '; '.join(res['errors']) + f' (log: {jlog})')
+                return False
+            if res['status'] == 'pass':
+                for j in journeys:
+                    rounds.pop(f'{letter}:{j["id"]}', None)
+                rounds_file.parent.mkdir(parents=True, exist_ok=True)
+                rounds_file.write_text(json.dumps(rounds, indent=2), encoding='utf-8')
+                say(f'journeys pass after slice {n}: {", ".join(j["id"] for j in journeys)}')
+                return True
+            by_id = {j['id']: j for j in journeys}
+            stop_now = False
+            for f in res['failed']:
+                k = f'{letter}:{f["id"]}'
+                rounds[k] = rounds.get(k, 0) + 1
+                j = by_id[f['id']]
+                if rounds[k] > jcfg['max_fix_rounds']:
+                    new = auto / 'blockers' / autoblock.NEW
+                    new.mkdir(parents=True, exist_ok=True)
+                    (new / f'journey-{f["id"]}.json').write_text(json.dumps({
+                        'question': f'Journey {f["id"]} ({j["name"]}) still fails after {jcfg["max_fix_rounds"]} fix '
+                                    f'round(s): at step {f["step"]} it should show "{f["expected"]}" but shows '
+                                    f'"{f["seen"]}". How should this be resolved?',
+                        'why_needed': 'The slice is not usable while this journey fails, and the automatic fixes did not '
+                                      'find the cause.',
+                        'prevents': f'Finishing slice {n} of {letter} and the slices after it.',
+                        'impact_if_delayed': 'The run stays stopped.',
+                        'impact_if_wrong': 'A broken journey ships, or the journey is changed to hide a real defect.',
+                        'owner_role': 'tech lead', 'class': 'B2',
+                        'options': [{'label': 'Fix it by hand', 'tradeoffs': 'A person finds the cause; most reliable.'},
+                                    {'label': 'Change the journey', 'tradeoffs': 'Right only if the journey asks for the '
+                                                                                 'wrong thing.'}],
+                        'recommendation': 'Fix it by hand',
+                        'evidence': [f['screenshot'], str(jlog)]}, indent=2), encoding='utf-8')
+                    for r in autoblock.ingest([new], auto, item, stamp, slug):
+                        if r['id']:
+                            ledger.emit('blocker', item, {'action': 'raised', 'id': r['id'],
+                                                          'blocker': autoblock.content(autoblock.Store(auto).load(r['id']))},
+                                        'runner_observed')
+                    autoblock.write_view(auto)
+                    say(f'journey {f["id"]} still fails after {jcfg["max_fix_rounds"]} fix round(s): raised a blocker '
+                        f'and stopping (evidence: {f["screenshot"]})')
+                    stop_now = True
+                    continue
+                fix_id = next_item_id(wq.read_text(encoding='utf-8'), letter)
+                wq.write_text(queue.insert(wq.read_text(encoding='utf-8'),
+                                           autojourney.fix_item(fix_id, j, f, n, name, autocfg.changelog(cfg)['enabled']),
+                                           first=True), encoding='utf-8')
+                if git(wt, 'ls-files', queue_rel, check=False):
+                    git(wt, 'add', '--', queue_rel)
+                    git(wt, 'commit', '-q', '-m', f'Queue: {fix_id} fixes journey {f["id"]} (added by auto-runner)'
+                        + (f'\n\n{cfg["commit_trailer"]}' if cfg['commit_trailer'] else ''))
+                budget[0] += 1                                      # the fix gets its own iteration
+                say(f'journey {f["id"]} failed at step {f["step"]} (expected "{f["expected"]}", seen "{f["seen"]}"): '
+                    f'queued {fix_id} to fix it (round {rounds[k]} of {jcfg["max_fix_rounds"]})')
+            rounds_file.parent.mkdir(parents=True, exist_ok=True)
+            rounds_file.write_text(json.dumps(rounds, indent=2), encoding='utf-8')
+            sync_back(wq, pq, statuses)
+            return not stop_now
+
         stuck = 0
         limits = {**USAGE_LIMIT_DEFAULTS, **autocfg.section(cfg, 'usage_limit')}
         waited = 0.0
@@ -989,6 +1158,9 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             if entry['result'] == 'changelog':
                 say(f'item {item}: no valid changelog sentence ({"; ".join(change["errors"])}): stopping so a person can look.')
                 exit_code, reason = 1, 'changelog'
+                return 1
+            if entry['result'] == 'done' and autosafe.journeys_enabled(cfg) and not journey_check(item):
+                exit_code, reason = 1, 'journey'
                 return 1
             stuck = 0 if progressed else stuck + 1
             if stuck >= 2:

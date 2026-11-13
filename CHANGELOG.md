@@ -4,6 +4,14 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-13
+
+### Added
+- Journey check after each slice: with `acceptance.journeys` on, the runner starts the app after a slice's last item and
+  an independent agent clicks through the slice's user journeys (and earlier slices') with screenshots per step. A failed
+  journey becomes a fix item in the same slice and the slice is checked again; after `max_fix_rounds` a blocker is raised.
+  `/auto-runner:auto` plans now include a **Journeys** section.
+
 ## [0.10.0] - 2026-11-13
 
 ### Added

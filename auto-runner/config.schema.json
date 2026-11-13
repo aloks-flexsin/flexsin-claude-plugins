@@ -141,6 +141,17 @@
               }
             }
           }
+        },
+        "journeys": {
+          "type": "object", "additionalProperties": false,
+          "description": "Journey check after each slice: the runner starts the app with start_command, an agent clicks through the slice's journeys at acceptance.browser.base_url, a failed journey becomes a fix item.",
+          "properties": {
+            "enabled": {"$ref": "#/$defs/flag"},
+            "start_command": {"$ref": "#/$defs/text"},
+            "ready_timeout_s": {"$ref": "#/$defs/count"},
+            "max_fix_rounds": {"$ref": "#/$defs/count"},
+            "max_budget_usd": {"$ref": "#/$defs/amount"}
+          }
         }
       }
     },

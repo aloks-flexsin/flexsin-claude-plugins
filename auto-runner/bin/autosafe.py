@@ -329,10 +329,33 @@ def principles_problems(project, cfg):
     return []
 
 
+def journeys_enabled(cfg):
+    acc = cfg.get('acceptance') if isinstance(cfg, dict) else None
+    j = acc.get('journeys') if isinstance(acc, dict) else None
+    return isinstance(j, dict) and j.get('enabled') is True
+
+
+def journey_problems(cfg):
+    """When the journey check is on: `acceptance.journeys.start_command` and a local or test `acceptance.browser.base_url`."""
+    if not journeys_enabled(cfg):
+        return []
+    acc = cfg['acceptance']
+    browser = acc.get('browser') if isinstance(acc.get('browser'), dict) else {}
+    problems = []
+    if not (acc['journeys'].get('start_command') or '').strip():
+        problems.append('.claude/auto.json: "acceptance.journeys" is on but "acceptance.journeys.start_command" is not set '
+                        '(the command that starts the app the journeys click through)')
+    allowed, reason = _sibling('autorunner_browser', 'autobrowser.py').check_base_url(browser.get('base_url'))
+    if not allowed:
+        problems.append(f'.claude/auto.json: "acceptance.journeys" is on but "acceptance.browser.base_url" is refused: {reason}')
+    return problems
+
+
 def preflight(project, cfg, base, doctor=None):
     """-> list of problems; empty means the runner may start. `doctor(project) -> results` is injectable for tests."""
     problems = model_problems(cfg)
     problems += base_url_problems(cfg)
+    problems += journey_problems(cfg)
     problems += central_problems(cfg)
     problems += env_file_problems(project, cfg)
     problems += publish_problems(project, cfg, base)

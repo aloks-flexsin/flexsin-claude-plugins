@@ -79,7 +79,9 @@ SECTIONS = {
     # A dict kind is a nested object (same rules, deeper path); a tuple kind is one of those words.
     'acceptance': {'browser': {'enabled': 'flag', 'base_url': 'text', 'command': 'text', 'headless': 'flag',
                                'exploratory': 'flag',
-                               'accounts': {'method': ('seed_command', 'signup'), 'seed_command': 'text'}}},
+                               'accounts': {'method': ('seed_command', 'signup'), 'seed_command': 'text'}},
+                   'journeys': {'enabled': 'flag', 'start_command': 'text', 'ready_timeout_s': 'count',
+                                'max_fix_rounds': 'count', 'max_budget_usd': 'amount'}},
     'changelog': {'enabled': 'flag', 'file': 'text', 'versioning': ('semver',)},
     'safety': {'allow_env_read': 'flag'},
     'publish': {'push': 'flag', 'pull_request': 'flag', 'remote': 'text'},

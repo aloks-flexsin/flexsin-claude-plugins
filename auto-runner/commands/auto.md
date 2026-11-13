@@ -28,6 +28,17 @@ Write the plan in the usual way (context, approach, files, risks, how it will be
 - **Vertical slices.** List the slices first: Slice 1, Slice 2, ... Each one is a thin end-to-end piece (UI, API, logic, data as needed)
   that ends in something a person could push, deploy and use. Slice 1 is the smallest useful version. Say for each slice what a
   user can do once it is done. Never plan by layer ("all tables, then all endpoints, then all screens").
+- **Journeys.** Add a **Journeys** section: for each slice a person can use, one or more user journeys that walk the whole
+  path across screens and services, in this exact form (steps are what a person does, `*Expect:*` what they must see):
+
+      - **J1 Correction reaches the bell.** Slice 2. Roles: reviewer, owner.
+        1. As reviewer, file a correction for any order.
+        2. As owner, open the home page.
+        *Expect:* the bell shows one new notification for that correction.
+
+  When `acceptance.journeys.enabled` is on, the runner starts the app after the last item of each slice and an independent
+  agent clicks through that slice's journeys and the earlier slices'; a failed journey becomes a fix item. Write journeys
+  a person would accept as proof, not restatements of an item's tests.
 - **Libraries first.** Name the existing components and the open-source packages (with their licences) the work will use, and say
   why for anything you plan to build yourself.
 
@@ -58,7 +69,7 @@ Then call ExitPlanMode so the user can accept or change the plan. If they ask fo
 
 ## 2. After the plan is accepted
 1. Pick a short kebab-case slug for this task (for example `csv-export`). If `${CLAUDE_PROJECT_DIR}/.auto/pending/<slug>` already exists, add the date.
-2. Create the folder `${CLAUDE_PROJECT_DIR}/.auto/pending/<slug>/` containing `items.md` (only the Queue items from the plan, verbatim, no headings) and `plan.md` (the whole accepted plan).
+2. Create the folder `${CLAUDE_PROJECT_DIR}/.auto/pending/<slug>/` containing `items.md` (only the Queue items from the plan, verbatim, no headings), `journeys.md` (only the plan's Journeys, verbatim, when it has any) and `plan.md` (the whole accepted plan).
 3. Start it in the background (Bash tool with `run_in_background: true`; the first line of output shows whether the request was accepted):
 
    `python "${CLAUDE_PLUGIN_ROOT}/bin/auto_run.py" --project "${CLAUDE_PROJECT_DIR}" --enqueue <slug> --allow-dirty --max-iterations <number of items> --max-budget-usd 5`

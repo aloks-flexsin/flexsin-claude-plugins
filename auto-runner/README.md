@@ -183,6 +183,7 @@ such as `₹` never breaks a run on Windows.
 | `bin/auto_init.py`, `bin/auto_report.py` | Init (preview/apply/remove, the `central` section and its repository check) and the status/log reports. |
 | `bin/autocentral.py` | What init and join share: `default_token_env`, `repo_key` / `clean_url`, `remote_url`, `lookup` (`GET /api/v1/project`), `check`, `token_steps`. |
 | `bin/auto_join.py` | Join: repository URL from the central service, `git clone` into a folder you confirm, then init's preview. |
+| `bin/autojourney.py` | Journey check: parses journeys, starts and stops the app, runs the click-through agent, validates `journey.v1`, writes fix items. |
 | `bin/autospec.py` | Spec check: a read-only reviewer `claude -p` checks a plan's queue items against the code and answers `spec.v1` findings. |
 | `bin/autoupdate.py` | Update: `check` refreshes the marketplace and lists the changelog between the installed and the available version; `apply` runs `claude plugin update`. |
 | `bin/autosetup.py` | Capability registry and `doctor` (read-only), `plan` / `apply` / `remove` for setup. |
@@ -216,6 +217,22 @@ independent test run the runner runs `acceptance.browser.command`, which must wr
 (`browser.v1`: per criterion id, pass/fail/skip, duration, screenshot/trace/console/network artifacts). An invalid or missing file, a failed
 criterion, a non-zero exit or all-skipped is red and stops the run; a pass adds an evidence class to the item (E1 local, E3 staging-like host).
 No `*Browser:*` line or no section = no stage.
+
+**Journey check after each slice** (unverified: fake app and fake click-through agent only). With
+`"acceptance": {"journeys": {"enabled": true, "start_command": "..."}}` and a local or test `acceptance.browser.base_url`
+(the preflight refuses either missing), a request may carry `journeys.md` next to `items.md` (written by `/auto-runner:auto`
+from the plan's **Journeys** section): `- **J1 Name.** Slice 2. Roles: a, b.`, numbered steps, and an `*Expect:*` line. They
+are checked when the request is added (one item letter per request, every journey naming one of its slices) and stored in
+`.auto/journeys/<LETTER>.json`. When an item finishes the last open item of its slice, the runner starts the app with
+`start_command` in the worktree, waits until `base_url` answers (`ready_timeout_s`, default 120), makes the journeys' role
+accounts as in layer 1, and runs a separate `claude -p` that may only use Playwright MCP on that origin and write to
+`.auto/evidence/<LETTER>-slice-<n>/journeys/`. It clicks through that slice's journeys and every earlier slice's and writes
+`journey.v1` results: per journey and step, what was expected, what was seen, pass or fail, and a screenshot. The app is
+always stopped afterwards. Results that are missing, invalid, without a screenshot per step or inconsistent stop the run
+(reason `journey`), as does an app that never answers. A failed journey becomes a fix item in the same slice (the step,
+expected vs seen, the screenshot) that runs next with an extra iteration; the slice is checked again after it. After
+`max_fix_rounds` (default 2) failed rounds a blocker with the evidence is raised and the run stops. Events: type `browser`
+with `layer: "journey"`. The click-through costs up to `max_budget_usd` per check (default $3).
 
 **Layer 2 only advises.** With `exploratory: true`, after a passing Layer 1 a second `claude -p` explores through Playwright MCP limited to
 the base URL's origin and may only write `finding.v1` files to `.auto/findings/new/`. Valid findings are stored with a proposed regression
