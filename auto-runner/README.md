@@ -25,7 +25,13 @@ Check the manifest with `claude plugin validate ./auto-runner` (needs the `claud
 1. `/auto-runner:init` shows a preview of what the project needs and asks before writing anything (it runs `bin/auto_init.py`; `--apply` writes).
    It connects the project to the central service unless you choose `--local` (see "Central-first setup").
    `/auto-runner:join <slug>` clones a project registered on the central service and then runs init there.
-2. `/auto-runner:auto <task>` plans first. When you accept the plan it writes the request to `.auto/pending/<slug>/items.md` and starts the runner.
+2. `/auto-runner:auto <task>` plans first. Before it shows you the plan, a separate read-only reviewer (`bin/autospec.py check`,
+   only Read/Grep/Glob, model `models.plan_reviewer` or `review.model`, cap `review.max_budget_usd`, default $1) checks the queue
+   items against the code: something an item needs that neither exists nor is built earlier, an item that needs a later one, an
+   untestable acceptance line, an open product decision, an item too big for one sitting, a slice without a journey. Findings are
+   fixed in the plan (up to `review.max_plan_revisions` rounds) and listed in its **Spec check** section; a reply that is not valid
+   `spec.v1` fails the check rather than passing it. `/auto-runner:spec <plan file>` runs the same check on a plan written by hand.
+   Unverified beyond a fake reviewer. When you accept the plan it writes the request to `.auto/pending/<slug>/items.md` and starts the runner.
    `/auto-runner:update` checks the marketplace for a newer auto-runner, shows the changelog entries in between and, after you
    agree, installs it (`bin/autoupdate.py check` / `apply`, both through the `claude plugin` command line); restart Claude to load it.
 3. `/auto-runner:status` and `/auto-runner:log` are read-only reports (counts by state, the running item, blocked questions, recorded spend; the last iterations and log tails; `--full N` prints one whole log).
@@ -86,7 +92,7 @@ Schema v2 sections (objects, every nested key optional, unknown nested keys and 
 |---|---|
 | `models` | `implementer`, `planner`, `plan_reviewer`, `work_reviewer`, `tester`, `scribe` (model alias or name) |
 | `lanes` | `protected`, `sandbox` (lists of branch patterns), `deploy_command` |
-| `review` | `model`, `max_plan_revisions`, `max_fix_rounds`, `max_budget_usd` |
+| `review` | `model`, `max_plan_revisions`, `max_fix_rounds`, `max_budget_usd` (the spec check uses `model`, `max_plan_revisions` and `max_budget_usd`) |
 | `budgets` | `iteration_usd`, `run_usd`, `max_iterations` |
 | `docs` | `adr_dir`, `required` (list of files), `map` (doc map path, default `docs/doc-map.json`), `check` (docs gate, default on) |
 | `central` | `enabled`, `url`, `project`, `token_env` (the name of the variable holding the token; never a token) |
@@ -177,6 +183,7 @@ such as `₹` never breaks a run on Windows.
 | `bin/auto_init.py`, `bin/auto_report.py` | Init (preview/apply/remove, the `central` section and its repository check) and the status/log reports. |
 | `bin/autocentral.py` | What init and join share: `default_token_env`, `repo_key` / `clean_url`, `remote_url`, `lookup` (`GET /api/v1/project`), `check`, `token_steps`. |
 | `bin/auto_join.py` | Join: repository URL from the central service, `git clone` into a folder you confirm, then init's preview. |
+| `bin/autospec.py` | Spec check: a read-only reviewer `claude -p` checks a plan's queue items against the code and answers `spec.v1` findings. |
 | `bin/autoupdate.py` | Update: `check` refreshes the marketplace and lists the changelog between the installed and the available version; `apply` runs `claude plugin update`. |
 | `bin/autosetup.py` | Capability registry and `doctor` (read-only), `plan` / `apply` / `remove` for setup. |
 | `bin/autobrowser.py` | Host policy (`check_base_url`), throwaway accounts, `redact` / `scan_diff`, `browser.v1` results and the Layer 1 stage, `finding.v1` and the Layer 2 explorer. |

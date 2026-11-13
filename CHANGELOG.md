@@ -4,6 +4,14 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-13
+
+### Added
+- Spec check before queuing: `/auto-runner:auto` has a separate, read-only reviewer check the plan's queue items against
+  the code before you see the plan (missing pieces, wrong order, untestable acceptance lines, open product decisions,
+  items too big, slices without a journey), fixes what it finds and lists it in a **Spec check** section.
+  `/auto-runner:spec <plan file>` runs the same check on its own.
+
 ## [0.9.0] - 2026-11-13
 
 ### Added

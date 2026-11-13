@@ -44,6 +44,16 @@ End the plan with a section **Queue items** that contains the items exactly as t
 - Anything that needs a person (deploying, live checks, accounts, a decision) goes in a separate short list **Needs a person**, not in the items. Say what you assumed for any open question.
 - New behaviour gets tests. End the last item with docs updates, marked unverified unless a test proves otherwise.
 
+Before you show the plan, have it checked by a separate reviewer that reads only the plan and the code:
+
+   `python "${CLAUDE_PLUGIN_ROOT}/bin/autospec.py" check --plan "<the plan file>" --project "${CLAUDE_PROJECT_DIR}"`
+
+It prints "no findings", a list of findings (item, kind, detail, fix) or "spec check not done" with the reason. Fix every
+finding in the plan's items (add the missing item earlier, reorder, sharpen the acceptance line, split the item), or move a
+product question under **Needs a person**. Then run the check again, at most `review.max_plan_revisions` times (default 2) in
+all. Add a short **Spec check** section to the plan: what it found, what you changed, and anything still open. If the check
+could not be done, say so there and why; do not claim it passed.
+
 Then call ExitPlanMode so the user can accept or change the plan. If they ask for changes, revise and ask again.
 
 ## 2. After the plan is accepted
