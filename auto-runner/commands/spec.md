@@ -11,6 +11,7 @@ Check the queue items in **$ARGUMENTS** before they are queued. This command cha
 
    The file must have a "Queue items" heading with the items under it (a "Journeys" heading is read too).
 2. Tell the user in plain words what it found: per finding the item, what is missing or wrong and the suggested fix. Kinds are
-   missing_dependency, order, untestable_acceptance, open_decision, too_big and journey_gap.
+   missing_dependency, order, untestable_acceptance, open_decision, too_big, journey_gap and reinvents (hand-building
+   what a package already in the project, or the plan's Reuse check, provides).
 3. If it printed "spec check not done", show the reason; never present that as a pass.
 4. Offer to apply the fixes to the plan file. Do not queue anything as part of this command.

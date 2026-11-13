@@ -23,6 +23,18 @@ def test_the_plugin_ships_both_principles():
     assert len(text) < ar.autocfg.PRINCIPLES_MAX
 
 
+def test_reuse_covers_services_needless_dependencies_and_invented_facts():
+    text = ar.autocfg.PRINCIPLES_FILE.read_text(encoding='utf-8')
+    for needle in ('free tier is not free', 'self-hosted', 'lock the project in', '70 to 90 percent',
+                   'only for the sake of reuse', 'Never invent a package, a link, a price, a licence', 'unverified'):
+        assert needle in text
+
+
+def test_the_planning_command_asks_for_a_reuse_check_with_checked_links():
+    text = (ar.HERE.parent / 'commands' / 'auto.md').read_text(encoding='utf-8')
+    assert '**Reuse check**' in text and 'real links' in text and 'unverified' in text and 'free tier' in text
+
+
 def test_the_plugin_ships_the_technical_manager_mindset_first():
     text = ar.autocfg.PRINCIPLES_FILE.read_text(encoding='utf-8')
     headings = [line for line in text.splitlines() if line.startswith('## ')]

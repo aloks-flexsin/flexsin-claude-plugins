@@ -11,7 +11,8 @@ change nothing. It answers one `spec.v1` object:
      "findings": [{"item": "<ID or empty>", "kind": KIND, "detail": "...", "fix": "..."}]}
 
 with KIND one of missing_dependency (something the item needs exists neither in the code nor in an earlier item), order (it
-needs a later item), untestable_acceptance, open_decision (product behaviour it would have to guess), too_big, journey_gap.
+needs a later item), untestable_acceptance, open_decision (product behaviour it would have to guess), too_big, journey_gap,
+reinvents (it hand-builds what a package already in the project, or the plan's own Reuse check, provides).
 The reply is checked: unknown kinds, item IDs the plan does not have, `ok` disagreeing with the findings, or no JSON at all
 make the check fail (exit 2), never pass. Exit 0 = no findings, 1 = findings, 2 = the check could not be done.
 Model: `models.plan_reviewer`, else `review.model`, else the CLI default; cap: `review.max_budget_usd` (default 1). Stdlib only.
@@ -41,7 +42,7 @@ autocfg = _load('autorunner_cfg', 'autocfg.py')
 queue = _load('autorunner_queue', 'queue.py')
 
 SCHEMA = 'spec.v1'
-KINDS = ('missing_dependency', 'order', 'untestable_acceptance', 'open_decision', 'too_big', 'journey_gap')
+KINDS = ('missing_dependency', 'order', 'untestable_acceptance', 'open_decision', 'too_big', 'journey_gap', 'reinvents')
 FINDING_FIELDS = ('item', 'kind', 'detail', 'fix')
 TOOLS = ('Read', 'Grep', 'Glob')
 DENIED = ('Bash', 'Edit', 'MultiEdit', 'Write', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Task')
@@ -81,7 +82,9 @@ def prompt(items_text, journeys_text=''):
         '- untestable_acceptance: its *Acceptance:* line names no test or command, or only says it "works";\n'
         '- open_decision: product behaviour the item leaves open and the agent would have to guess;\n'
         '- too_big: clearly more than one sitting of work;\n'
-        '- journey_gap: a slice with user-facing work but no journey, or a journey step no item delivers.\n'
+        '- journey_gap: a slice with user-facing work but no journey, or a journey step no item delivers;\n'
+        '- reinvents: the item hand-builds something a package already in the project (check its manifest and lock '
+        "file) or the plan's Reuse check already provides.\n"
         'Report only problems you can point to: name the item, the file or the step that shows it, and the smallest fix. '
         'Do not report style or wording.\n'
         f'Reply with ONLY one JSON object and nothing else: {{"schema": "{SCHEMA}", "ok": true|false, "findings": '

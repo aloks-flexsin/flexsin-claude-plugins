@@ -28,7 +28,11 @@ Check the manifest with `claude plugin validate ./auto-runner` (needs the `claud
 2. `/auto-runner:auto <task>` plans first. Before it shows you the plan, a separate read-only reviewer (`bin/autospec.py check`,
    only Read/Grep/Glob, model `models.plan_reviewer` or `review.model`, cap `review.max_budget_usd`, default $1) checks the queue
    items against the code: something an item needs that neither exists nor is built earlier, an item that needs a later one, an
-   untestable acceptance line, an open product decision, an item too big for one sitting, a slice without a journey. Findings are
+   untestable acceptance line, an open product decision, an item too big for one sitting, a slice without a journey, an item that hand-builds what a package already in the project
+   or the plan's **Reuse check** provides. For each significant new capability the plan carries a **Reuse check** table
+   (requirement, options with real links, cost and free-tier limits, licence, recommendation, why; unchecked facts marked
+   unverified), and the engineering principles cover hosted services (real cost, lock-in), needless dependencies and never
+   inventing packages, links, prices or licences. Findings are
    fixed in the plan (up to `review.max_plan_revisions` rounds) and listed in its **Spec check** section; a reply that is not valid
    `spec.v1` fails the check rather than passing it. `/auto-runner:spec <plan file>` runs the same check on a plan written by hand.
    Unverified beyond a fake reviewer. When you accept the plan it writes the request to `.auto/pending/<slug>/items.md` and starts the runner.

@@ -40,7 +40,11 @@ Write the plan in the usual way (context, approach, files, risks, how it will be
   agent clicks through that slice's journeys and the earlier slices'; a failed journey becomes a fix item. Write journeys
   a person would accept as proof, not restatements of an item's tests.
 - **Libraries first.** Name the existing components and the open-source packages (with their licences) the work will use, and say
-  why for anything you plan to build yourself.
+  why for anything you plan to build yourself. For each significant new capability (a payment flow, search, file storage, a
+  chart library, an external API; not every item), add a row to a **Reuse check** table: requirement, existing options (with
+  their real links), cost (free, open-source, free tier with its limits, paid), licence, recommendation (reuse, integrate,
+  extend or build) and why. Check each option's page or registry entry before you name it; write "unverified" where you could
+  not. Research belongs here, in planning: the items then build what the plan chose.
 
 End the plan with a section **Queue items** that contains the items exactly as they will go into the queue file:
 

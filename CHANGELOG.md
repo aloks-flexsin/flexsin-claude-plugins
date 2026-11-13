@@ -4,6 +4,15 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-13
+
+### Changed
+- Reuse before building, made stricter: the engineering principles now also cover hosted APIs and services (what they
+  really cost beyond a free tier, self-hosting, lock-in), extending a package that covers most of a need, not adding
+  dependencies for trivial tasks, and never inventing a package, link, price or licence. `/auto-runner:auto` plans carry a
+  **Reuse check** table for each significant new capability, and the spec check reports items that hand-build what a
+  package already in the project, or the plan's Reuse check, provides (`reinvents`).
+
 ## [0.11.0] - 2026-11-13
 
 ### Added

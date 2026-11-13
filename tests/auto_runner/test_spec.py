@@ -91,6 +91,13 @@ def test_a_bad_reply_fails_the_check_never_passes_it(answer, problem):
     assert out['status'] == 'failed' and any(problem in p for p in out['problems'])
 
 
+def test_reinventing_an_existing_package_is_a_finding_kind():
+    f = dict(FINDING, kind='reinvents', detail='T10 writes its own date parser; date-fns is already in package.json.')
+    out = spec.check(Path('.'), PLAN, claude=Reviewer(reply({'schema': 'spec.v1', 'ok': False, 'findings': [f]})), cfg={})
+    assert out['status'] == 'findings'
+    assert '- reinvents:' in spec.prompt(spec.section(PLAN, 'Queue items'))
+
+
 def test_a_finding_for_the_whole_plan_may_leave_the_item_empty():
     f = dict(FINDING, item='', kind='journey_gap')
     out = spec.check(Path('.'), PLAN, claude=Reviewer(reply({'schema': 'spec.v1', 'ok': False, 'findings': [f]})), cfg={})

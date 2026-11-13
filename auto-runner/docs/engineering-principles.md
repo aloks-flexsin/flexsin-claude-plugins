@@ -49,6 +49,14 @@ iteration gets it in its prompt. A project can replace it with its own file (`"p
 - Choose packages that are maintained (recent releases, active issues), widely used and permissively licensed (MIT,
   Apache-2.0, BSD, ISC). Name any copyleft licence (GPL, AGPL) as a question for a person instead of adding it. Add it the
   project's way (its package manager and lock file) at a pinned or ranged version, as the project does.
+- If a package covers most of the need (roughly 70 to 90 percent), extend or wrap it rather than writing an alternative.
+- For a hosted API or service, also check what it really costs: a free trial or a limited free tier is not free. Note the
+  quotas, the paid tiers, whether it can be self-hosted, and how hard it would be to leave. Raise a paid service, or one
+  that would lock the project in, as a question for a person.
+- Do not add a dependency only for the sake of reuse: a few lines of clear code beat a package for a trivial task, and an
+  abandoned, insecure or unmaintained package is not a saving.
+- Never invent a package, a link, a price, a licence or a feature. State only what you checked (in the project, its lock
+  file, or the package's own page); mark anything you could not check as unverified.
 - Build it yourself only when nothing suitable exists, or the dependency would cost more than the code. Say why in the
   commit message.
 - Never copy code from another project or website into this one unless its licence allows it and the source is named.
