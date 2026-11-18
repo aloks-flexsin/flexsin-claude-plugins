@@ -55,6 +55,7 @@ KNOWN_BRANCHES = ('main', 'master', 'trunk', 'develop')
 
 DEFAULTS = {
     'test_command': '',
+    'check_command': '',
     'check_only': False,
     'queue_file': '.auto/queue.md',
     'rules_files': [],

@@ -17,7 +17,7 @@ STREAM = '\n'.join(json.dumps(e) for e in TRANSCRIPT) + '\n'
 def test_the_prompt_asks_for_related_tests_and_names_the_runners_full_run():
     cfg = {'test_command': 'npm test', 'check_only': False, 'queue_file': '.auto/queue.md', 'rules_files': []}
     text = ar.build_prompt(cfg, '.auto/queue.md', 'B7')
-    assert 'run only those' in text and 'npm test' in text and 'a red suite stops the run' in text
+    assert 'end-to-end tests of every service' in text and 'npm test' in text and 'a red suite reopens the item' in text
     assert 'shared code or setup, run the whole suite once' in text
     assert 'the whole suite green' not in text
 

@@ -88,7 +88,8 @@ def test_a_failed_pull_request_is_reported_not_fatal(project, tmp_path):
 
 def test_a_red_run_publishes_nothing(project, tmp_path):
     remote = bare_origin(project, tmp_path)
-    configure(project, publish={'push': True, 'pull_request': True}, test_command='python -c "import sys; sys.exit(3)"')
+    configure(project, publish={'push': True, 'pull_request': True}, test_command='python -c "import sys; sys.exit(3)"',
+              review={'max_fix_rounds': 0})
     gh = FakeGh()
     assert ar.run(project, max_iterations=3, claude=picking_agent(), pr_runner=gh) == 1
     assert remote_branches(remote) == set() and gh.calls == [] and events_of(project, 'publish') == []

@@ -80,6 +80,7 @@ Every key is optional; unknown keys and wrong types are errors that name the key
 | Key | Default | Meaning |
 |---|---|---|
 | `test_command` | `""` | Command that proves the suite is green. Run independently after every iteration. |
+| `check_command` | `""` | Fast checks (for example `npm run lint && npm run typecheck`) the agent must run and pass before it commits; allowed in the agent's tools. Without it the agent is asked for the project's lint and type checks if it has them. |
 | `check_only` | `false` | `true` = the project has no tests; every status and log then says "unverified: no tests". |
 | `queue_file` | `.auto/queue.md` | The one file a person reads; each item gets a status line (queued, running, done + commit, blocked + question, rejected + reasons). |
 | `rules_files` | `[]` | Files the agent must read first. |
@@ -158,16 +159,33 @@ the runner's own run of `test_command` after the iteration is the gate, so the s
 Each iteration's log (`.auto/logs/<run>-iter<N>.log`) holds the agent's full `stream-json` transcript, every tool call and its
 result, redacted like the rest of the log, followed by the runner's test and stage output.
 Claude's usage limit is recognised from the agent's final result (or, when the CLI left none, its last lines), never from the
-work's own output: the item's uncommitted changes are stashed (`git stash list` in the worktree; the queue and `.auto/` are
+work's own output; a result that is not marked as an error but carries a limit message (a soft cut-off) counts too when the
+attempt committed nothing. The item's uncommitted changes are stashed (`git stash list` in the worktree; the queue and `.auto/` are
 left alone), the item goes back to queued, no suite runs, and the run stops with exit code 75 and reason `usage_limit`
-instead of being reported as red, leftovers or no progress. With `"usage_limit": {"wait": true}` it waits until the reset
-(read from the message; every 15 minutes when it gives none), checking the STOP file every 30 seconds, and carries on; the
-interrupted try does not use up an iteration, and a reset beyond `max_wait_minutes` stops the run as above.
+instead of being reported as red, leftovers or no progress. With `"usage_limit": {"wait": true}` it waits and tries again:
+at the stated reset or after 25 minutes, whichever comes first (a stated reset can be later than the real one), and at once
+when another run on the same Claude account gets an attempt through (each attempt that is not stopped by the limit writes
+its time to `auto-runner/usage.json` in Claude's config folder, which every lane reads). It checks the STOP file every 30
+seconds; the interrupted try does not use up an iteration, and the run stops as above once the waiting would pass
+`max_wait_minutes`. An attempt that ends because its `--max-budget-usd` ran out is a handover, not a failure: its
+uncommitted changes are stashed and the same item runs again from them (at most twice; then the usual stop), and every
+prompt tells the agent its budget and to commit before about nine tenths of it. A lock whose process is no longer running
+(a run that crashed or was killed) is cleared with a message; a live run's lock, or one that cannot be read, still refuses.
 A reused worktree whose branch is already merged into the base branch is fast-forwarded to it at the start, so new work
 never starts from old code; a branch with unmerged work of its own is left as it is, with a warning naming how far the base
 is ahead. A runner older than the installed auto-runner (Claude's `installed_plugins.json`) refuses to start and names the
 installed copy's `auto_run.py`. The end of a run prints the suite's own totals line from its last independent run.
-It also stops on a red suite, a STOP file, uncommitted leftovers, or two iterations without progress. Cost per iteration is recorded in `.auto/runs.jsonl` only when the CLI reports it; otherwise it is `null`.
+Before it commits, the agent runs the project's fast checks (`check_command`, else its lint and type checks), the tests
+that cover its change and the end-to-end tests of every service or screen it changed; the runner's own `test_command` stays
+the gate. A red suite reopens the item (its box is unticked, with a queue commit when the queue is tracked, so a red commit
+is never left marked done), keeps any uncommitted changes as a handover, and gives it up to `review.max_fix_rounds` (default
+2) fix rounds: the next iteration works the same item with the end of the failing output in its prompt, and does not use up
+an iteration. After the last round the runner raises a blocker with that output (it shows on the central service when that
+is on) and stops with reason `red`. A handover (a stash labelled `auto-runner: <ITEM> unfinished ...`, from a usage limit, a
+red suite or a person) is restored by the runner itself before the item's next attempt, and the prompt tells the agent to
+continue from it; only the agent's files come back (never the queue, `.auto/` or shared folders), tracked changes as one
+patch and new files one by one, and a stash that does not apply cleanly is kept for a person.
+It also stops on a browser-acceptance failure, a STOP file, uncommitted leftovers, or two iterations without progress. Cost per iteration is recorded in `.auto/runs.jsonl` only when the CLI reports it; otherwise it is `null`.
 Every run also appends to `.auto/events.jsonl` (schema `event.v1`, `bin/autoevents.py`): run start and end (with exit code and reason), each item state change (from, to) and each independent test result, one line per event, never rewritten. `runs.jsonl` keeps its old shape.
 
 ## Modules (all stdlib, all unverified beyond fakes)

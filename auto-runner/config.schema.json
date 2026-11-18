@@ -13,6 +13,7 @@
     "amount": {"type": "number", "minimum": 0}
   },
   "properties": {
+    "check_command": {"$ref": "#/$defs/text"},
     "test_command": {"$ref": "#/$defs/text", "description": "Command that proves the suite is green ('' = none)."},
     "check_only": {"$ref": "#/$defs/flag", "description": "true = no tests exist; statuses say 'unverified: no tests'."},
     "queue_file": {"$ref": "#/$defs/text", "description": "The one queue file a person reads."},

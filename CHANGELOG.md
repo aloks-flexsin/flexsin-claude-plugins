@@ -4,6 +4,31 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-11-18
+
+### Fixed
+- A soft cut-off at the usage limit (a result with a limit message but no error flag, and nothing committed) is treated as
+  a usage limit, not as a red suite.
+- While waiting for a usage limit to reset, the runner tries again after at most 25 minutes instead of trusting a late
+  stated reset, and at once when another lane on the same Claude account gets an attempt through.
+- An attempt that runs out of its budget hands its uncommitted work to the item's next attempt (at most twice) instead of
+  losing it; the prompt now tells the agent its budget and to commit before about nine tenths of it.
+- A lock left by a run that crashed or was killed is cleared automatically.
+
+## [0.12.0] - 2026-11-18
+
+### Changed
+- A red suite no longer stops a lane at once: the item is reopened (unticked, so a red commit is never left marked done)
+  and gets up to `review.max_fix_rounds` (default 2) fix rounds with the end of the failing output in its prompt. After the
+  last round the runner raises a blocker, which shows on the central service, and stops.
+- Before committing, the agent runs the project's fast checks (new `check_command`, for example lint and type checks, or
+  else the project's own lint and type checks), the tests covering its change and the end-to-end tests of what it changed.
+  This restores checks that 0.8.1's "related tests only" dropped.
+
+### Fixed
+- A handover stash (`auto-runner: <ITEM> unfinished ...`) is now restored by the runner itself before the item's next
+  attempt, instead of relying on the agent to read a note; only the agent's files are restored.
+
 ## [0.11.1] - 2026-11-13
 
 ### Changed

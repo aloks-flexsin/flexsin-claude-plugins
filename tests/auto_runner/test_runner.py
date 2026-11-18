@@ -127,7 +127,7 @@ def test_queue_copy_in_project_matches_worktree_and_shows_status(project):
 
 
 def test_red_suite_stops_the_run(project):
-    set_cfg(project, test_command=RED)
+    set_cfg(project, test_command=RED, review={'max_fix_rounds': 0})       # fix rounds: test_red_rounds.py
     calls = []
     code = ar.run(project, max_iterations=3, claude=fake_agent(calls=calls))
     assert code == 1 and len(calls) == 1
@@ -148,7 +148,7 @@ def test_stop_file_stops_between_iterations(project):
 
 
 def test_second_runner_refused_while_lock_exists(project):
-    (project / '.auto' / 'lock').write_text('123', encoding='utf-8')
+    (project / '.auto' / 'lock').write_text(str(os.getpid()), encoding='utf-8')   # a run that is alive
     with pytest.raises(ar.RunnerError, match='already in progress'):
         ar.run(project, max_iterations=1, claude=fake_agent())
     assert not worktree(project).exists()
@@ -269,6 +269,7 @@ def scripted_tests(*codes):
 
 
 def test_two_item_run_with_red_stop_gives_one_event_per_transition(project):
+    set_cfg(project, review={'max_fix_rounds': 0})
     code = ar.run(project, max_iterations=5, claude=fake_agent(), tests=scripted_tests(0, 1))
     assert code == 1
     ev = events(project)
@@ -282,6 +283,7 @@ def test_two_item_run_with_red_stop_gives_one_event_per_transition(project):
         ('item_state', 'A2', 'queued', 'running'),
         ('tests', 'A2', None, 'fail'),
         ('item_state', 'A2', 'running', 'blocked'),
+        ('blocker', 'A2', None, None),
         ('run_end', None, None, None),
     ]
     assert ev[-1]['detail'] == {'exit': 1, 'reason': 'red'}
@@ -302,6 +304,7 @@ def test_event_ledger_is_append_only_across_runs(project):
 
 
 def test_runs_jsonl_keeps_its_old_shape_with_the_ledger(project):
+    set_cfg(project, review={'max_fix_rounds': 0})
     ar.run(project, max_iterations=5, claude=fake_agent(), tests=scripted_tests(0, 1))
     r = runs(project)
     assert [x['item'] for x in r] == ['A1', 'A2'] and [x['result'] for x in r] == ['done', 'red']
@@ -572,9 +575,10 @@ def test_prompt_names_the_picked_item_and_keeps_the_old_wording_without_one():
 OLD_PROMPT_B7 = (
     "You are running unattended. Read RULES.md, then open .auto/queue.md.\n"
     "Do ONLY item B7 (its box is '[ ]'; open items before it are blocked or waiting, leave them alone). Finish it fully: "
-    "implementation, tests, the tests that cover your change passing (run only those: the runner runs the whole suite, npm test, "
-    "itself after you finish, and a red suite stops the run; if you changed shared code or setup, run the whole suite once "
-    "before you commit), one git commit on this branch, then tick the box in the same commit. "
+    "implementation, tests, the project's lint and type checks passing if it has them, the tests that cover your change and "
+    "the end-to-end tests of every service or screen you changed passing, all run before you commit (the runner then runs the "
+    "whole suite, npm test, itself, and a red suite reopens the item; if you changed shared code or setup, run the whole suite "
+    "once before you commit), one git commit on this branch, then tick the box in the same commit. "
     "Do not start a second item. Stay inside the limits in the rules.\n"
     "If you are blocked or the item needs a decision only the product owner can make, write the question to the project's "
     "questions file (or the item's status line), leave the box unticked, and stop.\n"

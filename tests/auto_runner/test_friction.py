@@ -87,20 +87,28 @@ def test_a_limit_stops_cleanly_keeps_the_work_and_is_not_called_red(project, cap
 
 def test_with_waiting_on_the_run_sleeps_until_the_reset_and_carries_on(project):
     set_cfg(project, test_command=GREEN, usage_limit={'wait': True, 'max_wait_minutes': 30})
-    calls, slept = [], []
-    code = ar.run(project, max_iterations=1, claude=limited_agent(calls, then=fake_agent()),
+    calls, slept, restored = [], [], []
+    finish = fake_agent()
+
+    def then(cmd, cwd):                                         # the retry gets the stashed half-done work back
+        half = Path(cwd) / 'half-done.txt'
+        restored.append(half.exists())
+        half.unlink(missing_ok=True)
+        return finish(cmd, cwd)
+    code = ar.run(project, max_iterations=1, claude=limited_agent(calls, then=then),
                   sleep=lambda s: slept.append(s), allow_dirty=True)
-    assert code == 0 and len(calls) == 2                       # the interrupted try did not use up the one iteration
+    assert code == 0 and len(calls) == 2 and restored == [True]  # the interrupted try did not use up the one iteration
     assert project_statuses(project)['A1'][0] == 'done'
     assert 300 <= sum(slept) <= 420 and max(slept) <= 30        # about the 5 minutes to the reset, plus one, in steps
 
 
-def test_a_reset_beyond_the_longest_wait_stops_instead(project):
+def test_a_far_reset_is_tried_again_early_and_stops_past_the_longest_wait(project):
     set_cfg(project, test_command=GREEN, usage_limit={'wait': True, 'max_wait_minutes': 30})
     calls, slept = [], []
     code = ar.run(project, max_iterations=2, claude=limited_agent(calls, reset_in=timedelta(hours=3)),
                   sleep=lambda s: slept.append(s), allow_dirty=True)
-    assert code == ar.USAGE_LIMIT_EXIT and slept == [] and len(calls) == 1
+    assert code == ar.USAGE_LIMIT_EXIT and len(calls) == 2            # one early retry after 25 minutes, not 3 hours
+    assert sum(slept) == ar.LIMIT_POLL_MINUTES * 60
 
 
 def test_a_stop_file_ends_the_wait(project):
