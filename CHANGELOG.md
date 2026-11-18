@@ -4,6 +4,12 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-11-18
+
+### Fixed
+- The journey check's click-through agent and the exploratory browser agent now run on `models.tester` instead of always
+  the CLI's default model, so a project that sets Sonnet for its hands no longer pays Opus prices for its browser checks.
+
 ## [0.12.1] - 2026-11-18
 
 ### Fixed

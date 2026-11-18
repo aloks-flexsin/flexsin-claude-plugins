@@ -281,3 +281,11 @@ def test_runner_exploratory_off_runs_no_exploration(project):
     calls = []
     code = ar.run(project, max_iterations=1, claude=agent_and_explorer(calls), browser_runner=fake_browser())
     assert code == 0 and calls == [] and 'findings' not in runs(project)[0]
+
+
+def test_explore_uses_the_tester_model_when_given(tmp_path, wt):
+    calls = []
+    ab.explore(tmp_path / 'proj', wt, 'A1', BROWSER, claude=fake_explorer(calls=calls), model='sonnet')
+    ab.explore(tmp_path / 'proj', wt, 'A1', BROWSER, claude=fake_explorer(calls=calls))
+    with_model, without = calls
+    assert with_model[with_model.index('--model') + 1] == 'sonnet' and '--model' not in without

@@ -95,7 +95,7 @@ Schema v2 sections (objects, every nested key optional, unknown nested keys and 
 
 | Section | Keys |
 |---|---|
-| `models` | `implementer`, `planner`, `plan_reviewer`, `work_reviewer`, `tester`, `scribe` (model alias or name) |
+| `models` | `implementer`, `planner`, `plan_reviewer`, `work_reviewer`, `tester`, `scribe` (model alias or name). In use: `implementer` (every item and fix round), `plan_reviewer` (the spec check), `tester` (the journey check's click-through and the exploratory browser agent); unset = the CLI's default model. For example Sonnet for `implementer` and `tester`, Opus for `plan_reviewer`. |
 | `lanes` | `protected`, `sandbox` (lists of branch patterns), `deploy_command` |
 | `review` | `model`, `max_plan_revisions`, `max_fix_rounds`, `max_budget_usd` (the spec check uses `model`, `max_plan_revisions` and `max_budget_usd`) |
 | `budgets` | `iteration_usd`, `run_usd`, `max_iterations` |

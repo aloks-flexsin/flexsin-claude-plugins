@@ -566,7 +566,7 @@ def _run_claude(cmd, cwd):
     return r.returncode, (r.stdout or '') + (r.stderr or '')
 
 
-def explore(project, wt, item, browser, spec=None, claude=None, secrets=None, max_budget_usd=None):
+def explore(project, wt, item, browser, spec=None, claude=None, secrets=None, max_budget_usd=None, model=None):
     """-> {'ran', 'reason', 'stored', 'rejected', 'errors', 'output'}. Never decides pass or fail."""
     project, wt = Path(project), Path(wt)
     browser = browser if isinstance(browser, dict) else {}
@@ -589,6 +589,8 @@ def explore(project, wt, item, browser, spec=None, claude=None, secrets=None, ma
            '--disallowedTools', *EXPLORE_DENIED]
     if max_budget_usd is not None:
         cmd += ['--max-budget-usd', str(max_budget_usd)]
+    if model:
+        cmd += ['--model', model]           # models.tester; none = the CLI's default
     before = _git_status(wt)
     code, output = (claude or _run_claude)(cmd, wt)
     out['ran'] = True

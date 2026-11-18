@@ -290,3 +290,27 @@ def test_a_check_that_cannot_be_done_stops_the_run(project, capsys):
                   journey_hooks={'claude': clicker([{}]), 'start': lambda *a: FakeApp([]), 'ready': lambda *a: False})
     assert code == 1 and 'could not be done' in capsys.readouterr().out
     assert journey_events(project)[-1]['result'] == 'invalid'
+
+
+def test_the_click_through_uses_the_tester_model_when_set(tmp_path):
+    js = [j for j in aj.parse(JOURNEYS) if not j['roles']]
+    agent = clicker([{}])
+    aj.run_check(tmp_path, tmp_path, 'T-slice-1', js, {'base_url': BASE}, {'start_command': 'x'}, ar.autobrowser,
+                 claude=agent, start=lambda *a: FakeApp([]), ready=lambda *a: True, model='sonnet')
+    cmd = agent.calls[0]
+    assert cmd[cmd.index('--model') + 1] == 'sonnet'
+    agent2 = clicker([{}])
+    aj.run_check(tmp_path, tmp_path, 'T-slice-1', js, {'base_url': BASE}, {'start_command': 'x'}, ar.autobrowser,
+                 claude=agent2, start=lambda *a: FakeApp([]), ready=lambda *a: True)
+    assert '--model' not in agent2.calls[0]
+
+
+def test_a_run_passes_models_tester_to_the_click_through(project):
+    journey_project(project)
+    set_cfg(project, test_command=GREEN, models={'implementer': 'sonnet', 'tester': 'haiku'},
+            acceptance={'browser': {'base_url': BASE}, 'journeys': {'enabled': True, 'start_command': 'npm start'}})
+    agent, builds = clicker([{}]), []
+    assert ar.run(project, max_iterations=2, claude=fake_agent(calls=builds), journey_hooks=hooks(agent),
+                  allow_dirty=True) == 0
+    assert all(c[c.index('--model') + 1] == 'sonnet' for c in builds)
+    assert agent.calls and all(c[c.index('--model') + 1] == 'haiku' for c in agent.calls)

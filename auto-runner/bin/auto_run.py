@@ -711,7 +711,7 @@ def explore_stage(project, wt, cfg, qtext, item, claude, secrets, max_budget_usd
     block = next((b for i, _, b in queue.parse_items(qtext) if i == item), '')
     browser = autocfg.section(cfg, 'acceptance').get('browser') or {}
     return autobrowser.explore(project, wt, item, browser, queue.parse_browser(block), claude=claude, secrets=secrets,
-                               max_budget_usd=max_budget_usd)
+                               max_budget_usd=max_budget_usd, model=(model_args(cfg, 'tester') or [None, None])[1])
 
 
 def findings_summary(found):
@@ -1026,7 +1026,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             say(f'slice {n} of {letter} is done: checking journeys {", ".join(j["id"] for j in journeys)} on the running app')
             res = autojourney.run_check(project, wt, key, journeys, acc.get('browser') or {}, jcfg, autobrowser,
                                         claude=hooks.get('claude'), start=hooks.get('start'), ready=hooks.get('ready'),
-                                        runner=browser_runner)
+                                        runner=browser_runner, model=(model_args(cfg, 'tester') or [None, None])[1])
             secrets = {**generated(), **res['secrets']}
             jlog = auto / 'logs' / f'{stamp}-journeys-{key}.log'
             jlog.write_text(autobrowser.redact(res['output'] + '\n--- journey check ---\n' + res['status'] + '\n'

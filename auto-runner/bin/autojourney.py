@@ -231,7 +231,8 @@ def _run_claude(cmd, cwd):
     return r.returncode, (r.stdout or '') + (r.stderr or '')
 
 
-def run_check(project, wt, key, journeys, browser, jcfg, autobrowser, claude=None, start=None, ready=None, runner=None):
+def run_check(project, wt, key, journeys, browser, jcfg, autobrowser, claude=None, start=None, ready=None, runner=None,
+              model=None):
     """-> {'status': pass|fail|invalid, 'failed': [{id, step, expected, seen, screenshot}], 'errors', 'output', 'secrets',
     'evidence'}. `start(command, cwd, env) -> app with stop()` and `ready(url, timeout_s) -> bool` are injectable."""
     project, wt = Path(project), Path(wt)
@@ -276,6 +277,8 @@ def run_check(project, wt, key, journeys, browser, jcfg, autobrowser, claude=Non
     cmd = ['claude', '-p', prompt(key, journeys, browser['base_url'], accounts, rel), '--mcp-config', str(cfg_path),
            '--strict-mcp-config', '--output-format', 'json', '--allowedTools', 'mcp__playwright', f'Write({rel}/**)',
            '--disallowedTools', *DENIED, '--max-budget-usd', str(s['max_budget_usd'])]
+    if model:
+        cmd += ['--model', model]                          # models.tester; none = the CLI's default
     app = (start or App)(s['start_command'], wt, env)
     try:
         if not (ready or wait_ready)(browser['base_url'], s['ready_timeout_s']):
