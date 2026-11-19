@@ -85,7 +85,8 @@ def test_origin_head_wins_over_current_branch(tmp_path):
 SCHEMA = json.loads((BIN.parent / 'config.schema.json').read_text(encoding='utf-8'))
 OLD_ONLY = {'test_command': 'pytest -q', 'check_only': False, 'queue_file': 'q.md', 'rules_files': ['CLAUDE.md'],
             'share_dirs': ['venv'], 'worktree_suffix': '-x', 'base_branch': 'main', 'branch_prefix': 'run/',
-            'commit_trailer': 'T: x', 'env_files': ['.env'], 'check_command': 'npm run lint'}
+            'commit_trailer': 'T: x', 'env_files': ['.env'], 'check_command': 'npm run lint',
+            'path_prepend': ['tools/bin']}
 V2_FULL = {
     'models': {'implementer': 'sonnet', 'planner': 'opus', 'plan_reviewer': 'opus', 'work_reviewer': 'claude-opus-5-5',
                'tester': 'haiku', 'scribe': 'inherit'},
@@ -167,7 +168,8 @@ def test_old_only_config_loads_exactly_as_before(tmp_path):
     assert set(cfg.DEFAULTS) == set(OLD_ONLY)
     assert cfg.DEFAULTS == {'test_command': '', 'check_only': False, 'queue_file': '.auto/queue.md', 'rules_files': [],
                             'share_dirs': [], 'worktree_suffix': '-auto', 'base_branch': '', 'branch_prefix': 'auto/',
-                            'commit_trailer': '', 'env_files': [], 'check_command': ''}
+                            'commit_trailer': '', 'env_files': [], 'check_command': '',
+                            'path_prepend': []}
     _write_cfg(tmp_path, OLD_ONLY)
     assert cfg.load(tmp_path) == OLD_ONLY                     # no v2 section appears unless the file sets it
     assert all(cfg.section(cfg.load(tmp_path), s) == {} for s in cfg.SECTIONS)

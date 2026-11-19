@@ -232,7 +232,7 @@ def _run_claude(cmd, cwd):
 
 
 def run_check(project, wt, key, journeys, browser, jcfg, autobrowser, claude=None, start=None, ready=None, runner=None,
-              model=None):
+              model=None, base_env=None):
     """-> {'status': pass|fail|invalid, 'failed': [{id, step, expected, seen, screenshot}], 'errors', 'output', 'secrets',
     'evidence'}. `start(command, cwd, env) -> app with stop()` and `ready(url, timeout_s) -> bool` are injectable."""
     project, wt = Path(project), Path(wt)
@@ -249,7 +249,7 @@ def run_check(project, wt, key, journeys, browser, jcfg, autobrowser, claude=Non
     if not journeys:
         out['status'] = 'pass'
         return out
-    env = {**os.environ, 'AUTO_BASE_URL': browser['base_url']}
+    env = {**(os.environ if base_env is None else base_env), 'AUTO_BASE_URL': browser['base_url']}
     accounts = {}
     roles = sorted({r for j in journeys for r in j['roles']})
     if roles:

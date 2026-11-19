@@ -4,6 +4,17 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-11-19
+
+### Added
+- `path_prepend` in `.claude/auto.json`: project folders (such as `tools/bin` with tool shims) put first on PATH for the
+  agent, the suite, the fast checks and the journey check's app, so a tool the project's permissions allow is found
+  instead of a fallback they do not allow. It lives in the committed config, so every lane and restart gets it.
+
+### Changed
+- An item the agent could not finish because a tool call was refused for lack of permission now says which call and how
+  to allow it, instead of a bare "blocked".
+
 ## [0.12.2] - 2026-11-18
 
 ### Fixed

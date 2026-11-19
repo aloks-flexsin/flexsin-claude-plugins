@@ -106,14 +106,60 @@ def git(cwd, *args, check=True):
     return r.stdout.strip()
 
 
+PATH_PREPEND = []        # absolute folders put first on every child's PATH; set by run() from `path_prepend`, then cleared
+
+
 def child_env():
     """This process's environment without central tokens: the agent and the suite never see one, whatever variable holds it
     (the default variable, a project's own `central.token_env`, or any value that is a token). Python children write UTF-8
-    to the pipe (PYTHONIOENCODING, unless set already), which is how the runner reads every child's output."""
+    to the pipe (PYTHONIOENCODING, unless set already), which is how the runner reads every child's output. The project's
+    `path_prepend` folders (in the worktree) come first on PATH, so its own tool shims are found."""
     env = {k: v for k, v in os.environ.items()
            if k != autosafe.CENTRAL_TOKEN_ENV and not v.strip().startswith(autosafe.CENTRAL_TOKEN_PREFIX)}
     env.setdefault('PYTHONIOENCODING', 'utf-8')
+    if PATH_PREPEND:
+        key = next((k for k in env if k.upper() == 'PATH'), 'PATH')
+        env[key] = os.pathsep.join([*PATH_PREPEND, env.get(key, '')]).rstrip(os.pathsep)
     return env
+
+
+DENIAL_TEXT = re.compile(r"requested permissions? to|haven't granted it|requires approval|permission (?:was )?denied|"
+                         r"not (?:in the )?allowed", re.I)
+
+
+def permission_denials(output):
+    """-> the tool calls the agent was refused for lack of permission, as short text ("Bash: corepack pnpm install").
+    Read from the result's `permission_denials` when the CLI gives them, else from refused tool results in the transcript."""
+    found, uses = [], {}
+
+    def describe(tool, args):
+        args = args if isinstance(args, dict) else {}
+        what = args.get('command') or args.get('file_path') or args.get('path') or args.get('url') or ''
+        return f'{tool}: {str(what)[:160]}'.rstrip(': ')
+
+    for line in output.splitlines():
+        line = line.strip()
+        if not line.startswith('{'):
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        if obj.get('type') == 'result' and isinstance(obj.get('permission_denials'), list):
+            return list(dict.fromkeys(describe(d.get('tool_name', 'tool'), d.get('tool_input'))
+                                      for d in obj['permission_denials'] if isinstance(d, dict)))
+        for part in ((obj.get('message') or {}).get('content') or []) if isinstance(obj.get('message'), dict) else []:
+            if not isinstance(part, dict):
+                continue
+            if part.get('type') == 'tool_use':
+                uses[part.get('id')] = (part.get('name', 'tool'), part.get('input'))
+            elif part.get('type') == 'tool_result' and part.get('is_error'):
+                text = part.get('content') if isinstance(part.get('content'), str) else json.dumps(part.get('content'))
+                if DENIAL_TEXT.search(text or '') and part.get('tool_use_id') in uses:
+                    found.append(describe(*uses[part['tool_use_id']]))
+    return list(dict.fromkeys(found))
 
 
 # --- usage limits, a reused worktree's branch, the suite's totals --------------------------------------------------------
@@ -890,6 +936,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         return 0
 
     lock.acquire()
+    PATH_PREPEND[:] = [str((wt / p).resolve()) for p in cfg.get('path_prepend') or []]
     slug = project_slug(project, cfg)
     central_token = os.environ.get(autosafe.token_env(cfg), '').strip() if autosafe.central_enabled(cfg) else ''
     env_values = autosafe.env_file_values([project / rel for rel in cfg['env_files']])
@@ -1026,7 +1073,8 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             say(f'slice {n} of {letter} is done: checking journeys {", ".join(j["id"] for j in journeys)} on the running app')
             res = autojourney.run_check(project, wt, key, journeys, acc.get('browser') or {}, jcfg, autobrowser,
                                         claude=hooks.get('claude'), start=hooks.get('start'), ready=hooks.get('ready'),
-                                        runner=browser_runner, model=(model_args(cfg, 'tester') or [None, None])[1])
+                                        runner=browser_runner, model=(model_args(cfg, 'tester') or [None, None])[1],
+                                        base_env=child_env())
             secrets = {**generated(), **res['secrets']}
             jlog = auto / 'logs' / f'{stamp}-journeys-{key}.log'
             jlog.write_text(autobrowser.redact(res['output'] + '\n--- journey check ---\n' + res['status'] + '\n'
@@ -1221,6 +1269,10 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                     + ('' if limits['wait'] else ' (or set "usage_limit": {"wait": true} to wait automatically)'))
                 exit_code, reason = USAGE_LIMIT_EXIT, 'usage_limit'
                 return USAGE_LIMIT_EXIT
+            denied = permission_denials(out)
+            if denied:
+                log_text += '\n--- refused for lack of permission ---\n' + '\n'.join(denied) + '\n'
+                say(f'{item}: the agent was refused permission for ' + '; '.join(denied[:3]))
             red = False
             if not check_only:
                 tcode, tout = tests(cfg['test_command'], wt)
@@ -1319,6 +1371,9 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 set_state(item, 'blocked', 'changelog: ' + '; '.join(change['errors']))
             elif entry['result'] == 'blocked':
                 set_state(item, 'blocked', blocked_detail(raised))
+            elif denied:
+                set_state(item, 'blocked', f'needs permission for {"; ".join(denied[:3])}: allow it in .claude/settings.json, '
+                                           f'or put the tool on PATH with "path_prepend"')
             else:
                 set_state(item, 'blocked', f'{entry["result"]}; see the log')
             sync_back(wq, pq, statuses)
@@ -1404,6 +1459,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         ledger.emit('run_end', detail={'exit': exit_code, 'reason': reason})
         push()
         lock.release()
+        PATH_PREPEND.clear()
         if last_suite:
             say(f'suite at the last independent run: {autobrowser.redact(last_suite, generated())}')
     say(f'done. Review: git log {base}..{branch} --oneline   and   git diff {base}...{branch}')

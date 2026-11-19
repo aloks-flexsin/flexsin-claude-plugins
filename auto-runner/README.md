@@ -81,6 +81,7 @@ Every key is optional; unknown keys and wrong types are errors that name the key
 |---|---|---|
 | `test_command` | `""` | Command that proves the suite is green. Run independently after every iteration. |
 | `check_command` | `""` | Fast checks (for example `npm run lint && npm run typecheck`) the agent must run and pass before it commits; allowed in the agent's tools. Without it the agent is asked for the project's lint and type checks if it has them. |
+| `path_prepend` | `[]` | Project folders (relative, committed, for example `["tools/bin"]`) put first on PATH for everything the runner starts: the agent, `test_command`, `check_command` and the journey check's app. For tool shims, so a command the project's permissions allow (`pnpm`) is found instead of a fallback they do not allow (`corepack pnpm`). The preflight refuses an entry outside the project or missing. |
 | `check_only` | `false` | `true` = the project has no tests; every status and log then says "unverified: no tests". |
 | `queue_file` | `.auto/queue.md` | The one file a person reads; each item gets a status line (queued, running, done + commit, blocked + question, rejected + reasons). |
 | `rules_files` | `[]` | Files the agent must read first. |
@@ -185,6 +186,9 @@ is on) and stops with reason `red`. A handover (a stash labelled `auto-runner: <
 red suite or a person) is restored by the runner itself before the item's next attempt, and the prompt tells the agent to
 continue from it; only the agent's files come back (never the queue, `.auto/` or shared folders), tracked changes as one
 patch and new files one by one, and a stash that does not apply cleanly is kept for a person.
+When the agent stops because a tool call was refused for lack of permission (read from the result's `permission_denials`,
+or from refused tool results in the transcript), the item's status names the call, for example "needs permission for Bash:
+corepack pnpm install: allow it in .claude/settings.json, or put the tool on PATH with path_prepend", and the log lists them.
 It also stops on a browser-acceptance failure, a STOP file, uncommitted leftovers, or two iterations without progress. Cost per iteration is recorded in `.auto/runs.jsonl` only when the CLI reports it; otherwise it is `null`.
 Every run also appends to `.auto/events.jsonl` (schema `event.v1`, `bin/autoevents.py`): run start and end (with exit code and reason), each item state change (from, to) and each independent test result, one line per event, never rewritten. `runs.jsonl` keeps its old shape.
 

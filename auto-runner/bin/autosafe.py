@@ -257,6 +257,20 @@ def env_file_values(paths):
     return found
 
 
+def path_prepend_problems(project, cfg):
+    """One message per `path_prepend` entry that is not a relative folder inside the project, or does not exist (it must be
+    committed: the runner puts the worktree's copy first on PATH)."""
+    problems = []
+    project = Path(project).resolve()
+    for rel in cfg.get('path_prepend') or []:
+        p = Path(rel)
+        if not rel.strip() or p.is_absolute() or rel.strip()[0] in '/\\' or '..' in p.parts:
+            problems.append(f'.claude/auto.json: "path_prepend" entry "{rel}" must be a folder inside the project, relative to it')
+        elif not (project / p).is_dir():
+            problems.append(f'.claude/auto.json: "path_prepend" entry "{rel}" is not a folder in the project')
+    return problems
+
+
 def env_file_problems(project, cfg):
     """One message per `env_files` entry that is not a relative path inside the project, is missing, is not ignored by git,
     or is tracked: such a file could end up in a commit."""
@@ -358,6 +372,7 @@ def preflight(project, cfg, base, doctor=None):
     problems += journey_problems(cfg)
     problems += central_problems(cfg)
     problems += env_file_problems(project, cfg)
+    problems += path_prepend_problems(project, cfg)
     problems += publish_problems(project, cfg, base)
     problems += principles_problems(project, cfg)
     problems += capability_problems(project, cfg, doctor)
