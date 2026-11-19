@@ -210,6 +210,7 @@ such as `₹` never breaks a run on Windows.
 | `bin/autocentral.py` | What init and join share: `default_token_env`, `repo_key` / `clean_url`, `remote_url`, `lookup` (`GET /api/v1/project`), `check`, `token_steps`. |
 | `bin/auto_join.py` | Join: repository URL from the central service, `git clone` into a folder you confirm, then init's preview. |
 | `bin/autojourney.py` | Journey check: parses journeys, starts and stops the app, runs the click-through agent, validates `journey.v1`, writes fix items. |
+| `bin/autodeck.py` | Journey deck: after each journey check, the passing journeys' screenshots replace their slides in `.auto/journeys/deck.html` (`deck.v1` in `deck.json`). |
 | `bin/autospec.py` | Spec check: a read-only reviewer `claude -p` checks a plan's queue items against the code and answers `spec.v1` findings. |
 | `bin/autoupdate.py` | Update: `check` refreshes the marketplace and lists the changelog between the installed and the available version; `apply` runs `claude plugin update`. |
 | `bin/autosetup.py` | Capability registry and `doctor` (read-only), `plan` / `apply` / `remove` for setup. |
@@ -259,6 +260,17 @@ always stopped afterwards. Results that are missing, invalid, without a screensh
 expected vs seen, the screenshot) that runs next with an extra iteration; the slice is checked again after it. After
 `max_fix_rounds` (default 2) failed rounds a blocker with the evidence is raised and the run stops. Events: type `browser`
 with `layer: "journey"`. The click-through costs up to `max_budget_usd` per check (default $3).
+
+**Journey deck** (unverified: fake click-through only, never opened on a real app's screenshots). After every journey check with
+valid results, each journey that passed gets its slides replaced in `.auto/journeys/deck.html`: one self-contained page (no
+network) with a title slide listing the journeys, then per journey a cover slide (name, slice, the *Expect:* line) and one slide
+per step (the screenshot, the planned step, expected and seen). A journey that failed keeps the slides of its last pass, marked
+with a red "Failing since <time>" banner (the failed step, expected and seen, when it was last checked) on its cover and step
+slides and "failing" in the contents, until it passes again; one that never passed shows a cover with the banner and no
+screenshots. `deck.json` records per journey `last_result`, `last_checked` and, while it fails, `failing_since`. Open it in a browser; arrow keys or Page Up/Down move between slides, and it prints one
+slide per page. Screenshots are copied to `.auto/journeys/deck/<LETTER>/<Jn>/`, the state is `deck.json` (`deck.v1`); all of it
+is under `.auto/`, which is not committed. Text is redacted like the journey log; screenshots cannot be, so journeys run on test
+data only. A deck that cannot be written is reported and never stops the run.
 
 **Layer 2 only advises.** With `exploratory: true`, after a passing Layer 1 a second `claude -p` explores through Playwright MCP limited to
 the base URL's origin and may only write `finding.v1` files to `.auto/findings/new/`. Valid findings are stored with a proposed regression

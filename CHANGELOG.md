@@ -4,6 +4,15 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-19
+
+### Added
+- Journey deck: after every journey check the runner keeps `.auto/journeys/deck.html`, a slide deck of the app's user
+  journeys built from the check's own screenshots (a cover slide per journey, one slide per step with expected and seen).
+  A journey's slides are replaced only when it passes; a journey that fails now keeps its last passing slides under a red
+  "Failing since" banner with the failed step, so old screenshots never pass for the app as it is.
+- Central service: one shared stylesheet, a top bar with navigation and sign-out, status badges and cards on every page.
+
 ## [0.12.3] - 2026-11-19
 
 ### Added

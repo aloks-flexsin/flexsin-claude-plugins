@@ -84,6 +84,7 @@ autobrowser = _load('autorunner_browser', 'autobrowser.py')
 autochange = _load('autorunner_change', 'autochange.py')
 autodocs = _load('autorunner_docs', 'autodocs.py')
 autojourney = _load('autorunner_journey', 'autojourney.py')
+autodeck = _load('autorunner_deck', 'autodeck.py')
 
 AUTO_DIR = '.auto'
 STALE_NOTE = '(stale artifact)'
@@ -1084,6 +1085,14 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                                                                  'failed': [f['id'] for f in res['failed']],
                                                                  'errors': res['errors'], 'evidence': res['evidence']},
                                                                 secrets), 'independent_test')
+            if res['evidence']:
+                try:                                       # the journey deck: never a reason to stop the run
+                    shown = autodeck.update(project, letter, key, journeys, res['evidence'],
+                                            redact=lambda s: autobrowser.redact(s, secrets))
+                    if shown:
+                        say(f'journey deck updated ({", ".join(shown)}): {project / autodeck.FOLDER / "deck.html"}')
+                except (OSError, ValueError, KeyError, TypeError) as e:
+                    say(f'journey deck not updated: {type(e).__name__}: {e}')
             try:
                 rounds = json.loads(rounds_file.read_text(encoding='utf-8'))
             except (OSError, ValueError):
