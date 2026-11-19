@@ -2,8 +2,8 @@
 {% block title %}{{ blocker.blocker_id }}{% endblock %}
 {% block content %}
 <h1>{{ blocker.blocker_id }}</h1>
-<p><a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}">All blockers of {{ project.name }}</a></p>
-<p>Item {{ blocker.task or "?" }} · State: <strong>{{ describe }}</strong> · Raised {{ blocker.created_at }}</p>
+<p class="crumbs"><a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}">All blockers of {{ project.name }}</a></p>
+<p class="lead">Item {{ blocker.task or "?" }} · State: <span class="badge warn">{{ describe }}</span> · Raised {{ blocker.created_at }}</p>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 
 <h2>Question</h2>

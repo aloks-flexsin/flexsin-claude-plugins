@@ -4,8 +4,24 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}auto-runner central{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+<header class="topbar"><div class="topbar-in">
+  <a class="brand" href="{{ url_for('auth.home') }}">auto-runner <span>central</span></a>
+  {% if g.account %}
+  <nav class="nav">
+    <a href="{{ url_for('projects.projects_page') }}">Projects</a>
+    {% if g.account.role == "admin" %}<a href="{{ url_for('admin.accounts_page') }}">Accounts</a>{% endif %}
+    <a href="{{ url_for('admin.own_password') }}">Password</a>
+  </nav>
+  <div class="who">{{ g.account.email }}
+    <form method="post" action="{{ url_for('auth.signout') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Sign out</button>
+    </form>
+  </div>
+  {% endif %}
+</div></header>
 <main>
 {% block content %}{% endblock %}
 </main>

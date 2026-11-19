@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Sign in{% endblock %}
 {% block content %}
+<div class="auth">
 <h1>Sign in</h1>
+<div class="card">
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 <form method="post" action="{{ url_for('auth.signin_post') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -9,4 +11,6 @@
   <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
   <button type="submit">Sign in</button>
 </form>
+</div>
+</div>
 {% endblock %}

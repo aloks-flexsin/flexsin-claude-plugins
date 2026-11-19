@@ -1,14 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>auto-runner central</h1>
-<p>Signed in as {{ account.email }}.</p>
-<ul>
-  <li><a href="{{ url_for('projects.projects_page') }}">Projects</a></li>
-  <li><a href="{{ url_for('admin.own_password') }}">Change your password</a></li>
-  {% if account.role == "admin" %}<li><a href="{{ url_for('admin.accounts_page') }}">Accounts</a></li>{% endif %}
-</ul>
-<form method="post" action="{{ url_for('auth.signout') }}">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <button type="submit">Sign out</button>
-</form>
+<p class="lead">Signed in as {{ account.email }}.</p>
+<div class="grid">
+  <a class="tile" href="{{ url_for('projects.projects_page') }}"><b>Projects</b><span>Blockers, members and API tokens</span></a>
+  {% if account.role == "admin" %}<a class="tile" href="{{ url_for('admin.accounts_page') }}"><b>Accounts</b><span>Add, disable and reset people</span></a>{% endif %}
+  <a class="tile" href="{{ url_for('admin.own_password') }}"><b>Your password</b><span>Change it; signs you out everywhere</span></a>
+</div>
 {% endblock %}

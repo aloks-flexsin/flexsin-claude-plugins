@@ -2,7 +2,7 @@
 {% block title %}{{ project.name }} API tokens{% endblock %}
 {% block content %}
 <h1>{{ project.name }} <small>({{ project.slug }})</small> API tokens</h1>
-<p><a href="{{ url_for('projects.members_page', slug=project.slug) }}">Members</a></p>
+<p class="crumbs"><a href="{{ url_for('projects.members_page', slug=project.slug) }}">Members</a> / API tokens</p>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 {% if new_token %}
 <section role="status">
@@ -19,7 +19,7 @@
       <td><code>{{ t.prefix }}…</code></td>
       <td>{{ t.scopes }}</td>
       <td>{{ t.created_at }}</td>
-      <td>{% if t.revoked_at %}revoked {{ t.revoked_at }}{% else %}active{% endif %}</td>
+      <td>{% if t.revoked_at %}<span class="badge off">revoked {{ t.revoked_at }}</span>{% else %}<span class="badge ok">active</span>{% endif %}</td>
       <td>
         {% if not t.revoked_at %}
         <form method="post" action="{{ url_for('projects.token_rotate', slug=project.slug, token_id=t.id) }}">
@@ -28,7 +28,7 @@
         </form>
         <form method="post" action="{{ url_for('projects.token_revoke', slug=project.slug, token_id=t.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit">Revoke</button>
+          <button type="submit" class="danger">Revoke</button>
         </form>
         {% endif %}
       </td>

@@ -2,7 +2,6 @@
 {% block title %}Accounts{% endblock %}
 {% block content %}
 <h1>Accounts</h1>
-<p><a href="{{ url_for('auth.home') }}">Home</a></p>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 <table>
   <thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
@@ -10,8 +9,8 @@
   {% for a in accounts %}
     <tr>
       <td>{{ a.email }}</td>
-      <td>{{ a.role }}</td>
-      <td>{{ "disabled" if a.disabled else "enabled" }}</td>
+      <td><span class="badge">{{ a.role }}</span></td>
+      <td><span class="badge {{ 'off' if a.disabled else 'ok' }}">{{ "disabled" if a.disabled else "enabled" }}</span></td>
       <td>
         <form method="post" action="{{ url_for('admin.account_disabled', account_id=a.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
