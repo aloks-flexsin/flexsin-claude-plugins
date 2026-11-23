@@ -215,6 +215,25 @@ def api_token():
     return jsonify(token=raw, email=account["email"])
 
 
+@bp.get("/api/v1/projects")
+def api_my_projects():
+    """The signed-in person's projects (personal token; no project named): slug, name, repository and role, so the plugin
+    can offer them to clone. Admins see every project."""
+    from . import projects as _projects
+    from .tokens import _bearer, _fail
+    db, moment = get_db(), auth.now()
+    row, account = lookup(db, _bearer() or "", moment)
+    if row is None:
+        _fail(401, "a valid personal token is required: sign this computer in from Claude")
+    touch(db, row, moment)
+    out = []
+    for p in _projects.visible_to(db, account):
+        role = _projects.effective_role(db, p, account)
+        out.append({"slug": p["slug"], "name": p["name"], "repo_url": p["repo_url"], "role": role,
+                    "can_run": _projects.allows(role, "developer")})
+    return jsonify(account=account["email"], projects=out)
+
+
 # ---------- pages ----------
 
 @bp.get("/device")

@@ -47,6 +47,8 @@ Open Claude Code in the project folder (or any folder, to clone) and run **`/aut
 missing and, with your yes at each step:
 - connects this checkout (`/auto-runner:init --central-url ...`; the project is read from `origin`, no slug to type) or clones the project from the
   service (`/auto-runner:join <slug>`),
+- in a folder that is not a checkout yet: signs you in, lists **your projects** and clones the one you pick (step 5 of
+  0007: nobody shares clone commands any more); in a checkout: fetches and fast-forwards the base branch when that is safe,
 - sets your runner identity (`AUTO_RUNNER_USER`, `AUTO_RUNNER_ACCOUNT`),
 - **signs this computer in**: it shows an address and a short code (like `KQ4M-7RXD`); you open the address, sign in,
   check that it names your computer and repository, and press **Approve**. The token goes straight to your user
@@ -70,6 +72,20 @@ one unused for 90 days stops working (sign in again).
    `python <plugin>/bin/autocentral.py login wait --project .`. (A machine nobody signs in on: a project token, stored with
    the hidden-prompt line init prints for the variable it names, default `AUTO_RUNNER_TOKEN_<SLUG>`.)
 4. **Restart Claude Code**, then `/auto-runner:central`.
+
+## Tasks: what each person's runner does next
+- On a project's **Tasks** page you add a task for yourself (title, what and why); admins can add one for anyone who can
+  run runners. Everyone in the project sees every task and who is working on what.
+- Run **`/auto-runner:auto`** with no task. Your runner takes your next task: a new one gets a plan (the same planning and
+  spec check as always), which then **waits for approval** on the task's page; meanwhile the runner takes your next one.
+- On the task page you, a manager, an owner or an admin **Approve** the plan, **Request changes** (with a comment; the
+  runner revises it on its next `/auto-runner:auto`) or **Reject** it.
+- Run `/auto-runner:auto` again: an approved task is built on its own branch and pull request, and shows **done** with the
+  PR when the run finishes.
+- A task you type in the terminal (`/auto-runner:auto <task>`) is approved there as before and recorded on the page too.
+- **Claims:** a task a runner works on shows its runner, so nobody else's runner takes it. A runner silent for 2 hours
+  loses its claim. An admin can release a claim or give the task to someone else; the old runner stops that task at its
+  next step.
 
 ## Answering a blocker
 1. A run raises a blocker and stops working on that item; other ready items go on. `/auto-runner:central` and

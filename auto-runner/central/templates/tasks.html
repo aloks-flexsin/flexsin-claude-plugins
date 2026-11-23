@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} tasks{% endblock %}
+{% block content %}
+<h1>{{ project.name }} <small>({{ project.slug }})</small> tasks</h1>
+<p class="crumbs"><a href="{{ url_for('projects.projects_page') }}">Projects</a> / <a href="{{ url_for('projects.members_page', slug=project.slug) }}">{{ project.name }}</a> / Tasks · <a href="{{ url_for('runs.runs_page', slug=project.slug) }}">Runs</a> · <a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}">Blockers</a></p>
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if tasks %}
+<table>
+  <thead><tr><th>#</th><th>Task</th><th>Assigned to</th><th>State</th><th>Being worked by</th><th>Pull request</th><th>Updated</th></tr></thead>
+  <tbody>
+  {% for t in tasks %}
+    <tr>
+      <td>{{ t.number }}</td>
+      <td><a href="{{ url_for('tasks.task_page', slug=project.slug, number=t.number) }}">{{ t.title }}</a></td>
+      <td>{{ t.assignee_email }}</td>
+      <td><span class="badge {{ 'warn' if t.status in ('plan_review', 'changes_requested') else ('ok' if t.status == 'done' else ('off' if t.status == 'rejected' else '')) }}">{{ t.describe }}</span></td>
+      <td>{% if t.live %}<code>{{ t.claim_runner }}</code>{% elif t.claim_id and t.status in ('planning', 'building', 'approved', 'changes_requested') %}<span class="muted">claim expired</span>{% endif %}</td>
+      <td>{% if t.pr_url %}<a href="{{ t.pr_url }}" rel="noopener noreferrer">{{ t.pr_url.rsplit('/', 1)[-1] and '#' ~ t.pr_url.rsplit('/', 1)[-1] }}</a>{% endif %}</td>
+      <td class="nowrap">{{ t.updated_at }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="card empty">No tasks yet. Add one below; a runner takes it when its person runs <code>/auto-runner:auto</code> with no task.</p>
+{% endif %}
+{% if can_add %}
+<h2>Add a task</h2>
+<p class="muted">The runner of the person it is assigned to plans it first; the plan waits here for approval before anything is built.</p>
+<form method="post" action="{{ url_for('tasks.task_add', slug=project.slug) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Title <input type="text" name="title" value="{{ form.title }}" maxlength="200" required></label>
+  <label>What should be built, and why<br><textarea name="description" rows="5" cols="80" maxlength="20000">{{ form.description }}</textarea></label>
+  {% if is_admin %}
+  <label>Assign to <select name="assignee">
+    <option value="{{ g.account.id }}">me ({{ g.account.email }})</option>
+    {% for m in assignees %}{% if m.account_id != g.account.id %}<option value="{{ m.account_id }}">{{ m.email }} ({{ m.role }})</option>{% endif %}{% endfor %}
+  </select></label>
+  {% endif %}
+  <button type="submit">Add task</button>
+</form>
+{% endif %}
+{% endblock %}

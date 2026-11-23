@@ -2,7 +2,7 @@
 {% block title %}{{ project.name }} blockers{% endblock %}
 {% block content %}
 <h1>{{ project.name }} <small>({{ project.slug }})</small> blockers</h1>
-<p class="crumbs"><a href="{{ url_for('projects.projects_page') }}">Projects</a> / <a href="{{ url_for('projects.members_page', slug=project.slug) }}">{{ project.name }}</a> / Blockers · <a href="{{ url_for('runs.runs_page', slug=project.slug) }}">Runs</a></p>
+<p class="crumbs"><a href="{{ url_for('projects.projects_page') }}">Projects</a> / <a href="{{ url_for('projects.members_page', slug=project.slug) }}">{{ project.name }}</a> / Blockers · <a href="{{ url_for('tasks.tasks_page', slug=project.slug) }}">Tasks</a> · <a href="{{ url_for('runs.runs_page', slug=project.slug) }}">Runs</a></p>
 {% if blockers %}
 <table>
   <thead><tr><th>Blocker</th><th>Item</th><th>Question</th><th>State</th><th>Raised</th></tr></thead>

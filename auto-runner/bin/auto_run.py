@@ -84,6 +84,7 @@ queue = _load('autorunner_queue', 'queue.py')
 autosafe = _load('autorunner_safe', 'autosafe.py')
 autoevents = _load('autorunner_events', 'autoevents.py')
 autoblock = _load('autorunner_block', 'autoblock.py')
+autotasks = _load('autorunner_tasks', 'autotasks.py')
 autodeliver = _load('autorunner_deliver', 'autodeliver.py')
 autoupdate = _load('autorunner_update', 'autoupdate.py')
 autobrowser = _load('autorunner_browser', 'autobrowser.py')
@@ -821,6 +822,7 @@ def apply_pending(project, wt, cfg, queue_rel, limit=None):
                 msg += f'\n\n{cfg["commit_trailer"]}'
             git(wt, 'add', '--', *files)
             git(wt, 'commit', '-q', '-m', msg)
+        autotasks.adopt(project / AUTO_DIR, d)          # a request made from a central task: the run now works on it
         dest = project / AUTO_DIR / 'applied' / f'{d.name}-{stamp}'
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(d), str(dest))
@@ -1091,6 +1093,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
     ledger.emit('run_start', detail={'branch': branch, 'base': base, 'max_iterations': max_iterations,
                                      'user': user, 'account': account})
     exit_code, reason = None, 'error'
+    published = None
     last_suite = ''
     statuses = {}
 
@@ -1318,6 +1321,11 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 break
             if i > 1:
                 deliver()
+            if pusher is not None and autotasks.beat(pusher, auto) == 'lost':
+                say('the central task this run works on was released, reassigned or its claim expired: stopping. '
+                    'Its work so far stays on the branch.')
+                exit_code, reason = 1, 'claim_lost'
+                return 1
             qtext = wq.read_text(encoding='utf-8')
             before = queue.open_count(qtext)
             if before == 0:
@@ -1612,6 +1620,12 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
     finally:
         ledger.emit('run_end', detail={'exit': exit_code, 'reason': reason})
         push()
+        if pusher is not None and autotasks.current(auto) is not None:
+            wq_end = wt / queue_rel
+            done = exit_code == 0 and wq_end.exists() and queue.open_count(wq_end.read_text(encoding='utf-8')) == 0
+            line = autotasks.finish(pusher, auto, done, branch, (published or {}).get('pr_url'), reason)
+            if line:
+                say(line)
         lock.release()
         PATH_PREPEND.clear()
         if last_suite:

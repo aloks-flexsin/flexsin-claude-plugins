@@ -234,8 +234,9 @@ def test_signed_in_posts_need_the_session_token(client, conn, ada, clock):
 def test_every_post_route_checks_csrf(app, client):
     posts = [r.rule for r in app.url_map.iter_rules() if 'POST' in r.methods and not r.rule.startswith('/api/')]
     assert posts
-    for path in posts:
-        assert client.post(path, data={}).status_code == 400, path
+    for rule in posts:
+        path = re.sub(r'<int:[^>]+>', '1', rule)            # a number parameter needs a number to reach the view
+        assert client.post(path, data={}).status_code == 400, rule
 
 
 def test_audit_rows_for_success_and_failure_never_hold_the_password(client, conn, ada, clock, caplog):

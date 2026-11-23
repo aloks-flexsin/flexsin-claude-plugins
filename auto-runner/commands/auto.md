@@ -1,11 +1,28 @@
 ---
 description: Plan a task, then (once you accept the plan) queue it and run it unattended in a separate worktree
-argument-hint: <what to build> [budget=5] [iterations=N]
+argument-hint: [<what to build>] [budget=5] [iterations=N]   (no task: take my next task from the central service)
 ---
 
 The user wants this done in autonomous mode: **$ARGUMENTS**
 
-Follow these steps in order. Do not skip the plan, and do not start the run before the plan is accepted.
+**If no task is given** (only `budget=`/`iterations=` or nothing), follow "0. My next task from the central service" and
+stop there. Otherwise follow steps 1 to 3 in order. Do not skip the plan, and do not start the run before the plan is accepted.
+
+## 0. My next task from the central service (no task given)
+Tasks live on the central service (decision record 0007); this needs the project connected and this computer signed in
+(`/auto-runner:central`). Repeat until a run is started or nothing is left:
+1. Run `python "${CLAUDE_PLUGIN_ROOT}/bin/autotasks.py" next --project "${CLAUDE_PROJECT_DIR}"`. If it says "Not done",
+   tell the user why (usually: run `/auto-runner:central` first) and stop. If there is no task waiting, say so and stop.
+2. **Action: plan** (a new task, or one sent back with a comment to address). Plan it exactly as step 1 below describes
+   (plan mode, the same sections, Reuse check, the spec check), using its description (and the comment) as the task.
+   Do **not** ask the user to accept it: the approval happens on the central page. Write the whole plan to
+   `.auto/run/tasks/<N>-plan.md` and only its Queue items (verbatim, no headings) to `.auto/run/tasks/<N>-items.md`, then run
+   `python "${CLAUDE_PLUGIN_ROOT}/bin/autotasks.py" plan <N> --plan .auto/run/tasks/<N>-plan.md --items .auto/run/tasks/<N>-items.md --project "${CLAUDE_PROJECT_DIR}"`.
+   Tell the user the plan waits for approval on the project's Tasks page (the assignee, a manager, an owner or an admin
+   approves it), then go back to 0.1 for the next task: this runner keeps its claim on the planned task meanwhile.
+3. **Action: build** (its plan was approved). Run `python "${CLAUDE_PLUGIN_ROOT}/bin/autotasks.py" start <N> --project "${CLAUDE_PROJECT_DIR}"`;
+   it prints a request slug. Start the runner with that slug exactly as in step 2.3 below, then report as in steps 2.4
+   and 3. The runner keeps the claim alive, stops if an admin releases the task, and reports it done or stopped at the end.
 
 ## 1. Plan first
 Switch to plan mode now (the EnterPlanMode tool; if it is only listed as deferred, load it with ToolSearch first). In plan mode, read the project's rules files
@@ -74,6 +91,9 @@ Then call ExitPlanMode so the user can accept or change the plan. If they ask fo
 ## 2. After the plan is accepted
 1. Pick a short kebab-case slug for this task (for example `csv-export`). If `${CLAUDE_PROJECT_DIR}/.auto/pending/<slug>` already exists, add the date.
 2. Create the folder `${CLAUDE_PROJECT_DIR}/.auto/pending/<slug>/` containing `items.md` (only the Queue items from the plan, verbatim, no headings), `journeys.md` (only the plan's Journeys, verbatim, when it has any) and `plan.md` (the whole accepted plan).
+   When the project is connected to the central service, also record the task there so the team sees it:
+   `python "${CLAUDE_PLUGIN_ROOT}/bin/autotasks.py" record --slug <slug> --title "<a short title>" --plan .auto/pending/<slug>/plan.md --items .auto/pending/<slug>/items.md --project "${CLAUDE_PROJECT_DIR}"`.
+   If it says "Not done" (not signed in, or local mode), tell the user in one line and carry on: the run works without it.
 3. Start it in the background (Bash tool with `run_in_background: true`; the first line of output shows whether the request was accepted):
 
    `python "${CLAUDE_PLUGIN_ROOT}/bin/auto_run.py" --project "${CLAUDE_PROJECT_DIR}" --enqueue <slug> --allow-dirty --max-iterations <number of items> --max-budget-usd 5`

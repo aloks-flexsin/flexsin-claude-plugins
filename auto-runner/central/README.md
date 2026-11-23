@@ -89,6 +89,29 @@ may not stick over plain http. The API endpoints do not use the cookie.
   Only `https://host/owner/repo`, `ssh://[user@]host[:port]/owner/repo` and `user@host:owner/repo` are taken; a password, any
   user in an https URL, queries, fragments, other schemes and local paths are refused. The service never holds git credentials.
 
+## Tasks (decision record 0007, step 4; `tasks.py`)
+
+- `/projects/<slug>/tasks` (any member): every task of the project with its assignee, state, the runner working on it, and
+  its pull request. People who can run runners (developer and above) add tasks for themselves; admins add them for any such
+  member. `/projects/<slug>/tasks/<N>`: the description, the plan and its queue items, and the decision.
+- States: `open` → `planning` (a runner claimed it) → `plan_review` → `approved` → `building` → `done`; or
+  `changes_requested` (back to the runner with a comment) and `rejected`. A task typed in the terminal is recorded as
+  `building` (its plan was approved there).
+- **Plan approval** on the task page: Approve, Request changes (a comment is required) or Reject, by the assignee or a
+  project manager, owner or admin. Audited.
+- **Claims:** only the runner holding a task's claim may post its plan, beat or report. A claim lives while its runner
+  beats (any task call) within 2 hours, and for as long as its plan waits for a person. A silent claim expires and the task
+  can be taken again. Admins **release** a claim or **give the task to someone else** on the task page (audited): the
+  runner gets 409 on its next call and stops that task. Work goes back one step (planning → open, building → approved);
+  a new assignee plans it afresh.
+- **API** (personal tokens only, the project named as for every call): `GET /api/v1/tasks` (every task, with the runner
+  working on each, never a claim id), `GET /api/v1/tasks/<N>`, `POST /api/v1/tasks/next` (`{runner}` → claims the account's
+  next task: approved, building, changes requested, planning, then open; returns the task, the claim and `action`
+  plan|build), `POST /api/v1/tasks` (record a terminal task), `POST /api/v1/tasks/<N>/plan` (`{claim, plan, items}`),
+  `.../heartbeat` (`{claim}`), `.../report` (`{claim, result: done|stopped, branch, pr_url, note}`). 409 = this runner no
+  longer holds the task.
+- Table `project_task` (init-db creates it).
+
 ## Runs
 
 - `/projects/<slug>/runs` (any member): each run of the project, newest first, and a "Working now" list. Built from the
@@ -134,6 +157,7 @@ stored only as SHA-256 (table `device_login`), and a request gives a token once.
 | Endpoint | Scope | What it does |
 | --- | --- | --- |
 | `POST /api/v1/events` | `ingest` | One `event.v1` object or a list. Replies `accepted`, `duplicates`, `ids`, `duplicate_ids`. The same id with a different body gets 409, an unknown schema or bad event 400, a body over 256 KB 413, more than 120 requests a minute per token 429 (counted per process). The event's `project` must be the token's project. Run-level events (`run_start`, `run_end`, `publish`) have no item. Secrets in `detail` are redacted before storing. |
+| `GET /api/v1/projects` | personal token, no project | `{"account", "projects": [{"slug", "name", "repo_url", "role", "can_run"}]}`: the signed-in person's projects (every project for an admin), for the plugin's "my projects" and clone. Project tokens get 401. |
 | `GET /api/v1/project` | any | `{"slug", "name", "repo_url", "account"}` of the token's project (`account`: the signed-in email for a personal token, else null) (`repo_url` is null for a project made before the column existed). The plugin's init and join use it to check they are pointed at the right repository. |
 | `GET /api/v1/deliveries/pending` | `pull` | `{"deliveries": [...]}`: the project's answers not yet acknowledged, oldest first; each is marked delivered. |
 | `POST /api/v1/deliveries/<delivery_id>/ack` | `pull` | Marks a delivery acknowledged (a second ack changes nothing). Unknown or another project's id: 404; never delivered: 409. |

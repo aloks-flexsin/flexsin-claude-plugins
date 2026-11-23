@@ -1,5 +1,5 @@
 ---
-description: Check whether this project is connected to the central service, and set it up step by step after you agree
+description: Set up the central service in one go (check, sign in, clone or sync, connect), each change after you agree
 argument-hint: [--central-url URL] [--central-project SLUG]
 ---
 
@@ -11,8 +11,21 @@ the page is used, and help the user finish the setup. Every change previews firs
    `python "${CLAUDE_PLUGIN_ROOT}/bin/autocentral.py" status --project "${CLAUDE_PROJECT_DIR}"`
 
    Tell the user in plain words what it found: connected or not, the token (set or not; never its value), the runner
-   identity, events not sent yet, blockers waiting (with their page links) and how the page is used. Exit code 0 means
-   connected and nothing to do; then stop here.
+   identity, events not sent yet, blockers waiting (with their page links) and how the page is used. When this folder is
+   a git checkout, also bring it up to date (it fetches, and only fast-forwards the base branch when that is safe; it
+   never touches uncommitted work or a branch with commits of its own):
+
+   `python "${CLAUDE_PLUGIN_ROOT}/bin/autocentral.py" sync --project "${CLAUDE_PROJECT_DIR}"`
+
+   Exit code 0 of the check means connected; report the sync line and stop here.
+
+1b. **Not a git checkout** (for example a new, empty folder). Offer to set a project up here from the central service.
+   Ask for the service address unless known (Flexsin: `https://auto-runner-central.vercel.app`; never guess another).
+   After a clear yes: if this computer is not signed in, sign it in as in step 5 with `--central-url <URL>`; then run
+   `python "${CLAUDE_PLUGIN_ROOT}/bin/autocentral.py" projects --central-url <URL>` and let the user pick one of the
+   listed projects (only ones they can run runners on). Then clone it with the `/auto-runner:join` flow for that slug
+   (it previews the folder; `--apply` only after a yes), and continue this command inside the new folder. No project
+   listed: an owner or admin must invite them on the central page first.
 
 2. **A git worktree.** If the check says this folder is a worktree of another folder, tell the user to open Claude Code in
    that main checkout and run `/auto-runner:central` there. Change nothing here.
