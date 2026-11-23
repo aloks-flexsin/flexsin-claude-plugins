@@ -4,6 +4,19 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-23
+
+### Added
+- `/auto-runner:central`: checks whether the project is connected to the central service (the `central` section, the token
+  variable without showing it, the service's answer and the repository check, the runner identity, events not sent yet,
+  waiting blockers with their page links) and explains how the page is used. It then walks through what is missing,
+  changing anything only after you agree: connect this checkout (init) or clone from the service (join), and set
+  `AUTO_RUNNER_USER` / `AUTO_RUNNER_ACCOUNT`. The token is always stored by the person with a hidden prompt. The check
+  itself (`bin/autocentral.py status`) is read-only and never pulls answers. Tested against the real central app through
+  its test client; unverified against the live service.
+- `docs/central-guide.md`: how admins set a project up on the central service and how teammates join it, the role table,
+  answering a blocker, and troubleshooting.
+
 ## [0.14.0] - 2026-11-23
 
 ### Changed

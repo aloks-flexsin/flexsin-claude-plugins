@@ -31,7 +31,11 @@ claude plugin validate ./auto-runner
 
 ## First use in a project
 
-1. `/auto-runner:init` shows a preview of the files and deny rules it would add. Nothing is written until you approve.
+1. Connect the project to the central service (where blockers are answered): run `/auto-runner:central`. It checks
+   what is missing and, after you agree, connects this checkout or clones the project from the service
+   (`/auto-runner:join <slug>`, instead of sharing clone commands), sets your runner identity and tells you how to store
+   the token. Underneath, `/auto-runner:init` shows a preview of the files and deny rules it would add; nothing is
+   written until you approve. The team guide: `auto-runner/docs/central-guide.md`.
 2. `/auto-runner:setup` shows what browser-testing support it would install and asks once. `/auto-runner:doctor` re-checks it at any time.
 3. `/auto-runner:auto <task>` plans first. When you accept the plan it queues the items and starts the runner.
 4. `/auto-runner:status` and `/auto-runner:log` are read-only reports.
