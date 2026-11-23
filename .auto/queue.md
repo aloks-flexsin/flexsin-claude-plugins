@@ -40,6 +40,10 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Acceptance:* `python -m pytest -q` green, including `test_docs_check.py` with the new doc-map entry; the README and decision record exist and contain the word "unverified" in the deployment section.
   *Status:* done 14659ac (written by hand after the run)
 
+- [x] **D1 Live central round trip: greeting file.** Create `docs/hello.md` containing one line: the greeting a person chooses, followed by ", central service". You do not know which greeting to use and must not guess: if `.auto/resume/` holds no answer for this item, raise a blocker (the blocker file contract in `auto-runner/README.md`) with the question "Which greeting should docs/hello.md use?", options "Hello" and "Hi" (tradeoffs: "More formal." and "Shorter."), recommendation "Hello", class B2, owner_role "repo maintainer", and stop without writing the file. Once the answer is delivered, write the file with the chosen greeting, tick this item and commit. Change nothing else.
+  *Acceptance:* `docs/hello.md` exists with exactly the chosen greeting followed by ", central service"; `python -m pytest -q` green.
+
+  *Status:* done 11caa36dfa
 ## Needs a person (the runner never does these)
 - Push, merge, deploy, or anything outside this repository.
 - Decisions about what the product should do.
