@@ -198,3 +198,16 @@ def test_a_project_token_with_another_projects_name_is_refused(app, world, conn)
     assert api(app, 'GET', '/api/v1/project?project=alpha', raw).status_code == 200
     assert api(app, 'GET', '/api/v1/project?project=beta', raw).status_code == 403
     assert api(app, 'GET', '/api/v1/project', raw).status_code == 200
+
+
+def test_my_projects_lists_only_mine_with_roles(app, world, conn, signed_in_token):
+    projects.create(conn, 'beta', 'Beta', AT, 'https://github.com/example/beta.git')
+    c = new_client(app)
+    resp = c.get('/api/v1/projects', headers={'Authorization': 'Bearer ' + signed_in_token})
+    body = resp.get_json()
+    assert resp.status_code == 200 and body['account'] == 'manager@example.com'
+    assert body['projects'] == [{'slug': 'alpha', 'name': 'Alpha', 'repo_url': 'https://github.com/example/alpha.git',
+                                 'role': 'manager', 'can_run': True}]
+    assert c.get('/api/v1/projects').status_code == 401
+    raw, _ = tokens.create(conn, world['alpha']['id'], ['pull'], None, AT)
+    assert c.get('/api/v1/projects', headers={'Authorization': 'Bearer ' + raw}).status_code == 401   # people only

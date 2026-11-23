@@ -4,6 +4,14 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-11-23
+
+### Added
+- **One-command setup** (decision record 0007, step 5). `/auto-runner:central` in a folder that is not a checkout signs
+  you in, lists **your projects** from the central service (`autocentral.py projects`, `GET /api/v1/projects`) and clones the
+  one you pick; in a checkout it also syncs (`autocentral.py sync`: fetch origin, fast-forward the base branch only when it
+  is checked out, clean and has no commits of its own; anything else is reported and left alone).
+
 ## [0.19.0] - 2026-11-23
 
 ### Added

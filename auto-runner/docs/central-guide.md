@@ -47,6 +47,8 @@ Open Claude Code in the project folder (or any folder, to clone) and run **`/aut
 missing and, with your yes at each step:
 - connects this checkout (`/auto-runner:init --central-url ...`; the project is read from `origin`, no slug to type) or clones the project from the
   service (`/auto-runner:join <slug>`),
+- in a folder that is not a checkout yet: signs you in, lists **your projects** and clones the one you pick (step 5 of
+  0007: nobody shares clone commands any more); in a checkout: fetches and fast-forwards the base branch when that is safe,
 - sets your runner identity (`AUTO_RUNNER_USER`, `AUTO_RUNNER_ACCOUNT`),
 - **signs this computer in**: it shows an address and a short code (like `KQ4M-7RXD`); you open the address, sign in,
   check that it names your computer and repository, and press **Approve**. The token goes straight to your user

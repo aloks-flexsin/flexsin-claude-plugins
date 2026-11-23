@@ -213,6 +213,12 @@ def status(project, env=None, send=None):
     env = os.environ if env is None else env
     auto = project / '.auto'
     lines, ok = [], False
+    if subprocess.run(['git', '-C', str(project), 'rev-parse', '--git-dir'], capture_output=True).returncode != 0:
+        return [f'This folder ({project}) is not a git checkout. To work on a project from the central service: sign in, '
+                'list your projects and clone one (they are offered in turn):',
+                f'  python "{HERE / "autocentral.py"}" projects --central-url URL   (after login start / login wait '
+                'with --central-url URL)',
+                f'  then /auto-runner:join SLUG --central-url URL   (Flexsin: {FLEXSIN_URL})'], False
     main_checkout = autosafe.worktree_main(project)
     if main_checkout is not None:
         return [f'This folder is a git worktree of {main_checkout}. Connect and run the auto-runner from that main checkout '
@@ -280,6 +286,60 @@ def status(project, env=None, send=None):
     else:
         lines.append(f'How the central page is used, and how to join: {GUIDE}')
     return lines, ok and not identity
+
+
+# ---------- one-command setup (decision record 0007, step 5) ----------
+
+def my_projects(central_url, env=None, send=None):
+    """-> (account email, [{'slug', 'name', 'repo_url', 'role', 'can_run'}]) with this computer's personal token."""
+    autosafe = _load('autorunner_safe', 'autosafe.py')
+    token, _ = autosafe.central_token({}, env)
+    if not is_personal(token):
+        raise LoginError('this computer is not signed in: run login start / login wait first')
+    t = autodeliver.HttpTransport(central_url, token, send=send)
+    try:
+        data = t.request('GET', '/api/v1/projects')
+    except autodeliver.TransportRefused as e:
+        raise LoginError(f'the central service refused this computer\'s token ({e}): sign in again') from None
+    return data.get('account'), [p for p in data.get('projects') or [] if isinstance(p, dict)]
+
+
+def _git(project, *args):
+    r = subprocess.run(['git', '-C', str(project), *args], capture_output=True, text=True, encoding='utf-8',
+                       errors='replace', env={**os.environ, 'GIT_TERMINAL_PROMPT': '0'})
+    return r.returncode, (r.stdout or '').strip(), (r.stderr or '').strip()
+
+
+def sync(project):
+    """Bring a checkout up to date with its remote, safely -> lines. Always `git fetch origin`. Moves the local base branch
+    forward only when it is checked out, the working tree is clean and it has no commits of its own (a fast-forward);
+    anything else is reported, never changed."""
+    autocfg = _load('autorunner_cfg', 'autocfg.py')
+    project = Path(project).resolve()
+    code, _, err = _git(project, 'fetch', '--quiet', 'origin')
+    if code != 0:
+        return [f'Sync: could not fetch from origin ({(err.splitlines() or ["no output"])[-1][:200]}). Nothing changed.']
+    try:
+        base = autocfg.detect_base_branch(project)
+    except Exception:
+        return ['Sync: fetched origin; the base branch is not known ("base_branch" in .claude/auto.json), so nothing else was done.']
+    _, current, _ = _git(project, 'branch', '--show-current')
+    if _git(project, 'rev-parse', '--verify', '--quiet', f'origin/{base}')[0] != 0:
+        return [f'Sync: fetched origin; it has no branch {base} yet.']
+    behind = int(_git(project, 'rev-list', '--count', f'{base}..origin/{base}')[1] or 0)
+    ahead = int(_git(project, 'rev-list', '--count', f'origin/{base}..{base}')[1] or 0)
+    dirty = bool(_git(project, 'status', '--porcelain', '--untracked-files=no')[1])
+    if behind == 0:
+        return [f'Sync: {base} is up to date with origin/{base}.' + (f' (It has {ahead} commit(s) of its own.)' if ahead else '')]
+    if current == base and not dirty and ahead == 0:
+        code, _, err = _git(project, 'merge', '--ff-only', '--quiet', f'origin/{base}')
+        if code == 0:
+            return [f'Sync: {base} moved forward {behind} commit(s) to origin/{base}.']
+        return [f'Sync: {base} could not move forward ({(err.splitlines() or ["no output"])[-1][:200]}). Nothing changed.']
+    why = (f'you are on {current or "a detached HEAD"}' if current != base else
+           'there are uncommitted changes' if dirty else f'{base} has {ahead} commit(s) of its own')
+    return [f'Sync: origin/{base} has {behind} new commit(s); {base} was left as it is because {why}. '
+            '(The runner always starts from the fetched origin anyway.)']
 
 
 # ---------- sign in from Claude (decision record 0008) ----------
@@ -408,11 +468,39 @@ def main(argv=None):
     lg.add_argument('step', choices=('start', 'wait'))
     lg.add_argument('--project', default=os.environ.get('CLAUDE_PROJECT_DIR') or '.')
     lg.add_argument('--central-url', default='')
+    pj = sub.add_parser('projects', help='list the projects this signed-in computer can clone')
+    pj.add_argument('--project', default=os.environ.get('CLAUDE_PROJECT_DIR') or '.')
+    pj.add_argument('--central-url', default='')
+    sy = sub.add_parser('sync', help='fetch origin and fast-forward the base branch when that is safe')
+    sy.add_argument('--project', default=os.environ.get('CLAUDE_PROJECT_DIR') or '.')
     a = ap.parse_args(argv)
     if a.cmd == 'status':
         lines, ok = status(a.project)
         print('\n'.join(lines))
         return 0 if ok else 1
+    if a.cmd == 'sync':
+        print('\n'.join(sync(a.project)))
+        return 0
+    if a.cmd == 'projects':
+        url = a.central_url.strip().rstrip('/')
+        if not url:
+            c = _load('autorunner_cfg', 'autocfg.py').load(Path(a.project)).get('central') or {}
+            url = (c.get('url') or '').strip().rstrip('/') if isinstance(c, dict) else ''
+        if not url:
+            print('Not done: pass --central-url (the service address)')
+            return 1
+        try:
+            account, found = my_projects(url)
+        except (LoginError, autodeliver.TransportUnavailable) as e:
+            print(f'Not done: {e}')
+            return 1
+        print(f'Signed in as {account}. Your projects:')
+        for p in found:
+            print(f'  {p["slug"]}: {p["name"]} ({p["role"]}{"" if p.get("can_run") else ", cannot run runners"}) '
+                  f'{p.get("repo_url") or "(no repository URL yet)"}')
+        if not found:
+            print('  none yet: an owner or admin invites you to a project on the central page.')
+        return 0
     try:
         lines = login_start(a.project, a.central_url) if a.step == 'start' else login_wait(a.project)
     except (LoginError, autodeliver.TransportUnavailable) as e:
