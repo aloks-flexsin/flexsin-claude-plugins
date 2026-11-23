@@ -12,7 +12,9 @@ dashboard will live in `auto-runner/central/`.
 ## Rules
 - Run `python -m pytest -q` and keep it green before every commit. New behaviour gets tests.
 - Tests never reach the network or live services; use fakes (see `tests/auto_runner/fake_central.py`).
-- Config comes from environment variables only; never commit secrets, `.env` files or real customer data.
+- Config comes from environment variables only; never commit secrets, `.env` files or real customer data. One exception
+  (decision record 0008): on macOS/Linux the plugin keeps the person's central token in `~/.config/auto-runner/credentials`
+  (mode 600) when `AUTO_RUNNER_TOKEN` is not set.
 - When you change anything under `auto-runner/bin`, `commands` or `config.schema.json`, update `auto-runner/README.md` (the doc-map check enforces this).
 - Never deploy or touch Vercel/Supabase; a person does that.
 - This repo is separate from SaleEnable/SIVA: never copy its code, database, queue or docs here.

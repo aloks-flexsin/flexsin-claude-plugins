@@ -1,6 +1,6 @@
 # 0008: No shared secrets: invite links, sign-in from Claude, personal tokens
 
-Status: **proposed** (2026-11-23). The four questions at the end need an answer before it is accepted and built.
+Status: accepted (2026-11-23). **Not built yet**; each part lands in its own pull request and says there what is tested.
 Builds on 0001 (central service), 0002 (central-first setup) and 0007 (direction, step 3).
 
 ## Context
@@ -75,13 +75,11 @@ older plugins connect. They are no longer the way people join.
 - Build order inside step 3: invites and resets first (usable on their own), then device sign-in and personal tokens.
 - Unverified until it runs on the live service, like everything before it.
 
-## Questions to settle before building
+## Settled (2026-11-23)
 
-1. **Invite links expire after 72 hours.** Shorter is safer; longer suits people who are away. 72 hours proposed.
-2. **Who may invite:** admins and the project's owners (proposed), or admins only?
-3. **Where the plugin keeps the personal token on macOS and Linux.** Windows has a per-user environment variable the
-   script can set without printing it; macOS and Linux have nothing like it. Proposed: a file only the user can read
-   (`~/.config/auto-runner/credentials`, mode 600), which the plugin reads when `AUTO_RUNNER_TOKEN` is not set. That is an
-   exception to the repository rule "config comes from environment variables only", so it needs your yes. The
-   alternative: the person adds the token to their shell profile themselves, which means seeing it once.
-4. **Unused personal tokens stop working after 90 days** (proposed), or never (only revoking stops them)?
+1. Invite and reset links expire after **72 hours**.
+2. **Admins and the project's owners** may invite.
+3. On macOS and Linux the plugin keeps the personal token in **`~/.config/auto-runner/credentials`** (mode 600, readable
+   only by the user), read when `AUTO_RUNNER_TOKEN` is not set. This is a recorded exception to "config comes from
+   environment variables only" (`CLAUDE.md`), for this one credential. On Windows it is the user environment variable.
+4. A personal token **unused for 90 days stops working**; revoking stops it at once.
