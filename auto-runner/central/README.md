@@ -64,7 +64,18 @@ may not stick over plain http. The API endpoints do not use the cookie.
 
 ## Sign-in and access
 
-- Accounts are created by an admin (no self sign-up). Five failed sign-ins lock an account for 15 minutes.
+- **No shared passwords** (decision record 0008, `invites.py`). Nobody types a password for someone else:
+  - On a project's members page an owner or admin **invites** an email with a role. An existing account is added; an
+    email without one gets an account with **no password** (it cannot sign in), the membership, and a **one-time link**
+    shown once on the page, which the inviter sends on. "New invite link" makes a fresh one for a member still marked
+    *invited*. Admins can also add an account on `/admin/accounts` (a link, no password).
+  - An admin's **Send reset link** takes the current password away at once, ends every session and makes a link. An
+    admin changes their own password on the Password page, not here.
+  - A link (`/invite/<token>`) works **once**, **expires after 72 hours**, and a newer link for the same account ends the
+    older one; a disabled account's link does not work. Only its SHA-256 is stored (table `invite`), it is never in the
+    audit log, and setting a password with it follows the password policy, ends every session and signs the person in.
+    The service sends no email. Audited: `invite.create`, `invite.accept`, `account.password_reset`, `reset.accept`.
+- There is no self sign-up. Five failed sign-ins lock an account for 15 minutes.
 - Sessions expire after 12 hours, or 2 hours idle. A password change or reset signs the person out everywhere.
 - Global roles `admin` and `user`; project roles `owner`, `manager`, `developer`, `viewer`. Non-members get 404.
 - Every sign-in (success and failure, never the password) and every account, token, membership and decision action is audited.
@@ -119,7 +130,8 @@ None of these steps has been tried. Check each result before going on.
    ```bash
    DATABASE_URL="postgres://..." python -m central init-db
    ```
-   (`pip install -r central/requirements.txt` first, for psycopg.) It is safe to run again. On a database made by an older
+   (`pip install -r central/requirements.txt` first, for psycopg.) It is safe to run again; it creates any table an older
+   database lacks (for example `invite`). On a database made by an older
    version it also adds the columns listed in `db.COLUMNS_ADDED` (`project.repo_url`, `project.repo_key`) and prints each
    one, fills `repo_key` from each project's repository URL and creates the unique index `project_repo_key`.
    **If two projects already name the same repository it stops before changing anything** (exit code 3) and lists them as

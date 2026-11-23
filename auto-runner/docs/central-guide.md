@@ -21,14 +21,20 @@ shows as *running*, then as *silent* after 2 hours without an event (the runner 
 | owner | yes | yes | yes | yes | no |
 | admin (site-wide) | every project | yes | yes | yes | yes |
 
-There is no sign-up: an admin creates each account. Someone who is not a member of a project gets "not found" on its pages.
+There is no sign-up and nobody passes passwords around: people are **invited** (below) and set their own password from a
+one-time link. Someone who is not a member of a project gets "not found" on its pages.
 
 ## Admin: once per project
 1. Create the project on `<service>/projects` by pasting its **repository URL** (the `origin` everyone clones, for example
    `https://github.com/org/acme-web`). Leave slug and name empty: they are filled in from the repository (`acme-web`; or
    `org-acme-web` when that is taken). **One project per repository:** a second project for the same repository, in any
    URL form, is refused and names the existing one.
-2. On `<service>/projects/<slug>/members`, add each teammate with a role (see the table).
+2. On `<service>/projects/<slug>/members`, **invite** each teammate: their email and a role (see the table). Someone who
+   already has an account is added at once. Someone new gets an account and you get a **one-time link**, shown only then:
+   send it to them (chat or email). It works once and expires after 72 hours; they open it, set their own password and
+   are signed in. The member shows as *invited* until then; **New invite link** makes a fresh one (the old one stops).
+   Owners can invite to their own project; admins to any. Forgotten password: an admin presses **Send reset link** on
+   Accounts and sends that link the same way.
 3. On `<service>/projects/<slug>/tokens`, an owner or manager creates a token with the **ingest** and **pull** scopes. It
    is shown once. Each teammate who runs the runner stores it in their own environment (step 3 below); never send it
    in chat or commit it. Several people may share one project token; revoke and rotate it there when someone leaves.
@@ -80,5 +86,6 @@ Restart Claude Code after setting a variable, then run `/auto-runner:central` ag
 | this folder's origin ... is not project ...'s repository | Wrong folder or wrong slug: run it in a clone of that repository. |
 | This folder is a git worktree of ... | Open Claude Code in the main checkout it names and run `/auto-runner:central` there. |
 | no "origin" remote to read the project from | Clone the repository (or add its origin), or pass `--central-project`. |
+| "This link no longer works" | It was used, expired (72 hours), replaced by a newer one, or the account is disabled: ask for a new link. |
 | Runner identity: MISSING | Set `AUTO_RUNNER_USER` and `AUTO_RUNNER_ACCOUNT`, then restart Claude Code. |
 | N not sent yet | Normal between runs: the next run sends them. If it stays high while connected, look at `.auto/central-push.json`. |

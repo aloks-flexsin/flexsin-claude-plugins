@@ -7,7 +7,7 @@
 """
 from flask import Blueprint, abort, g, redirect, render_template, request, url_for
 
-from . import accounts, audit, auth, passwords, sessions
+from . import accounts, audit, auth, invites, passwords, sessions
 from .db import get_db
 
 bp = Blueprint("admin", __name__)
@@ -30,9 +30,11 @@ def _target(db, account_id):
     return account
 
 
-def _list_page(error=None, status=200, form_email=""):
-    page = render_template("admin_accounts.html", accounts=accounts.list_all(get_db()), roles=accounts.ROLES,
-                           error=error, form_email=form_email)
+def _list_page(error=None, status=200, form_email="", link=None):
+    """`link`: {'email', 'link', 'kind'} to show a just-made one-time link once."""
+    rows = [dict(a, pending=not invites.has_password(a)) for a in accounts.list_all(get_db())]
+    page = render_template("admin_accounts.html", accounts=rows, roles=accounts.ROLES, error=error,
+                           form_email=form_email, link=link, lifetime_hours=int(invites.LIFETIME.total_seconds() // 3600))
     return page, status
 
 
@@ -56,13 +58,16 @@ def account_add():
     email = request.form.get("email", "")
     role = request.form.get("role", "user")
     try:
-        created = accounts.create(db, email, request.form.get("password", ""), role=role, now=_at())
-    except (accounts.AccountError, passwords.PasswordError) as exc:
+        created = invites.create_account(db, email, role=role, now=_at())
+    except accounts.AccountError as exc:
         return _list_page(error=str(exc), status=400, form_email=email.strip()[:accounts.MAX_EMAIL])
     audit.record(db, "account.create", _at(), account_id=g.account["id"],
-                 detail={"target_id": created["id"], "email": created["email"], "role": created["role"]})
+                 detail={"target_id": created["id"], "email": created["email"], "role": created["role"], "via": "invite"})
+    raw = invites.issue(db, created["id"], "invite", g.account["id"], auth.now())
+    audit.record(db, "invite.create", _at(), account_id=g.account["id"],
+                 detail={"target_id": created["id"], "email": created["email"]})
     db.commit()
-    return redirect(url_for("admin.accounts_page"))
+    return _list_page(link={"email": created["email"], "link": invites.link(raw), "kind": "invite"})
 
 
 @bp.post("/admin/accounts/<account_id>/disabled")
@@ -103,17 +108,14 @@ def account_reset_password(account_id):
     _require_admin()
     db = get_db()
     target = _target(db, account_id)
-    try:
-        accounts.set_password(db, target["id"], request.form.get("password", ""))
-    except passwords.PasswordError as exc:
-        return _list_page(error=str(exc), status=400)
-    audit.record(db, "account.password_reset", _at(), account_id=g.account["id"],
+    if target["id"] == g.account["id"]:
+        return _refused(db, "account.password_reset", target, "use the Password page to change your own password")
+    kind = "reset" if invites.has_password(target) else "invite"
+    raw = invites.issue(db, target["id"], kind, g.account["id"], auth.now())
+    audit.record(db, "account.password_reset" if kind == "reset" else "invite.create", _at(), account_id=g.account["id"],
                  detail={"target_id": target["id"], "email": target["email"]})
     db.commit()
-    if target["id"] == g.account["id"]:
-        g.clear_session_cookie = True
-        return redirect(url_for("auth.signin"))
-    return redirect(url_for("admin.accounts_page"))
+    return _list_page(link={"email": target["email"], "link": invites.link(raw), "kind": kind})
 
 
 @bp.get("/account/password")

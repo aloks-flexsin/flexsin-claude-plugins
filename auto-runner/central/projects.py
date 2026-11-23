@@ -213,7 +213,9 @@ def allows(role, min_role):
 
 
 def members(db, project_id):
-    return db.query("SELECT m.account_id, m.role, m.created_at, a.email, a.disabled FROM member m"
+    """Members with `pending` = 1 while the account has no password yet (invited, link not used)."""
+    return db.query("SELECT m.account_id, m.role, m.created_at, a.email, a.disabled,"
+                    " CASE WHEN a.password_hash = '!' THEN 1 ELSE 0 END AS pending FROM member m"
                     " JOIN account a ON a.id = m.account_id WHERE m.project_id = ? ORDER BY a.email", (project_id,))
 
 

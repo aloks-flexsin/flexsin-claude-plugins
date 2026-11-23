@@ -4,6 +4,13 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+### Added
+- Central service: **invites** instead of shared passwords (decision record 0008, first part). Owners and admins invite
+  an email with a role from a project's members page; someone new gets an account with no password and the inviter
+  gets a one-time link (single use, 72 hours, only its hash stored) to send them, with which they set their own
+  password. Admin password resets now make the same kind of link and stop the old password at once. Needs `init-db`
+  (new table `invite`).
+
 ## [0.17.0] - 2026-11-23
 
 ### Added

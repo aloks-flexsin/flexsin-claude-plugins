@@ -136,3 +136,15 @@ CREATE TABLE IF NOT EXISTS audit (
     action VARCHAR(64) NOT NULL,
     detail TEXT
 );
+
+-- One-time links (invites and password resets, decision record 0008); only the link's SHA-256 is kept.
+CREATE TABLE IF NOT EXISTS invite (
+    id VARCHAR(64) PRIMARY KEY,
+    account_id VARCHAR(64) NOT NULL REFERENCES account (id) ON DELETE CASCADE,
+    token_hash VARCHAR(64) NOT NULL UNIQUE,
+    kind VARCHAR(16) NOT NULL,
+    created_by VARCHAR(64) REFERENCES account (id),
+    created_at VARCHAR(32) NOT NULL,
+    expires_at VARCHAR(32) NOT NULL,
+    used_at VARCHAR(32)
+);

@@ -4,6 +4,13 @@
 <h1>{{ project.name }} <small>({{ project.slug }})</small></h1>
 <p class="crumbs"><a href="{{ url_for('projects.projects_page') }}">Projects</a> · <a href="{{ url_for('runs.runs_page', slug=project.slug) }}">Runs</a> · <a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}">Blockers</a> · Your role: {{ my_role }}{% if can_tokens %} · <a href="{{ url_for('projects.tokens_page', slug=project.slug) }}">API tokens</a>{% endif %}</p>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if invite %}
+<div class="card" role="status">
+  <p><strong>{{ "Invited" if invite.new else "New link for" }} {{ invite.email }}.</strong> Send them this link (chat or
+    email). It is shown only now, works once and expires in {{ lifetime_hours }} hours; they set their own password with it.</p>
+  <p><code>{{ invite.link }}</code></p>
+</div>
+{% endif %}
 <h2>Repository</h2>
 <p>{% if project.repo_url %}<code>{{ project.repo_url }}</code>{% else %}Not set yet: the plugin's init and join need it.{% endif %}</p>
 {% if can_manage %}
@@ -19,7 +26,7 @@
   <tbody>
   {% for m in members %}
     <tr>
-      <td>{{ m.email }}{% if m.disabled %} (disabled){% endif %}</td>
+      <td>{{ m.email }}{% if m.disabled %} (disabled){% endif %}{% if m.pending %} <span class="badge warn">invited</span>{% endif %}</td>
       <td><span class="badge">{{ m.role }}</span></td>
       {% if can_manage %}
       <td>
@@ -30,6 +37,12 @@
           </select>
           <button type="submit">Change role</button>
         </form>
+        {% if m.pending %}
+        <form method="post" action="{{ url_for('projects.member_reinvite', slug=project.slug, account_id=m.account_id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit">New invite link</button>
+        </form>
+        {% endif %}
         <form method="post" action="{{ url_for('projects.member_remove', slug=project.slug, account_id=m.account_id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="danger">Remove</button>
@@ -41,12 +54,13 @@
   </tbody>
 </table>
 {% if can_manage %}
-<h2>Add a member</h2>
+<h2>Invite a member</h2>
+<p class="muted">Someone without an account gets one, and you get a one-time link to send them; they set their own password.</p>
 <form method="post" action="{{ url_for('projects.member_add', slug=project.slug) }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <label>Email <input type="email" name="email" value="{{ form_email }}" required></label>
   <label>Role <select name="role">{% for r in roles %}<option value="{{ r }}"{% if r == "viewer" %} selected{% endif %}>{{ r }}</option>{% endfor %}</select></label>
-  <button type="submit">Add member</button>
+  <button type="submit">Invite</button>
 </form>
 {% endif %}
 {% endblock %}

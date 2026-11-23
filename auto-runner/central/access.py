@@ -15,7 +15,7 @@ import functools
 
 from flask import Blueprint, abort, g, jsonify, make_response, redirect, render_template, request, url_for
 
-from . import audit, auth, projects, sessions, tokens
+from . import accounts, audit, auth, invites, projects, sessions, tokens
 from .db import get_db
 
 bp = Blueprint("projects", __name__)
@@ -76,12 +76,14 @@ def project_create():
     return redirect(url_for("projects.members_page", slug=project["slug"]))
 
 
-def _members_page(error=None, status=200, form_email=""):
+def _members_page(error=None, status=200, form_email="", invite=None):
+    """`invite`: {'email', 'link', 'new'} to show a just-made link once (never in a URL or a redirect)."""
     db = get_db()
     page = render_template("project_members.html", project=g.project, members=projects.members(db, g.project["id"]),
                            can_manage=projects.allows(g.project_role, "owner"), roles=projects.MEMBER_ROLES,
-                           can_tokens=projects.allows(g.project_role, "manager"),
-                           my_role=g.project_role, error=error, form_email=form_email)
+                           can_tokens=projects.allows(g.project_role, "manager"), invite=invite,
+                           my_role=g.project_role, error=error, form_email=form_email,
+                           lifetime_hours=int(invites.LIFETIME.total_seconds() // 3600))
     return page, status
 
 
@@ -121,17 +123,45 @@ def api_project():
 @bp.post("/projects/<slug>/members")
 @project_access("owner")
 def member_add(slug):
+    """Invite by email: an existing account is added; an email with no account gets one without a password, the
+    membership and a one-time link (shown once on this page) to set a password. Owners and admins only."""
     db = get_db()
     email = request.form.get("email", "")
     role = request.form.get("role", "viewer")
+    created = None
     try:
+        if role not in projects.MEMBER_ROLES:
+            raise projects.ProjectError("role must be one of %s" % ", ".join(projects.MEMBER_ROLES))
+        if accounts.find_by_email(db, email) is None:
+            created = invites.create_account(db, email, now=_at())
         added = projects.add_member(db, g.project["id"], email, role, _at())
-    except projects.ProjectError as exc:
+    except (projects.ProjectError, accounts.AccountError) as exc:
         _record(db, "member.add.refused", {"email": email.strip().lower()[:320], "role": role[:16],
                                            "reason": str(exc)})
         return _members_page(error=str(exc), status=400, form_email=email.strip()[:320])
+    if created is not None:
+        _record(db, "account.create", {"target_id": created["id"], "email": created["email"], "role": created["role"],
+                                       "via": "invite"})
     _record(db, "member.add", {"target_id": added["id"], "email": added["email"], "role": role})
-    return redirect(url_for("projects.members_page", slug=slug))
+    if invites.has_password(accounts.get(db, added["id"])):
+        return redirect(url_for("projects.members_page", slug=slug))
+    raw = invites.issue(db, added["id"], "invite", g.account["id"], auth.now())
+    _record(db, "invite.create", {"target_id": added["id"], "email": added["email"]})
+    return _members_page(invite={"email": added["email"], "link": invites.link(raw), "new": created is not None})
+
+
+@bp.post("/projects/<slug>/members/<account_id>/invite")
+@project_access("owner")
+def member_reinvite(slug, account_id):
+    """A new link for a member who has not set a password yet; the old link stops working."""
+    db = get_db()
+    target = _member_or_404(db, account_id)
+    if not target["pending"]:
+        return _members_page(error="%s has already set a password; an admin can send a reset link." % target["email"],
+                             status=400)
+    raw = invites.issue(db, account_id, "invite", g.account["id"], auth.now())
+    _record(db, "invite.create", {"target_id": account_id, "email": target["email"]})
+    return _members_page(invite={"email": target["email"], "link": invites.link(raw), "new": False})
 
 
 def _member_or_404(db, account_id):
