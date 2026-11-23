@@ -4,6 +4,18 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-23
+
+### Changed
+- One project per repository (decision record 0007). The central service fills a new project's slug and name in from its
+  repository URL (the repository's name; `<owner>-<repo>` when taken) and refuses a second project for the same repository
+  in any URL form; `init-db` adds and fills `project.repo_key` with a unique index, and stops before any change, listing
+  them, when two projects already share a repository.
+- Nobody types a slug: `/auto-runner:init` and `/auto-runner:central` read the project from the folder's `origin`, and the
+  service's own slug for that repository wins once the token is set. `--central-project` is optional.
+- Init, `/auto-runner:central` and the runner refuse in a linked git worktree (such as `.claude/worktrees/...`) and name
+  the main checkout to use instead.
+
 ## [0.15.0] - 2026-11-23
 
 ### Added

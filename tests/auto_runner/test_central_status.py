@@ -35,7 +35,8 @@ def test_no_section_names_both_routes_and_calls_nothing(tmp_path, central):
     p = repo(tmp_path, REPO)
     text, ok = run(p, central, ME)
     assert not ok and 'NOT CONNECTED' in text
-    assert '/auto-runner:init --central-url URL --central-project SLUG' in text and '/auto-runner:join SLUG' in text
+    assert '/auto-runner:init --central-url URL (the project, "acme-web", is read from origin)' in text
+    assert '/auto-runner:join SLUG' in text and '--central-project' not in text
     assert 'auto_init.py' in text and 'auto_join.py' in text and 'https://auto-runner-central.vercel.app' in text
     assert central.calls == []
 

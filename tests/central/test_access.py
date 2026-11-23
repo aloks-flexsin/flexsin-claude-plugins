@@ -64,7 +64,7 @@ def world(guarded_app, conn):
         accts[who] = accounts.create(conn, '%s@example.com' % who, PW)
     accts['admin'] = accounts.create(conn, 'admin@example.com', PW, role='admin')
     alpha = projects.create(conn, 'alpha', 'Alpha', '2026-10-31T09:00:00Z', 'https://github.com/example/repo.git')
-    beta = projects.create(conn, 'beta', 'Beta', '2026-10-31T09:00:00Z', 'https://github.com/example/repo.git')
+    beta = projects.create(conn, 'beta', 'Beta', '2026-10-31T09:00:00Z', 'https://github.com/example/beta.git')
     for role in MEMBER_ROLES:
         projects.add_member(conn, alpha['id'], '%s@example.com' % role, role, '2026-10-31T09:00:00Z')
     projects.add_member(conn, beta['id'], 'stranger@example.com', 'owner', '2026-10-31T09:00:00Z')
@@ -180,7 +180,7 @@ def test_only_admins_create_projects(world, conn):
     assert gamma['repo_url'] == REPO
 
 
-@pytest.mark.parametrize('slug,name', [('gamma', ''), ('-bad', 'X'), ('has space', 'X'), ('alpha', 'Dup'),
+@pytest.mark.parametrize('slug,name', [('-bad', 'X'), ('has space', 'X'), ('alpha', 'Dup'),
                                        ('a' * 65, 'X'), ('ok', 'n' * 201)])
 def test_create_refuses_bad_input(world, conn, slug, name):
     resp = post(world['clients']['admin'], '/projects', slug=slug, name=name, repo_url=REPO)

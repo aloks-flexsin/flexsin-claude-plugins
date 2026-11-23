@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS project (
     slug VARCHAR(64) NOT NULL UNIQUE,
     name VARCHAR(200) NOT NULL,
     repo_url VARCHAR(500),
+    repo_key VARCHAR(500),
     created_at VARCHAR(32) NOT NULL
 );
 

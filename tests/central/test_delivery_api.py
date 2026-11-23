@@ -64,7 +64,7 @@ def raise_blocker(app, raw, project, item, blocker_id):
 def world(app, conn):
     app.config['CLOCK'] = Clock()
     alpha = projects.create(conn, 'alpha', 'Alpha', AT, 'https://github.com/example/repo.git')
-    beta = projects.create(conn, 'beta', 'Beta', AT, 'https://github.com/example/repo.git')
+    beta = projects.create(conn, 'beta', 'Beta', AT, 'https://github.com/example/beta.git')
     people = {name: make_account(conn, name + '@example.com') for name in
               ('owner', 'manager', 'developer', 'viewer', 'stranger')}
     people['admin'] = make_account(conn, 'admin@example.com', role='admin')

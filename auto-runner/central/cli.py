@@ -23,6 +23,13 @@ def build_parser():
 def init_db(url, out=sys.stdout, err=sys.stderr):
     try:
         added = db.init_db(url)
+    except db.DuplicateRepositories as exc:
+        print("stopped, nothing changed: one project per repository, but these projects share one:", file=err)
+        for key, slugs in sorted(exc.args[0].items()):
+            print("  %s: %s" % (key, ", ".join(slugs)), file=err)
+        print("Keep one project per repository (move its members and tokens, delete the others), then run init-db again.",
+              file=err)
+        return 3
     except ValueError as exc:
         print(str(exc), file=err)
         return 2

@@ -1,8 +1,8 @@
 """
 Set a project up for the auto-runner. Shows a preview; nothing is written without --apply.
 
-    python auto_init.py --central-url https://central.example.com --central-project my-app   # preview
-    python auto_init.py --central-url ... --central-project my-app --apply            # write what the preview listed
+    python auto_init.py --central-url https://central.example.com   # preview; the project is read from this folder's origin
+    python auto_init.py --central-url ... --apply                    # write what the preview listed
     python auto_init.py --local            # no central service: blockers are answered on this machine
     python auto_init.py --apply --with-rules   # also write a short AUTO_RULES.md when the project has no CLAUDE.md
     python auto_init.py --remove           # preview of what init added and would take away
@@ -15,7 +15,9 @@ What it does, and only this:
   * `.claude/auto.json`: created only if absent, with the detected test command (pytest, npm test, dotnet test, go test, cargo test),
     `env_files: [".env"]` when a gitignored `.env` exists (copied into each run's worktree, values redacted), and with
     --allow-env-read `"safety": {"allow_env_read": true}` (then the .env read deny rules are not written).
-  * The central service is the default. With --central-url and --central-project, the `central` section (enabled, url, project and
+  * Refuses in a linked git worktree (for example `.claude/worktrees/...`), naming the main checkout to use instead.
+  * The central service is the default. With --central-url (and --central-project, which defaults to the slug read from
+    this folder's origin; once the token is set the service's own slug for this repository wins), the `central` section (enabled, url, project and
     `token_env`, default AUTO_RUNNER_TOKEN_<SLUG>) goes into a new auto.json, or into an existing one that has no `central` key.
     The preview says what to create on the site and how to store the token. When the token's variable is set, init asks the
     service (`GET /api/v1/project`) and refuses, writing nothing, unless the token is that project's and this folder's
@@ -116,8 +118,8 @@ def _empty_manifest():
     return {'files': {}, 'settings_created': False, 'settings_rules': [], 'gitignore_lines': []}
 
 
-CENTRAL_REQUIRED = ('The central service is the default: pass --central-url (the service\'s address) and --central-project (the '
-                    'project\'s slug there), or --local to answer blockers on this machine only.')
+CENTRAL_REQUIRED = ('The central service is the default: pass --central-url (the service\'s address; the project is read from '
+                    'this folder\'s origin), or --local to answer blockers on this machine only.')
 
 
 def _raw_config(project):
@@ -139,25 +141,29 @@ def _url_ok(url):
         parts.username or parts.password or parts.query or parts.fragment)
 
 
-def _verify(project, url, slug, name, env, send):
-    """-> (notes, problems, steps): ask the service about the token in `name`, when it is set."""
+def _verify(project, url, slug, name, env, send, derived=False):
+    """-> (notes, problems, steps, slug): ask the service about the token in `name`, when it is set. With `derived` (the
+    slug was read from origin, not given) the service's slug wins when the token's project is this repository: the
+    service may have named it `<owner>-<repo>`."""
     origin = autocentral.remote_url(project)
     token = (env.get(name) or '').strip()
     if not token:
         steps = autocentral.token_steps(url, slug, name, origin)
         return [f'Central: the token is not in {name} yet, so the repository check waits until it is; '
-                'run init again after these steps.'], [], steps
+                'run init again after these steps.'], [], steps, slug
     try:
         info = autocentral.lookup(url, token, send=send)
     except autocentral.autodeliver.TransportRefused as e:
         return [], [f'the central service refused the token in {name} ({e}). Make a new token on '
-                    f'{url.rstrip("/")}/projects/{slug}/tokens and store it again.'], []
+                    f'{url.rstrip("/")}/projects/{slug}/tokens and store it again.'], [], slug
     except autocentral.autodeliver.TransportUnavailable as e:
-        return [], [f'the central service at {url} could not be reached ({e}). Try again.'], []
+        return [], [f'the central service at {url} could not be reached ({e}). Try again.'], [], slug
+    if derived and info.get('slug') and info['slug'] != slug and not autocentral.check(info, info['slug'], origin):
+        slug = info['slug']
     problems = autocentral.check(info, slug, origin)
     if problems:
-        return [], problems, []
-    return [f'Central: the token in {name} is project "{slug}"\'s, and origin is its repository ({info["repo_url"]}).'], [], []
+        return [], problems, [], slug
+    return [f'Central: the token in {name} is project "{slug}"\'s, and origin is its repository ({info["repo_url"]}).'], [], [], slug
 
 
 def central_plan(project, central, env=None, send=None):
@@ -173,14 +179,20 @@ def central_plan(project, central, env=None, send=None):
         name = autosafe.token_env({'central': existing})
         if not url or not slug:
             return None, [], ['.claude/auto.json has "central.enabled" without "central.url" and "central.project"; set them.'], []
-        notes, problems, steps = _verify(project, url, slug, name, env, send)
+        notes, problems, steps, _ = _verify(project, url, slug, name, env, send)
         return None, ['.claude/auto.json already has a "central" section; it is left as it is.'] + notes, problems, steps
     if central.get('local'):
         return None, ['Local mode (--local): blockers are answered on this machine; no central section is written.'], [], []
     url, slug = (central.get('url') or '').strip().rstrip('/'), (central.get('project') or '').strip().lower()
     if not url and not slug:
         return None, [], [CENTRAL_REQUIRED], []
-    problems = []
+    problems, derived = [], False
+    if not slug:
+        # one project per repository: the slug comes from origin, never from typing; the service confirms it
+        slug, derived = autocentral.slug_from_repo(autocentral.remote_url(project) or '') or '', True
+        if not slug:
+            return None, [], ['This folder has no "origin" remote to read the project from. Clone the repository (or add '
+                              'its origin), or pass --central-project SLUG.'], []
     if not _url_ok(url):
         problems.append('--central-url must be an https:// address (http only for localhost), with no user, query or fragment.')
     if not autocentral.SLUG.match(slug):
@@ -192,7 +204,10 @@ def central_plan(project, central, env=None, send=None):
         problems.append('--token-env must be an environment variable name (letters, digits and _).')
     if problems:
         return None, [], problems, []
-    notes, problems, steps = _verify(project, url, slug, name, env, send)
+    notes, problems, steps, slug = _verify(project, url, slug, name, env, send, derived)
+    if derived:
+        notes.insert(0, f'Central: project "{slug}", read from this folder\'s origin'
+                     + ('' if (env.get(name) or '').strip() else ' (the service confirms it once the token is set)') + '.')
     section = {'enabled': True, 'url': url, 'project': slug, 'token_env': name}
     return section, notes, problems, steps
 
@@ -202,7 +217,7 @@ def make_plan(project, central=None, env=None, send=None, allow_env_read=False):
     `central`: see central_plan; None means neither the service nor --local was chosen, which is refused.
     `allow_env_read` (--allow-env-read) writes safety.allow_env_read into a new auto.json and leaves out the .env read rules."""
     project = Path(project).resolve()
-    notes, problems = [], []
+    notes, problems = [], list(autosafe.worktree_problems(project))
     try:
         base = autocfg.detect_base_branch(project)
     except autocfg.BaseBranchUnknown as e:
@@ -447,7 +462,8 @@ def main(argv=None):
     ap.add_argument('--with-rules', action='store_true', help='write AUTO_RULES.md when the project has no CLAUDE.md')
     ap.add_argument('--remove', action='store_true', help='take away what init added (preview unless --apply)')
     ap.add_argument('--central-url', default='', help='the central service, e.g. https://auto-runner-central.vercel.app')
-    ap.add_argument('--central-project', default='', metavar='SLUG', help="the project's slug on the central service")
+    ap.add_argument('--central-project', default='', metavar='SLUG',
+                    help="the project's slug on the central service (default: read from this folder's origin)")
     ap.add_argument('--token-env', default='', help='the variable that holds the token (default AUTO_RUNNER_TOKEN_<SLUG>)')
     ap.add_argument('--local', action='store_true', help='no central service: answer blockers on this machine')
     ap.add_argument('--allow-env-read', action='store_true', help='let the agent read .env files (no Read(./.env) rules)')

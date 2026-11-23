@@ -106,7 +106,7 @@ def test_without_central_options_or_local_init_refuses(tmp_path, capsys):
     p = repo(tmp_path)
     assert ai.main(['--project', str(p), '--apply']) == 1
     out = capsys.readouterr().out
-    assert '--central-url' in out and '--central-project' in out and '--local' in out
+    assert '--central-url' in out and "read from this folder's origin" in out and '--local' in out
     assert not (p / '.claude').exists() and not (p / '.auto').exists()
 
 

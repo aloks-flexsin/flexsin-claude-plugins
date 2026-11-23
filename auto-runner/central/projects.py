@@ -74,18 +74,88 @@ def normalize_repo_url(url):
     return url
 
 
+_KEY_HOST_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$")
+_KEY_PATH_RE = re.compile(r"^[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)+$")
+
+
+def repo_key(url):
+    """`https://host/o/r(.git)`, `ssh://[user@]host[:port]/o/r` and `user@host:o/r` -> 'host/o/r' (lower case, no user,
+    port or .git), so one repository compares equal in every form; None for anything else. The plugin's
+    autocentral.repo_key does the same (a test keeps them equal)."""
+    url = (url or "").strip()
+    if not url or any(c.isspace() for c in url):
+        return None
+    m = _SCP_RE.match(url)
+    if m and "://" not in url:
+        host, path = m.group("host"), m.group("path")
+    else:
+        try:
+            parts = urlsplit(url)
+            parts.port
+        except ValueError:
+            return None
+        if parts.scheme not in ("https", "http", "ssh", "git") or parts.query or parts.fragment:
+            return None
+        host, path = parts.hostname, parts.path
+    path = (path or "").strip("/")
+    if path.lower().endswith(".git"):
+        path = path[:-4]
+    if not host or not _KEY_HOST_RE.match(host) or not _KEY_PATH_RE.match(path) or ".." in path.split("/"):
+        return None
+    return "%s/%s" % (host.lower(), path.lower())
+
+
+def slug_from_repo(url):
+    """The slug a repository gets: its name, lower case, other characters as '-' -> e.g. 'case-study-va'.
+    The plugin's autocentral.slug_from_repo does the same (a test keeps them equal). None when there is no key."""
+    key = repo_key(url)
+    if key is None:
+        return None
+    return _slugify(key.rsplit("/", 1)[1]) or None
+
+
+def _slugify(text):
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:64].strip("-")
+
+
+def get_by_repo_key(db, key):
+    return db.query_one("SELECT * FROM project WHERE repo_key = ?", (key,)) if key else None
+
+
+def _free_slug(db, url):
+    """The repository's name as a slug, or '<owner>-<repo>' when that is taken; ProjectError when both are."""
+    key = repo_key(url)
+    parts = key.split("/")
+    for candidate in (_slugify(parts[-1]), _slugify("-".join(parts[-2:]))):
+        if candidate and SLUG_RE.match(candidate) and get_by_slug(db, candidate) is None:
+            return candidate
+    raise ProjectError("no free slug for this repository: enter one")
+
+
+def _refuse_taken_repo(db, key, project_id=None):
+    other = get_by_repo_key(db, key)
+    if other is not None and other["id"] != project_id:
+        raise ProjectError('this repository already belongs to project "%s": one project per repository' % other["slug"])
+
+
 def create(db, slug, name, now, repo_url):
-    """Create and commit a project; return its row."""
-    slug = normalize_slug(slug)
-    name = (name or "").strip()
-    if not name or len(name) > MAX_NAME:
-        raise ProjectError("the name must be 1-%d characters" % MAX_NAME)
+    """Create and commit a project; return its row. One project per repository: a repository that another project
+    already has (in any URL form) is refused. An empty slug is filled in from the repository (slug_from_repo, or
+    '<owner>-<repo>' when taken) and an empty name with the repository's name."""
     repo_url = normalize_repo_url(repo_url)
+    key = repo_key(repo_url)
+    if key is None:
+        raise ProjectError(REPO_URL_HELP)
+    _refuse_taken_repo(db, key)
+    slug = normalize_slug(slug) if (slug or "").strip() else _free_slug(db, repo_url)
+    name = (name or "").strip() or key.rsplit("/", 1)[1]
+    if len(name) > MAX_NAME:
+        raise ProjectError("the name must be 1-%d characters" % MAX_NAME)
     if get_by_slug(db, slug) is not None:
         raise ProjectError("a project with that slug already exists")
     project_id = secrets.token_hex(16)
-    db.execute("INSERT INTO project (id, slug, name, repo_url, created_at) VALUES (?, ?, ?, ?, ?)",
-               (project_id, slug, name, repo_url, now))
+    db.execute("INSERT INTO project (id, slug, name, repo_url, repo_key, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+               (project_id, slug, name, repo_url, key, now))
     db.commit()
     return get_by_slug(db, slug)
 
@@ -93,10 +163,14 @@ def create(db, slug, name, now, repo_url):
 def set_repo_url(db, project_id, repo_url):
     """Change a project's repository URL and commit; return the previous value (None when it was not set)."""
     repo_url = normalize_repo_url(repo_url)
+    key = repo_key(repo_url)
+    if key is None:
+        raise ProjectError(REPO_URL_HELP)
     before = db.query_one("SELECT repo_url FROM project WHERE id = ?", (project_id,))
     if before is None:
         raise ProjectError("no such project")
-    db.execute("UPDATE project SET repo_url = ? WHERE id = ?", (repo_url, project_id))
+    _refuse_taken_repo(db, key, project_id)
+    db.execute("UPDATE project SET repo_url = ?, repo_key = ? WHERE id = ?", (repo_url, key, project_id))
     db.commit()
     return before["repo_url"]
 

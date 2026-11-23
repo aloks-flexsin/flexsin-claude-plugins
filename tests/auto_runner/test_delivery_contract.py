@@ -106,7 +106,7 @@ class HttpWorld:
     def _project(self, slug):
         from central import projects, tokens
         if slug not in self.projects:
-            p = projects.create(self.conn, slug, slug.title(), self.AT, 'https://github.com/example/repo.git')
+            p = projects.create(self.conn, slug, slug.title(), self.AT, f'https://github.com/example/{slug}.git')
             owner = secrets.token_hex(16)
             self.conn.execute('INSERT INTO account (id, email, password_hash, role, disabled, created_at) VALUES (?, ?, ?, ?, ?, ?)',
                               (owner, f'owner@{slug}.example.com', 'x', 'user', 0, self.AT))
