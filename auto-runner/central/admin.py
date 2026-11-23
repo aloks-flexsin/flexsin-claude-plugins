@@ -7,7 +7,7 @@
 """
 from flask import Blueprint, abort, g, redirect, render_template, request, url_for
 
-from . import accounts, audit, auth, invites, passwords, sessions
+from . import accounts, audit, auth, invites, passwords, personal, sessions
 from .db import get_db
 
 bp = Blueprint("admin", __name__)
@@ -116,6 +116,19 @@ def account_reset_password(account_id):
                  detail={"target_id": target["id"], "email": target["email"]})
     db.commit()
     return _list_page(link={"email": target["email"], "link": invites.link(raw), "kind": kind})
+
+
+@bp.post("/admin/accounts/<account_id>/tokens/revoke")
+def account_tokens_revoke(account_id):
+    """Revoke every personal token of an account (for example a lost laptop or someone leaving)."""
+    _require_admin()
+    db = get_db()
+    target = _target(db, account_id)
+    count = personal.revoke_all(db, target["id"], auth.now())
+    audit.record(db, "personal_token.revoke_all", _at(), account_id=g.account["id"],
+                 detail={"target_id": target["id"], "email": target["email"], "count": count})
+    db.commit()
+    return redirect(url_for("admin.accounts_page"))
 
 
 @bp.get("/account/password")

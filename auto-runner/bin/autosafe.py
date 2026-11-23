@@ -53,6 +53,9 @@ FULL_MODEL = re.compile(r'claude-[A-Za-z0-9._\[\]-]+')
 TAG_RULES = ['Bash(git tag:*)', 'Bash(git tag)']
 CENTRAL_TOKEN_ENV = 'AUTO_RUNNER_CENTRAL_TOKEN'
 CENTRAL_TOKEN_PREFIX = 'art_'
+PERSONAL_TOKEN_PREFIX = 'arp_'
+PERSONAL_TOKEN_ENV = 'AUTO_RUNNER_TOKEN'
+CREDENTIALS_ENV = 'AUTO_RUNNER_CREDENTIALS'          # another credentials file (tests); default credentials_path()
 ENV_NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,127}$')
 RUNNER_USER_ENV = 'AUTO_RUNNER_USER'
 RUNNER_ACCOUNT_ENV = 'AUTO_RUNNER_ACCOUNT'
@@ -267,6 +270,36 @@ def token_env(cfg):
     return name or CENTRAL_TOKEN_ENV
 
 
+def credentials_path(env=None):
+    """Where the personal token is kept on macOS and Linux (decision record 0008): ~/.config/auto-runner/credentials,
+    mode 600, one line. The one exception to "config comes from environment variables only"."""
+    env = os.environ if env is None else env
+    override = (env.get(CREDENTIALS_ENV) or '').strip()
+    return Path(override) if override else Path.home() / '.config' / 'auto-runner' / 'credentials'
+
+
+def read_credentials(env=None):
+    try:
+        return credentials_path(env).read_text(encoding='utf-8').strip().splitlines()[0].strip()
+    except (OSError, IndexError, UnicodeDecodeError):
+        return ''
+
+
+def central_token(cfg, env=None):
+    """-> (token, where it came from), ('', '') when there is none. In order: a personal token in AUTO_RUNNER_TOKEN, the
+    personal token in the credentials file, then the project token in `central.token_env`. Never printed."""
+    env = os.environ if env is None else env
+    personal = (env.get(PERSONAL_TOKEN_ENV) or '').strip()
+    if personal:
+        return personal, PERSONAL_TOKEN_ENV
+    stored = read_credentials(env)
+    if stored:
+        return stored, str(credentials_path(env))
+    name = token_env(cfg)
+    project = (env.get(name) or '').strip()
+    return (project, name) if project else ('', '')
+
+
 def central_problems(cfg, env=None):
     """One message naming what is missing when `central.enabled` is true; [] otherwise. `env` defaults to os.environ."""
     if not central_enabled(cfg):
@@ -279,8 +312,9 @@ def central_problems(cfg, env=None):
     if not ENV_NAME.match(name):
         return ['.claude/auto.json: "central.token_env" must be an environment variable name (letters, digits and _).']
     missing = [f'"central.{k}"' for k in ('url', 'project') if not (cfg['central'].get(k) or '').strip()]
-    if not (env.get(name) or '').strip():
-        missing.append(f'the environment variable {name} (the token never goes in .claude/auto.json)')
+    if not central_token(cfg, env)[0]:
+        missing.append(f'a token: sign this computer in with /auto-runner:central (a personal token), or put a project '
+                       f'token in the environment variable {name} (a token never goes in .claude/auto.json)')
     if not missing:
         return []
     return ['.claude/auto.json sets "central.enabled" but the central service cannot be used without '

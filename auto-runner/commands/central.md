@@ -30,11 +30,18 @@ the page is used, and help the user finish the setup. Every change previews firs
 4. **OFF (`central.enabled` is not true).** Explain that answers stay local. Do not change the file; tell the user that
    `"enabled": true` in the `central` section turns it back on, and offer to show them the line.
 
-5. **Token NOT SET.** Give the user the steps the check printed, as they are. If the project or a token does not exist on
-   the site yet, say exactly what an admin (project) or an owner or manager (token) must create there; this command cannot
-   do anything on the site. The user stores the token themselves with the hidden-prompt line, then restarts Claude Code.
-   Never ask for the token, never let the user paste it into the conversation, and never put it on a command line or in
-   a file. If they paste it anyway, tell them to make a new token and revoke that one.
+5. **Token NOT SET: sign this computer in.** Explain it in one line (they approve a short code in their browser; Claude
+   never sees the token) and ask. Only after a clear yes:
+   1. Run `python "${CLAUDE_PLUGIN_ROOT}/bin/autocentral.py" login start --project "${CLAUDE_PROJECT_DIR}"`. Show the
+      user the address and the code it prints, exactly, and tell them to approve it only because they started it now.
+   2. Right away run `python "${CLAUDE_PLUGIN_ROOT}/bin/autocentral.py" login wait --project "${CLAUDE_PROJECT_DIR}"`
+      (in the foreground, with a 10-minute timeout). It returns once they approve or deny, or after 10 minutes.
+   3. Report what it printed (the account it signed in as, and where the token went). On Windows the token is a user
+      environment variable: tell them to restart Claude Code. On macOS/Linux it is a file only they can read, used at once.
+   If they are not a member of the project yet, an owner or admin must invite them on the project's page first. A machine
+   nobody signs in on (a build server) uses a project token instead (the check names its variable). Never ask for a token,
+   never let anyone paste one into the conversation, and never put one on a command line or in a file; if they paste one
+   anyway, tell them to revoke it (My tokens, or the project's tokens page) and sign in again.
 
 6. **Runner identity MISSING.** Ask the user for their username (the person working) and the Claude account they run the
    runner with. Never guess them. Show the lines, and only after a clear yes:

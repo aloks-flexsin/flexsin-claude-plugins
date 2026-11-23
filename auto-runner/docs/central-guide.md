@@ -35,9 +35,10 @@ one-time link. Someone who is not a member of a project gets "not found" on its 
    are signed in. The member shows as *invited* until then; **New invite link** makes a fresh one (the old one stops).
    Owners can invite to their own project; admins to any. Forgotten password: an admin presses **Send reset link** on
    Accounts and sends that link the same way.
-3. On `<service>/projects/<slug>/tokens`, an owner or manager creates a token with the **ingest** and **pull** scopes. It
-   is shown once. Each teammate who runs the runner stores it in their own environment (step 3 below); never send it
-   in chat or commit it. Several people may share one project token; revoke and rotate it there when someone leaves.
+3. **No tokens to hand out.** Each teammate signs their own computer in from Claude (below) and gets a personal token
+   that works only while they are a developer or above in the project. Project tokens (on `<service>/projects/<slug>/tokens`,
+   **ingest** and **pull** scopes, shown once) are only for machines nobody signs in on, such as a build server. Someone
+   leaving: remove them from the project, or on Accounts press **Revoke tokens** or disable the account.
 4. Tell teammates the service address (and, for `/auto-runner:join`, the slug). That replaces sharing clone commands: `/auto-runner:join <slug>`
    reads the repository URL from the service.
 
@@ -47,9 +48,14 @@ missing and, with your yes at each step:
 - connects this checkout (`/auto-runner:init --central-url ...`; the project is read from `origin`, no slug to type) or clones the project from the
   service (`/auto-runner:join <slug>`),
 - sets your runner identity (`AUTO_RUNNER_USER`, `AUTO_RUNNER_ACCOUNT`),
-- tells you the one step you always do yourself: storing the token with a hidden prompt. Claude never sees the token.
+- **signs this computer in**: it shows an address and a short code (like `KQ4M-7RXD`); you open the address, sign in,
+  check that it names your computer and repository, and press **Approve**. The token goes straight to your user
+  environment (Windows) or a file only you can read (`~/.config/auto-runner/credentials`, macOS/Linux). Claude never
+  sees it. Approve only a code you started yourself, just now.
 
-Restart Claude Code after setting a variable, then run `/auto-runner:central` again until it says **CONNECTED**.
+On Windows restart Claude Code after signing in or setting a variable, then run `/auto-runner:central` again until it says
+**CONNECTED (signed in as you)**. Your tokens are on **My tokens** on the site: one per computer, revoke any of them there;
+one unused for 90 days stops working (sign in again).
 
 ## Teammate: by hand
 1. **Get the code.** New machine: `/auto-runner:join <slug> --central-url <service>` (previews the folder, clones with your
@@ -60,8 +66,9 @@ Restart Claude Code after setting a variable, then run `/auto-runner:central` ag
    `[Environment]::SetEnvironmentVariable('AUTO_RUNNER_USER', 'alok', 'User')` and
    `[Environment]::SetEnvironmentVariable('AUTO_RUNNER_ACCOUNT', 'bhawish', 'User')` in PowerShell
    (macOS/Linux: `export` lines in your shell profile). Run branches are then `alok/bhawish-claude-auto-runner/<type>/<brief>`.
-3. **The token**, with the hidden-prompt line init prints for the variable it names (default `AUTO_RUNNER_TOKEN_<SLUG>`):
-   `$t = Read-Host 'Token for <slug>' -AsSecureString; [Environment]::SetEnvironmentVariable('<VARIABLE>', [System.Net.NetworkCredential]::new('', $t).Password, 'User')`
+3. **Sign in:** `python <plugin>/bin/autocentral.py login start --project .`, approve the code in your browser, then
+   `python <plugin>/bin/autocentral.py login wait --project .`. (A machine nobody signs in on: a project token, stored with
+   the hidden-prompt line init prints for the variable it names, default `AUTO_RUNNER_TOKEN_<SLUG>`.)
 4. **Restart Claude Code**, then `/auto-runner:central`.
 
 ## Answering a blocker
@@ -79,7 +86,8 @@ Restart Claude Code after setting a variable, then run `/auto-runner:central` ag
 | NOT CONNECTED | Connect this checkout with init, or clone with join (the command offers both). |
 | OFF | `"central": {"enabled": true, ...}` in `.claude/auto.json`; or keep answers local on purpose. |
 | Token: NOT SET | An owner or manager makes a token; you store it with the hidden-prompt line; restart Claude Code. |
-| Service: REFUSED the token | The token was revoked or mistyped: make a new one and store it again. |
+| Service: REFUSED the token | Personal token: you are not a developer or above in the project (ask an owner to invite you), or it was revoked or unused for 90 days: sign in again. Project token: make a new one and store it again. |
+| Not signed in: the sign-in was denied / the code expired | Run the sign-in again; approve within 10 minutes. |
 | Service: NOT REACHABLE | Check the address and your connection; the service may be down. |
 | the token belongs to project "x" | You stored another project's token in this project's variable: use this project's. |
 | no repository URL on the central service | An owner or admin sets it on the project page. |

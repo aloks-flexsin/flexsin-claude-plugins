@@ -133,7 +133,7 @@ def test_api_project_answers_for_any_scope(app, world, conn, scopes):
     raw, _ = tokens.create(conn, world['alpha']['id'], scopes, world['accounts']['owner']['id'], AT)
     resp = _get(app, raw)
     assert resp.status_code == 200
-    assert resp.get_json() == {'slug': 'alpha', 'name': 'Alpha', 'repo_url': REPO}
+    assert resp.get_json() == {'slug': 'alpha', 'name': 'Alpha', 'repo_url': REPO, 'account': None}
 
 
 def test_api_project_needs_a_valid_active_token(app, world, conn):

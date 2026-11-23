@@ -36,6 +36,10 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit">{{ "New invite link" if a.pending else "Send reset link" }}</button>
         </form>
+        <form method="post" action="{{ url_for('admin.account_tokens_revoke', account_id=a.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="danger">Revoke tokens</button>
+        </form>
       </td>
     </tr>
   {% endfor %}

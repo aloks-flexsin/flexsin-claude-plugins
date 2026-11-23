@@ -21,6 +21,7 @@ import argparse
 import importlib.util
 import json
 import os
+import time
 import re
 import subprocess
 import sys
@@ -107,10 +108,15 @@ def remote_url(project_dir):
     return (r.stdout.strip() or None) if r.returncode == 0 else None
 
 
-def lookup(central_url, token, send=None):
-    """-> the project the token belongs to: {'slug', 'name', 'repo_url'}. Raises autodeliver.TransportRefused (401, 403)
-    or TransportUnavailable (no reply)."""
-    return autodeliver.HttpTransport(central_url, token, send=send).project_info()
+def lookup(central_url, token, send=None, project=None, repo=None):
+    """-> the token's project: {'slug', 'name', 'repo_url', 'account'}. A project token answers for its own project; a
+    personal token needs the project named (`project`, or `repo` as host/owner/repo when the slug is not known yet).
+    Raises autodeliver.TransportRefused (401, 403) or TransportUnavailable (no reply)."""
+    return autodeliver.HttpTransport(central_url, token, send=send, project=project).project_info(repo=repo)
+
+
+def is_personal(token):
+    return (token or '').startswith('arp_')
 
 
 def check(info, slug, origin):
@@ -232,17 +238,24 @@ def status(project, env=None, send=None):
         problems = [p for p in autosafe.central_problems(cfg, env) if 'the environment variable' not in p]
         if problems or not site or not slug:
             lines += problems or ['.claude/auto.json: "central" needs "url" and "project".']
-        elif not (env.get(name) or '').strip():
-            lines.append(f'Token: NOT SET ({name} is empty in this environment). Steps (you do them; never paste the token '
-                         'into Claude or a file):')
-            lines += ['  ' + s for s in token_steps(site, slug, name, remote_url(project))]
+        elif not autosafe.central_token(cfg, env)[0]:
+            lines.append('Token: NOT SET. Sign this computer in (you approve a short code in your browser; Claude never '
+                         'sees the token):')
+            lines.append(f'  python "{HERE / "autocentral.py"}" login start --project "{project}"   then   ... login wait')
+            lines.append(f'  (A machine with no person to approve can use a project token in {name} instead: '
+                         f'{site}/projects/{slug}/tokens.)')
         else:
-            lines.append(f'Token: set in {name} (not shown)')
+            token, source = autosafe.central_token(cfg, env)
+            personal = is_personal(token)
+            lines.append(f'Token: {"personal" if personal else "project"} token from {source} (not shown)')
             try:
-                info = lookup(site, env[name].strip(), send=send)
+                info = lookup(site, token, send=send, project=slug if personal else None)
             except autodeliver.TransportRefused as e:
-                lines.append(f'Service: REFUSED the token ({e}). Make a new token on {site}/projects/{slug}/tokens, store '
-                             'it again with the line init prints, and restart Claude Code.')
+                lines.append(f'Service: REFUSED the token ({e}). '
+                             + ('You need to be a developer or above in this project, and the token must not be revoked '
+                                f'(see {site}/account/tokens); sign in again with login start / login wait.' if personal else
+                                f'Make a new token on {site}/projects/{slug}/tokens, store it again with the line init '
+                                'prints, and restart Claude Code.'))
             except autodeliver.TransportUnavailable as e:
                 lines.append(f'Service: NOT REACHABLE at {site} ({e}). Check the address and your connection, then try again.')
             else:
@@ -251,7 +264,8 @@ def status(project, env=None, send=None):
                     lines += ['Service: answers, but ' + found[0]]
                 else:
                     ok = True
-                    lines.append(f'Service: CONNECTED. The token is project "{slug}"\'s and this folder\'s origin is its '
+                    who = f'signed in as {info["account"]}' if info.get('account') else 'a project token'
+                    lines.append(f'Service: CONNECTED ({who}). Project "{slug}"; this folder\'s origin is its '
                                  f'repository ({info["repo_url"]}).')
     identity = autosafe.runner_name_problems(env)
     lines.append('Runner identity: ' + (autosafe.runner_name(env) if not identity else 'MISSING'))
@@ -268,16 +282,144 @@ def status(project, env=None, send=None):
     return lines, ok and not identity
 
 
+# ---------- sign in from Claude (decision record 0008) ----------
+
+PENDING = 'pending-login.json'
+
+
+class LoginError(RuntimeError):
+    pass
+
+
+def _post(url, payload, send=None):
+    """POST JSON without a token -> (status, object). No reply raises autodeliver.TransportUnavailable."""
+    status, raw = (send or autodeliver.urllib_send)('POST', url, {'Content-Type': 'application/json',
+                                                                  'Accept': 'application/json'},
+                                                    json.dumps(payload).encode('utf-8'), 15)
+    try:
+        data = json.loads(raw.decode('utf-8')) if raw else {}
+    except (UnicodeDecodeError, ValueError):
+        data = {}
+    return status, data if isinstance(data, dict) else {}
+
+
+def _private_write(path, text):
+    """Write `text` to `path` readable by this user only (folder 700, file 600)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(path.parent, 0o700)
+    except OSError:
+        pass
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        f.write(text)
+    os.chmod(path, 0o600)
+
+
+def store_token(token, env=None, platform=None, run=None):
+    """Keep the personal token without printing it -> where it went. Windows: the user environment variable
+    AUTO_RUNNER_TOKEN, set by PowerShell from this process's environment (never on a command line). Elsewhere: the
+    credentials file (autosafe.credentials_path, mode 600)."""
+    autosafe = _load('autorunner_safe', 'autosafe.py')
+    platform = platform or sys.platform
+    if platform.startswith('win'):
+        script = ("[Environment]::SetEnvironmentVariable('%s', $env:AUTO_RUNNER_NEW_TOKEN, 'User')"
+                  % autosafe.PERSONAL_TOKEN_ENV)
+        child = {**os.environ, 'AUTO_RUNNER_NEW_TOKEN': token}
+        code = (run or (lambda argv, e: subprocess.run(argv, env=e, capture_output=True).returncode))(
+            ['powershell', '-NoProfile', '-NonInteractive', '-Command', script], child)
+        if code != 0:
+            raise LoginError('could not store the token in your user environment (PowerShell failed)')
+        return f'your user environment variable {autosafe.PERSONAL_TOKEN_ENV} (restart Claude Code so it sees it)'
+    path = autosafe.credentials_path(env)
+    _private_write(path, token + '\n')
+    return f'{path} (readable only by you)'
+
+
+def login_start(project, central_url=None, env=None, send=None, now=None):
+    """Ask the service for a sign-in code -> lines to show. The long device code is kept in a private file next to the
+    credentials (never printed); `login_wait` uses it."""
+    autocfg = _load('autorunner_cfg', 'autocfg.py')
+    autosafe = _load('autorunner_safe', 'autosafe.py')
+    env = os.environ if env is None else env
+    project = Path(project).resolve()
+    if not central_url:
+        c = autocfg.load(project).get('central') or {}
+        central_url = (c.get('url') or '').strip() if isinstance(c, dict) else ''
+    central_url = (central_url or '').strip().rstrip('/')
+    if not central_url:
+        raise LoginError('no central service address: connect the project first (/auto-runner:central), or pass '
+                         '--central-url')
+    import socket
+    status, data = _post(central_url + '/api/v1/device/start',
+                         {'client_name': socket.gethostname()[:100], 'repo': repo_key(remote_url(project) or '') or ''}, send)
+    if status != 200 or not all(isinstance(data.get(k), str) for k in ('device_code', 'user_code', 'verification_uri')):
+        raise LoginError(f'the central service at {central_url} did not start a sign-in ({status} {data.get("error", "")})')
+    expires = (now or time.time)() + int(data.get('expires_in') or 600)
+    pending = autosafe.credentials_path(env).parent / PENDING
+    _private_write(pending, json.dumps({'url': central_url, 'device_code': data['device_code'],
+                                        'interval': int(data.get('interval') or 5), 'expires': expires}))
+    return [f'Open {data["verification_uri"]} in your browser, sign in, and type this code: {data["user_code"]}',
+            'Approve it only because you started it just now. The code works for 10 minutes.',
+            'Then run: login wait (it finishes by itself once you approve).']
+
+
+def login_wait(project, env=None, send=None, sleep=None, now=None, store=None):
+    """Poll until the person approves or denies -> lines to show. Stores the token (store_token) and prints only the
+    account and where it went."""
+    autosafe = _load('autorunner_safe', 'autosafe.py')
+    env = os.environ if env is None else env
+    pending = autosafe.credentials_path(env).parent / PENDING
+    try:
+        state = json.loads(pending.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        raise LoginError('no sign-in is waiting: run login start first') from None
+    clock, nap = now or time.time, sleep or time.sleep
+    interval = max(1, int(state.get('interval') or 5))
+    try:
+        while clock() < state['expires']:
+            status, data = _post(state['url'] + '/api/v1/device/token', {'device_code': state['device_code']}, send)
+            if status == 200 and isinstance(data.get('token'), str) and data['token'].startswith('arp_'):
+                where = (store or store_token)(data['token'], env)
+                return [f'Signed in as {data.get("email", "?")}. The token is stored in {where}; it is not shown here.']
+            error = data.get('error')
+            if error == 'access_denied':
+                raise LoginError('the sign-in was denied in the browser')
+            if error == 'expired_token':
+                raise LoginError('the code expired or was already used: run login start again')
+            if error == 'slow_down':
+                interval += 5
+            elif error != 'authorization_pending':
+                raise LoginError(f'the central service answered {status} {error or ""}')
+            nap(interval)
+        raise LoginError('nobody approved the code within 10 minutes: run login start again')
+    finally:
+        if pending.exists():
+            pending.unlink()
+
+
 def main(argv=None):
-    ap = argparse.ArgumentParser(description='Is this checkout connected to the central service, and what to do next '
-                                             '(read-only).')
+    ap = argparse.ArgumentParser(description='The central service: check the connection (read-only), or sign this '
+                                             'computer in.')
     sub = ap.add_subparsers(dest='cmd', required=True)
     st = sub.add_parser('status', help='check the connection and print the next steps')
     st.add_argument('--project', default=os.environ.get('CLAUDE_PROJECT_DIR') or '.')
+    lg = sub.add_parser('login', help='sign this computer in: start shows a code to approve in the browser, wait finishes')
+    lg.add_argument('step', choices=('start', 'wait'))
+    lg.add_argument('--project', default=os.environ.get('CLAUDE_PROJECT_DIR') or '.')
+    lg.add_argument('--central-url', default='')
     a = ap.parse_args(argv)
-    lines, ok = status(a.project)
+    if a.cmd == 'status':
+        lines, ok = status(a.project)
+        print('\n'.join(lines))
+        return 0 if ok else 1
+    try:
+        lines = login_start(a.project, a.central_url) if a.step == 'start' else login_wait(a.project)
+    except (LoginError, autodeliver.TransportUnavailable) as e:
+        print(f'Not signed in: {e}')
+        return 1
     print('\n'.join(lines))
-    return 0 if ok else 1
+    return 0
 
 
 if __name__ == '__main__':

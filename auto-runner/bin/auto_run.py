@@ -945,12 +945,14 @@ def record(project, entry):
 
 
 def central_transport(cfg, env=None):
-    """-> HttpTransport when `central.enabled` (url and project from the config, the token only from the environment variable
-    autosafe.token_env(cfg)), else None (answers stay local). Preflight has already refused a missing url, project or token."""
+    """-> HttpTransport when `central.enabled` (url and project from the config; the token from autosafe.central_token: a
+    personal token, else the project token in `central.token_env`, never from the config file), else None (answers stay
+    local). Every call names the project, which a personal token needs. Preflight has already refused a missing url,
+    project or token."""
     if not autosafe.central_enabled(cfg):
         return None
-    env = os.environ if env is None else env
-    return autodeliver.HttpTransport(cfg['central']['url'], env.get(autosafe.token_env(cfg), '').strip())
+    token, _ = autosafe.central_token(cfg, env)
+    return autodeliver.HttpTransport(cfg['central']['url'], token, project=cfg['central']['project'])
 
 
 def project_slug(project, cfg):
@@ -1070,7 +1072,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
     lock.acquire()
     PATH_PREPEND[:] = [str((wt / p).resolve()) for p in cfg.get('path_prepend') or []]
     slug = project_slug(project, cfg)
-    central_token = os.environ.get(autosafe.token_env(cfg), '').strip() if autosafe.central_enabled(cfg) else ''
+    central_token, token_source = autosafe.central_token(cfg) if autosafe.central_enabled(cfg) else ('', '')
     env_values = autosafe.env_file_values([project / rel for rel in cfg['env_files']])
 
     def generated():
@@ -1079,7 +1081,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         found = autobrowser.known_secrets(project, wt)
         found.update(env_values)
         if central_token:
-            found[autosafe.token_env(cfg)] = central_token
+            found[token_source or 'central token'] = central_token
         return found
 
     # the run id is unique across people and machines (two runners may start in the same minute); logs keep the stamp

@@ -146,15 +146,21 @@ def _verify(project, url, slug, name, env, send, derived=False):
     slug was read from origin, not given) the service's slug wins when the token's project is this repository: the
     service may have named it `<owner>-<repo>`."""
     origin = autocentral.remote_url(project)
-    token = (env.get(name) or '').strip()
+    token, source = autosafe.central_token({'central': {'token_env': name}}, env)
     if not token:
         steps = autocentral.token_steps(url, slug, name, origin)
-        return [f'Central: the token is not in {name} yet, so the repository check waits until it is; '
-                'run init again after these steps.'], [], steps, slug
+        return [f'Central: no token yet (sign in with /auto-runner:central, or a project token in {name}), so the '
+                'repository check waits until there is one; run init again after that.'], [], steps, slug
+    personal = autocentral.is_personal(token)
     try:
-        info = autocentral.lookup(url, token, send=send)
+        info = autocentral.lookup(url, token, send=send, project=slug if personal and not derived else None,
+                                  repo=autocentral.repo_key(origin or '') if personal and derived else None)
     except autocentral.autodeliver.TransportRefused as e:
-        return [], [f'the central service refused the token in {name} ({e}). Make a new token on '
+        if personal:
+            return [], [f'the central service refused this computer\'s personal token for this repository ({e}): you '
+                        'need to be a developer or above in its project; sign in again with /auto-runner:central if '
+                        'the token was revoked.'], [], slug
+        return [], [f'the central service refused the token in {source} ({e}). Make a new token on '
                     f'{url.rstrip("/")}/projects/{slug}/tokens and store it again.'], [], slug
     except autocentral.autodeliver.TransportUnavailable as e:
         return [], [f'the central service at {url} could not be reached ({e}). Try again.'], [], slug
@@ -163,7 +169,8 @@ def _verify(project, url, slug, name, env, send, derived=False):
     problems = autocentral.check(info, slug, origin)
     if problems:
         return [], problems, [], slug
-    return [f'Central: the token in {name} is project "{slug}"\'s, and origin is its repository ({info["repo_url"]}).'], [], [], slug
+    who = f'signed in as {info["account"]}' if info.get('account') else f'the token in {source}'
+    return [f'Central: {who}, project "{slug}", and origin is its repository ({info["repo_url"]}).'], [], [], slug
 
 
 def central_plan(project, central, env=None, send=None):

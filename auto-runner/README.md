@@ -196,9 +196,11 @@ The runner refuses to start unless:
 - with publishing on: `"push": true` written out needs the remote, run branches are neither the base branch nor match `lanes.protected`, and `"pull_request": true` written out needs `push` on;
 - a `test_command` exists, or `check_only` is true;
 - the repository has at least one commit;
-- when `central.enabled` is true: `central.url` and `central.project` are set and the token is in the environment variable
-  named by `central.token_env` (default `AUTO_RUNNER_CENTRAL_TOKEN`; the message names what is missing; the token is never read
-  from `.claude/auto.json`, where a `central.token` key is refused as unknown, and a `token_env` that holds a token is refused).
+- when `central.enabled` is true: `central.url` and `central.project` are set and there is a token (`autosafe.central_token`,
+  in this order: a personal token in `AUTO_RUNNER_TOKEN`, the personal token in the credentials file, a project token in
+  the variable named by `central.token_env`, default `AUTO_RUNNER_CENTRAL_TOKEN`; the message names what is missing; a token
+  is never read from `.claude/auto.json`, where a `central.token` key is refused as unknown, and a `token_env` that holds a
+  token is refused).
 
 The agent is asked to run only the tests that cover its change (the whole suite once, if it changed shared code or setup):
 the runner's own run of `test_command` after the iteration is the gate, so the suite no longer runs twice per item.
@@ -254,7 +256,7 @@ such as `₹` never breaks a run on Windows.
 | `bin/autostale.py` | Artifact front-matter (`version`, `hash`, `built_from`, `status`), `scan`, `status`, `revalidate`; stale artifacts refuse a resume. |
 | `bin/autoeval.py` | Evaluation harness: `run --benchmark ID --runner fake`, `validate`, `validate-results FILE`. |
 | `bin/auto_init.py`, `bin/auto_report.py` | Init (preview/apply/remove, the `central` section and its repository check) and the status/log reports. |
-| `bin/autocentral.py` | What init and join share: `default_token_env`, `repo_key` / `clean_url`, `remote_url`, `lookup` (`GET /api/v1/project`), `check`, `token_steps`; and `status` (`python autocentral.py status`, `/auto-runner:central`): the read-only connection check with next steps, exit 0 when connected. |
+| `bin/autocentral.py` | What init and join share: `default_token_env`, `repo_key` / `clean_url`, `remote_url`, `lookup` (`GET /api/v1/project`), `check`, `token_steps`; `status` (`python autocentral.py status`, `/auto-runner:central`): the read-only connection check with next steps, exit 0 when connected; and **sign in from Claude** (0.18.0, decision record 0008): `login start` asks the service for a code and shows it with the address, keeping the device code in a private file; `login wait` polls until the person approves or denies in the browser (10 minutes at most) and stores the personal token without printing it, on Windows in the user variable `AUTO_RUNNER_TOKEN` (set by PowerShell from the child's environment, never on a command line), elsewhere in `~/.config/auto-runner/credentials` (mode 600). Tested against the real central app through its test client. |
 | `bin/auto_join.py` | Join: repository URL from the central service, `git clone` into a folder you confirm, then init's preview. |
 | `bin/autojourney.py` | Journey check: parses journeys, starts and stops the app, runs the click-through agent, validates `journey.v1`, writes fix items. |
 | `bin/autodeck.py` | Journey deck: after each journey check, the passing journeys' screenshots replace their slides in `.auto/journeys/deck.html` (`deck.v1` in `deck.json`). |
@@ -360,10 +362,10 @@ hashes, last evidence, failed attempts, ledger excerpt). Outages change nothing 
 `ValueError`; any other 4xx (bad token, wrong scope) raises `TransportRefused`. The token goes only in the `Authorization` header. The tests drive
 it through the real app's Flask test client; it has not run over a real network.
 
-With `"central": {"enabled": true, "url": "...", "project": "<slug>"}` in `.claude/auto.json` and `AUTO_RUNNER_CENTRAL_TOKEN` set,
-or `"token_env": "<VARIABLE>"` added and that variable set (one variable per project, so several projects can each keep their own
-token set at the same time), the runner pulls and acknowledges answers through `HttpTransport` instead of `LocalTransport`, and events, blockers and pulls carry
-`central.project` (which must equal the token's project) instead of the folder name. The token is removed from the environment of the
+With `"central": {"enabled": true, "url": "...", "project": "<slug>"}` in `.claude/auto.json` and a token (a personal token
+from signing in, which works for every project you belong to, or a project token in `AUTO_RUNNER_CENTRAL_TOKEN` or the
+variable named by `"token_env"`), the runner pulls and acknowledges answers through `HttpTransport` instead of `LocalTransport`, and events, blockers and pulls carry
+`central.project` instead of the folder name; every call sends `?project=<slug>`, which a personal token needs and a project token must match. The token is removed from the environment of the
 agent and the test command (every variable whose value is a token, under any name), added to the values redacted from events, and never written to a log, an event or a file. Without the
 section, or with `enabled` false, nothing changes: answers stay local. This is proven with a fake `send` only (no real service).
 

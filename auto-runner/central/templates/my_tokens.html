@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}My tokens{% endblock %}
+{% block content %}
+<h1>My tokens</h1>
+<p class="muted">One token per computer you signed in from Claude. Each works for the projects where you are a developer or
+  above, stops working after {{ idle_days }} days without use, and can be revoked here at any time.</p>
+{% if tokens %}
+<table>
+  <thead><tr><th>Computer</th><th>Token</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+  {% for t in tokens %}
+    <tr>
+      <td>{{ t.name }}</td>
+      <td><code>{{ t.prefix }}…</code></td>
+      <td>{{ t.created_at }}</td>
+      <td>{{ t.last_used_at or "never" }}</td>
+      <td>{% if t.revoked_at %}<span class="badge off">revoked</span>{% else %}<span class="badge ok">active</span>{% endif %}</td>
+      <td>{% if not t.revoked_at %}
+        <form method="post" action="{{ url_for('personal.token_revoke', token_id=t.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="danger">Revoke</button>
+        </form>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="card empty">No tokens yet. Run <code>/auto-runner:central</code> in Claude to sign a computer in.</p>
+{% endif %}
+{% endblock %}

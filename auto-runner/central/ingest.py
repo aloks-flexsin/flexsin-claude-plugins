@@ -252,9 +252,11 @@ def store(db, project, events, at):
         accepted.append(clean["id"])
     try:
         for clean, body, digest in pending:
-            db.execute("INSERT INTO event (id, project_id, type, ts, body, body_hash, received_at)"
-                       " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                       (clean["id"], project["id"], clean["type"], clean["time"], body, digest, at))
+            account = g.get("token_account")
+            db.execute("INSERT INTO event (id, project_id, type, ts, body, body_hash, received_at, account_id)"
+                       " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                       (clean["id"], project["id"], clean["type"], clean["time"], body, digest, at,
+                        account["id"] if account else None))
             if _raised_blocker(clean):
                 _upsert_blocker(db, project["id"], clean, body, at)
             elif _resumed_blocker(clean):
