@@ -3,6 +3,14 @@
 {% block content %}
 <h1>Accounts</h1>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if link %}
+<div class="card" role="status">
+  <p><strong>{{ "Invite link" if link.kind == "invite" else "Password reset link" }} for {{ link.email }}.</strong>
+    Send it to them (chat or email). It is shown only now, works once and expires in {{ lifetime_hours }} hours.
+    {% if link.kind == "reset" %}Their old password no longer works and they were signed out everywhere.{% endif %}</p>
+  <p><code>{{ link.link }}</code></p>
+</div>
+{% endif %}
 <table>
   <thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
   <tbody>
@@ -10,7 +18,7 @@
     <tr>
       <td>{{ a.email }}</td>
       <td><span class="badge">{{ a.role }}</span></td>
-      <td><span class="badge {{ 'off' if a.disabled else 'ok' }}">{{ "disabled" if a.disabled else "enabled" }}</span></td>
+      <td><span class="badge {{ 'off' if a.disabled else 'ok' }}">{{ "disabled" if a.disabled else "enabled" }}</span>{% if a.pending %} <span class="badge warn">invited</span>{% endif %}</td>
       <td>
         <form method="post" action="{{ url_for('admin.account_disabled', account_id=a.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -26,8 +34,7 @@
         </form>
         <form method="post" action="{{ url_for('admin.account_reset_password', account_id=a.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <label>New password <input type="password" name="password" autocomplete="new-password" required></label>
-          <button type="submit">Reset password</button>
+          <button type="submit">{{ "New invite link" if a.pending else "Send reset link" }}</button>
         </form>
       </td>
     </tr>
@@ -35,11 +42,12 @@
   </tbody>
 </table>
 <h2>Add an account</h2>
+<p class="muted">You get a one-time link to send them; they set their own password. To give someone a project, invite
+  them from the project's page instead: that adds the account and the membership in one step.</p>
 <form method="post" action="{{ url_for('admin.account_add') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <label>Email <input type="email" name="email" value="{{ form_email }}" required></label>
   <label>Role <select name="role">{% for r in roles %}<option value="{{ r }}"{% if r == "user" %} selected{% endif %}>{{ r }}</option>{% endfor %}</select></label>
-  <label>First password <input type="password" name="password" autocomplete="new-password" required></label>
   <button type="submit">Add account</button>
 </form>
 {% endblock %}

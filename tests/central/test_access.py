@@ -108,7 +108,7 @@ def test_members_page_and_management_by_role(world, conn, who):
         assert page.status_code == 200
         text = page.get_data(as_text=True)
         assert 'owner@example.com' in text and 'viewer@example.com' in text
-        assert ('Add member' in text) == (who in ('owner', 'admin'))
+        assert ('Invite a member' in text) == (who in ('owner', 'admin'))
     if who == 'anonymous':
         return
     resp = post(c, '/projects/alpha/members', email='stranger@example.com', role='viewer')
@@ -211,7 +211,7 @@ def test_membership_changes_are_audited(world, conn):
 def test_bad_membership_requests_are_refused_and_audited(world, conn):
     owner = world['clients']['owner']
     viewer_id = world['accounts']['viewer']['id']
-    assert post(owner, '/projects/alpha/members', email='nobody@example.com', role='viewer').status_code == 400
+    assert post(owner, '/projects/alpha/members', email='not-an-email', role='viewer').status_code == 400
     assert post(owner, '/projects/alpha/members', email='viewer@example.com', role='viewer').status_code == 400
     assert post(owner, '/projects/alpha/members', email='stranger@example.com', role='admin').status_code == 400
     assert post(owner, '/projects/alpha/members/%s/role' % viewer_id, role='admin').status_code == 400

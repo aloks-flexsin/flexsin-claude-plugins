@@ -99,24 +99,41 @@ def test_home_links_accounts_only_for_admins(as_root, as_bob):
     assert '/admin/accounts' not in as_bob.get('/').get_data(as_text=True)
 
 
-def test_admin_adds_an_account_that_can_sign_in(app, conn, as_root, root):
-    resp = post(as_root, '/admin/accounts', email='Carol@Example.com', role='user', password=NEW_PW)
-    assert resp.status_code == 302
+LINK = re.compile(r'<code>(?:https?://[^/<]+)?(/invite/[A-Za-z0-9_-]+)</code>')
+
+
+def link_in(resp):
+    m = LINK.search(resp.get_data(as_text=True))
+    assert m, 'no one-time link on the page'
+    return m.group(1)
+
+
+def use_link(app, path, password=NEW_PW):
+    c = new_client(app)
+    return c, c.post(path, data={'password': password, 'password_again': password, 'csrf_token': token(c, path)})
+
+
+def test_admin_adds_an_account_with_a_link_and_no_password(app, conn, as_root, root):
+    resp = post(as_root, '/admin/accounts', email='Carol@Example.com', role='user')
+    assert resp.status_code == 200
+    path = link_in(resp)
     carol = accounts.find_by_email(conn, 'carol@example.com')
-    assert carol['role'] == 'user'
-    assert 'carol@example.com' in as_root.get('/admin/accounts').get_data(as_text=True)
+    assert carol['role'] == 'user' and carol['password_hash'] == '!'
+    assert 'invited' in as_root.get('/admin/accounts').get_data(as_text=True)
+    assert path not in as_root.get('/admin/accounts').get_data(as_text=True)          # shown once
+    c, done = use_link(app, path)
+    assert done.status_code == 302 and c.get('/').status_code == 200                   # signed in
     assert signin(new_client(app), 'carol@example.com', NEW_PW).status_code == 302
     [row] = audit.rows(conn, 'account.create')
     assert row['account_id'] == root['id']
-    assert row['detail'] == {'target_id': carol['id'], 'email': 'carol@example.com', 'role': 'user'}
+    assert row['detail'] == {'target_id': carol['id'], 'email': 'carol@example.com', 'role': 'user', 'via': 'invite'}
+    assert path.rsplit('/', 1)[1] not in str(audit.rows(conn))                          # the link is never audited
 
 
 @pytest.mark.parametrize('data', [
-    {'email': 'carol@example.com', 'role': 'user', 'password': 'short'},
-    {'email': 'carol@example.com', 'role': 'user', 'password': 'password1234'},
-    {'email': 'root@EXAMPLE.com', 'role': 'user', 'password': NEW_PW},
-    {'email': 'carol@example.com', 'role': 'owner', 'password': NEW_PW},
-    {'email': 'not-an-email', 'role': 'user', 'password': NEW_PW},
+    {'email': 'root@EXAMPLE.com', 'role': 'user'},
+    {'email': 'carol@example.com', 'role': 'owner'},
+    {'email': 'not-an-email', 'role': 'user'},
 ])
 def test_add_refuses_bad_input(conn, as_root, data):
     resp = post(as_root, '/admin/accounts', **data)
@@ -183,37 +200,47 @@ def test_an_admin_may_step_down_when_another_admin_remains(conn, as_root, root, 
     assert as_root.get('/admin/accounts').status_code == 404
 
 
-def test_reset_password_signs_the_person_out_of_every_session(app, conn, as_root, as_bob, bob, root):
+def test_reset_link_signs_the_person_out_and_stops_the_old_password(app, conn, as_root, as_bob, bob, root):
     second = new_client(app)
     signin(second, 'bob@example.com', USER_PW)
     assert len(conn.query('SELECT * FROM session WHERE account_id = ?', (bob['id'],))) == 2
-    assert post(as_root, '/admin/accounts/%s/password' % bob['id'], password=NEW_PW).status_code == 302
+    resp = post(as_root, '/admin/accounts/%s/password' % bob['id'])
+    assert resp.status_code == 200 and 'Password reset link' in resp.get_data(as_text=True)
     assert conn.query('SELECT * FROM session WHERE account_id = ?', (bob['id'],)) == []
     assert as_bob.get('/').status_code == 302 and second.get('/').status_code == 302
     assert as_root.get('/').status_code == 200  # the admin's own session is untouched
-    assert signin(new_client(app), 'bob@example.com', USER_PW).status_code == 401
+    assert signin(new_client(app), 'bob@example.com', USER_PW).status_code == 401      # the old password stopped at once
+    assert use_link(app, link_in(resp))[1].status_code == 302
     assert signin(new_client(app), 'bob@example.com', NEW_PW).status_code == 302
     [row] = audit.rows(conn, 'account.password_reset')
     assert row['account_id'] == root['id'] and row['detail'] == {'target_id': bob['id'], 'email': 'bob@example.com'}
+    assert len(audit.rows(conn, 'reset.accept')) == 1
 
 
 def test_reset_clears_a_lockout(app, conn, as_root, bob):
     for _ in range(auth.MAX_FAILURES):
         signin(new_client(app), 'bob@example.com', 'wrong-wrong-wrong-1')
     assert accounts.get(conn, bob['id'])['locked_until']
-    post(as_root, '/admin/accounts/%s/password' % bob['id'], password=NEW_PW)
+    use_link(app, link_in(post(as_root, '/admin/accounts/%s/password' % bob['id'])))
     assert signin(new_client(app), 'bob@example.com', NEW_PW).status_code == 302
 
 
-def test_reset_refuses_a_weak_password(conn, as_root, bob):
-    before = accounts.get(conn, bob['id'])['password_hash']
-    assert post(as_root, '/admin/accounts/%s/password' % bob['id'], password='short').status_code == 400
-    assert accounts.get(conn, bob['id'])['password_hash'] == before
-    assert audit.rows(conn, 'account.password_reset') == []
+def test_a_weak_password_is_refused_and_the_link_still_works(app, conn, as_root, bob):
+    path = link_in(post(as_root, '/admin/accounts/%s/password' % bob['id']))
+    assert use_link(app, path, 'short')[1].status_code == 400
+    assert use_link(app, path, 'password1234')[1].status_code == 400
+    assert accounts.get(conn, bob['id'])['password_hash'] == '!'
+    assert use_link(app, path)[1].status_code == 302
+
+
+def test_an_admin_cannot_reset_their_own_password_here(conn, as_root, root):
+    resp = post(as_root, '/admin/accounts/%s/password' % root['id'])
+    assert resp.status_code == 400 and 'Password page' in resp.get_data(as_text=True)
+    assert accounts.get(conn, root['id'])['password_hash'] != '!'
 
 
 def test_unknown_account_gets_404(as_root):
-    for suffix, data in (('disabled', {'disabled': '1'}), ('role', {'role': 'user'}), ('password', {'password': NEW_PW})):
+    for suffix, data in (('disabled', {'disabled': '1'}), ('role', {'role': 'user'}), ('password', {})):
         assert post(as_root, '/admin/accounts/nope/' + suffix, **data).status_code == 404
 
 
