@@ -2,7 +2,7 @@
 {% block title %}{{ project.name }} runs{% endblock %}
 {% block content %}
 <h1>{{ project.name }} <small>({{ project.slug }})</small> runs</h1>
-<p class="crumbs"><a href="{{ url_for('projects.projects_page') }}">Projects</a> / <a href="{{ url_for('projects.members_page', slug=project.slug) }}">{{ project.name }}</a> / Runs · <a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}">Blockers</a></p>
+<p class="crumbs"><a href="{{ url_for('projects.projects_page') }}">Projects</a> / <a href="{{ url_for('projects.members_page', slug=project.slug) }}">{{ project.name }}</a> / Runs · <a href="{{ url_for('tasks.tasks_page', slug=project.slug) }}">Tasks</a> · <a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}">Blockers</a></p>
 {% if active %}
 <h2>Working now</h2>
 <ul>

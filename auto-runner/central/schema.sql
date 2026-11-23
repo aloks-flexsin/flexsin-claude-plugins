@@ -177,3 +177,29 @@ CREATE TABLE IF NOT EXISTS personal_token (
     last_used_at VARCHAR(32),
     revoked_at VARCHAR(32)
 );
+
+-- Central tasks (decision record 0007, step 4): what each person's runner does next, its plan and its claim.
+CREATE TABLE IF NOT EXISTS project_task (
+    id VARCHAR(64) PRIMARY KEY,
+    project_id VARCHAR(64) NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    number INTEGER NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    description TEXT,
+    assignee_id VARCHAR(64) NOT NULL REFERENCES account (id),
+    created_by VARCHAR(64) REFERENCES account (id),
+    status VARCHAR(32) NOT NULL,
+    plan TEXT,
+    items TEXT,
+    decision_comment TEXT,
+    decided_by VARCHAR(64) REFERENCES account (id),
+    decided_at VARCHAR(32),
+    claim_id VARCHAR(64),
+    claim_runner VARCHAR(200),
+    heartbeat_at VARCHAR(32),
+    branch VARCHAR(300),
+    pr_url VARCHAR(500),
+    note TEXT,
+    created_at VARCHAR(32) NOT NULL,
+    updated_at VARCHAR(32) NOT NULL,
+    UNIQUE (project_id, number)
+);

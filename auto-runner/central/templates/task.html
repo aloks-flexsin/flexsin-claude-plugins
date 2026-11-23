@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Task {{ task.number }}{% endblock %}
+{% block content %}
+<h1>#{{ task.number }} {{ task.title }}</h1>
+<p class="crumbs"><a href="{{ url_for('tasks.tasks_page', slug=project.slug) }}">All tasks of {{ project.name }}</a></p>
+<p class="lead">Assigned to {{ task.assignee_email }} · <span class="badge {{ 'warn' if task.status in ('plan_review', 'changes_requested') else ('ok' if task.status == 'done' else '') }}">{{ describe }}</span>
+  {% if live %} · worked by <code>{{ task.claim_runner }}</code>{% elif task.claim_id and task.status in ('planning', 'building', 'approved', 'changes_requested') %} · claim expired (no sign of its runner for {{ ttl_hours }} hours){% endif %}
+  {% if task.branch %} · branch <code>{{ task.branch }}</code>{% endif %}
+  {% if task.pr_url %} · <a href="{{ task.pr_url }}" rel="noopener noreferrer">pull request</a>{% endif %}</p>
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+
+{% if task.description %}<h2>What and why</h2><pre class="wrap">{{ task.description }}</pre>{% endif %}
+
+{% if task.plan %}
+<h2>Plan</h2>
+<pre class="wrap">{{ task.plan }}</pre>
+<h3>Queue items</h3>
+<pre class="wrap">{{ task['items'] }}</pre>
+{% endif %}
+{% if task.decision_comment %}<h3>Last decision's comment</h3><p>{{ task.decision_comment }}</p>{% endif %}
+{% if task.note %}<h3>Runner's last report</h3><p>{{ task.note }}</p>{% endif %}
+
+{% if can_decide %}
+<h2>Decide on the plan</h2>
+<form method="post" action="{{ url_for('tasks.task_decide', slug=project.slug, number=task.number) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Comment (required to request changes)<br><textarea name="comment" rows="4" cols="80" maxlength="20000"></textarea></label><br>
+  <button type="submit" name="decision" value="approve">Approve</button>
+  <button type="submit" name="decision" value="changes">Request changes</button>
+  <button type="submit" name="decision" value="reject" class="danger">Reject</button>
+</form>
+<p class="muted">Approve: the runner builds it on its next run. Request changes: it revises the plan with your comment and posts it again. Reject: the task closes.</p>
+{% endif %}
+
+{% if is_admin and task.status not in ('done', 'rejected') %}
+<h2>Admin</h2>
+<form method="post" action="{{ url_for('tasks.task_release', slug=project.slug, number=task.number) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Give it to <select name="assignee">
+    <option value="">{{ task.assignee_email }} (keep)</option>
+    {% for m in assignees %}{% if m.account_id != task.assignee_id %}<option value="{{ m.account_id }}">{{ m.email }} ({{ m.role }})</option>{% endif %}{% endfor %}
+  </select></label>
+  <button type="submit" class="danger">{{ "Release claim" if task.claim_id else "Save" }}</button>
+</form>
+<p class="muted">Releasing ends the runner's claim at once: it stops this task at its next step. Work goes back one step (planning to open, building to approved); a new assignee plans it afresh.</p>
+{% endif %}
+{% endblock %}

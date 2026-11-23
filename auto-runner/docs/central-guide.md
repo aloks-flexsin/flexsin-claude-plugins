@@ -71,6 +71,20 @@ one unused for 90 days stops working (sign in again).
    the hidden-prompt line init prints for the variable it names, default `AUTO_RUNNER_TOKEN_<SLUG>`.)
 4. **Restart Claude Code**, then `/auto-runner:central`.
 
+## Tasks: what each person's runner does next
+- On a project's **Tasks** page you add a task for yourself (title, what and why); admins can add one for anyone who can
+  run runners. Everyone in the project sees every task and who is working on what.
+- Run **`/auto-runner:auto`** with no task. Your runner takes your next task: a new one gets a plan (the same planning and
+  spec check as always), which then **waits for approval** on the task's page; meanwhile the runner takes your next one.
+- On the task page you, a manager, an owner or an admin **Approve** the plan, **Request changes** (with a comment; the
+  runner revises it on its next `/auto-runner:auto`) or **Reject** it.
+- Run `/auto-runner:auto` again: an approved task is built on its own branch and pull request, and shows **done** with the
+  PR when the run finishes.
+- A task you type in the terminal (`/auto-runner:auto <task>`) is approved there as before and recorded on the page too.
+- **Claims:** a task a runner works on shows its runner, so nobody else's runner takes it. A runner silent for 2 hours
+  loses its claim. An admin can release a claim or give the task to someone else; the old runner stops that task at its
+  next step.
+
 ## Answering a blocker
 1. A run raises a blocker and stops working on that item; other ready items go on. `/auto-runner:central` and
    `/auto-runner:status` list it, and the page shows it at `<service>/projects/<slug>/blockers`.

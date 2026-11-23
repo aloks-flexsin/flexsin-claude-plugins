@@ -89,6 +89,29 @@ may not stick over plain http. The API endpoints do not use the cookie.
   Only `https://host/owner/repo`, `ssh://[user@]host[:port]/owner/repo` and `user@host:owner/repo` are taken; a password, any
   user in an https URL, queries, fragments, other schemes and local paths are refused. The service never holds git credentials.
 
+## Tasks (decision record 0007, step 4; `tasks.py`)
+
+- `/projects/<slug>/tasks` (any member): every task of the project with its assignee, state, the runner working on it, and
+  its pull request. People who can run runners (developer and above) add tasks for themselves; admins add them for any such
+  member. `/projects/<slug>/tasks/<N>`: the description, the plan and its queue items, and the decision.
+- States: `open` → `planning` (a runner claimed it) → `plan_review` → `approved` → `building` → `done`; or
+  `changes_requested` (back to the runner with a comment) and `rejected`. A task typed in the terminal is recorded as
+  `building` (its plan was approved there).
+- **Plan approval** on the task page: Approve, Request changes (a comment is required) or Reject, by the assignee or a
+  project manager, owner or admin. Audited.
+- **Claims:** only the runner holding a task's claim may post its plan, beat or report. A claim lives while its runner
+  beats (any task call) within 2 hours, and for as long as its plan waits for a person. A silent claim expires and the task
+  can be taken again. Admins **release** a claim or **give the task to someone else** on the task page (audited): the
+  runner gets 409 on its next call and stops that task. Work goes back one step (planning → open, building → approved);
+  a new assignee plans it afresh.
+- **API** (personal tokens only, the project named as for every call): `GET /api/v1/tasks` (every task, with the runner
+  working on each, never a claim id), `GET /api/v1/tasks/<N>`, `POST /api/v1/tasks/next` (`{runner}` → claims the account's
+  next task: approved, building, changes requested, planning, then open; returns the task, the claim and `action`
+  plan|build), `POST /api/v1/tasks` (record a terminal task), `POST /api/v1/tasks/<N>/plan` (`{claim, plan, items}`),
+  `.../heartbeat` (`{claim}`), `.../report` (`{claim, result: done|stopped, branch, pr_url, note}`). 409 = this runner no
+  longer holds the task.
+- Table `project_task` (init-db creates it).
+
 ## Runs
 
 - `/projects/<slug>/runs` (any member): each run of the project, newest first, and a "Working now" list. Built from the

@@ -214,6 +214,10 @@ class HttpTransport(Transport):
         refused = (refusals or {}).get(status)
         raise refused(message) if refused else TransportRefused(message, status)
 
+    def request(self, method, path, payload=None):
+        """Any other API call (the task API, autotasks.py) -> the reply object; 4xx raise TransportRefused with `.status`."""
+        return self._call(method, path, payload=payload if method == 'POST' else None)
+
     def pull_pending(self, project):
         items = self._call('GET', '/api/v1/deliveries/pending').get('deliveries')
         if not isinstance(items, list) or not all(isinstance(d, dict) for d in items):
