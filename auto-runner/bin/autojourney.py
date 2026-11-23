@@ -51,7 +51,7 @@ STEP_FIELDS = ('n', 'expected', 'seen', 'status', 'screenshot')
 JOURNEY_FIELDS = ('id', 'status', 'steps')
 STORE = 'journeys'
 MCP_FILE = '.auto/run/journey-mcp.json'
-DENIED = ('Bash', 'Edit', 'MultiEdit', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Task')
+DENIED = ('Bash', 'Edit', 'MultiEdit', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Task', 'PowerShell(git push:*)')
 DEFAULTS = {'enabled': False, 'start_command': '', 'ready_timeout_s': 120, 'max_fix_rounds': 2, 'max_budget_usd': 3.0}
 
 

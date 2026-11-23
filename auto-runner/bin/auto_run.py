@@ -5,7 +5,7 @@ Stdlib port of scripts/auto_run.ps1; settings come from `.claude/auto.json` (see
     python auto_run.py --dry-run                 # show what would happen, change nothing
     python auto_run.py                           # run (default: at most 8 iterations, 5 USD each)
     python auto_run.py --max-iterations 3 --max-budget-usd 2
-    python auto_run.py --enqueue SLUG            # check .auto/pending/SLUG/items.md, add it between iterations, then run
+    python auto_run.py --enqueue SLUG            # check .auto/pending/SLUG/items.md, then run (it gets its own branch)
     python auto_run.py --project DIR --allow-dirty
 
 Files in the project folder (all under `.auto/`): `queue.md` (the one file a person reads; each item gets a status line), `pending/SLUG/`
@@ -17,7 +17,12 @@ Refuses to start (also with --dry-run) unless the preflight in autosafe.py passe
 (or check_only), and at least one commit. `auto_init.py` writes the rules.
 Each iteration works the first *ready* item (queue.readiness: not blocked, every `*Depends on:*` item ticked) and names it in the
 prompt; blocked and waiting items are skipped, and the run ends cleanly (exit 0) when no ready item is left.
-Stops on: a red suite, a STOP file, uncommitted leftovers, or two iterations without progress. Nothing is pushed, deployed or merged.
+Stops on: a red suite, a STOP file, uncommitted leftovers, or two iterations without progress.
+Team git rules: AUTO_RUNNER_USER and AUTO_RUNNER_ACCOUNT are required; the run fetches `<remote>/<base>` and starts from it; a new
+branch is `<user>/<account>-claude-auto-runner/<type>/<brief>` and takes one pending request; while the branch is unmerged
+other requests wait.
+After a clean run the runner (never the agent, which runs with --disallowedTools PUSH_DENIED) pushes that branch and opens a
+pull request, unless `publish` turns it off. Nothing is merged or deployed.
 Test credentials (autobrowser.py): every generated value in `.auto/run/accounts.json` (project or worktree) is redacted from each
 iteration log and every event detail, and an iteration whose commits contain one stops the run (result and reason `secret_leak`).
 Browser stage (Layer 1, autobrowser.run_stage): when `acceptance.browser.enabled` is true and the item has a `*Browser:*` line, the
@@ -371,6 +376,100 @@ def _is_ancestor(cwd, a, b):
     return r.returncode == 0
 
 
+BRANCH_TYPES = {'feature': 'feat', 'breaking': 'feat', 'fix': 'fix', 'internal': 'chore'}
+
+
+def branch_type(items_text):
+    """The `<type>` of a run branch from a request's explicit `*Kind:*` lines: any feature/breaking -> feat, else any fix -> fix,
+    else (only internal) -> chore. A request with no kind lines (or an unknown word) -> feat."""
+    kinds = set()
+    for _, _, block in queue.parse_items(items_text or ''):
+        if queue.has_kind(block):
+            try:
+                kinds.add(queue.parse_kind(block))
+            except ValueError:
+                pass
+    for kind in ('feature', 'breaking', 'fix', 'internal'):
+        if kind in kinds:
+            return BRANCH_TYPES[kind]
+    return 'feat'
+
+
+def branch_brief(text):
+    """A request slug -> the `<brief>` of a run branch: lower case, runs of other characters become '-', at most 40."""
+    brief = re.sub(r'[^a-z0-9]+', '-', (text or '').lower()).strip('-')[:40].strip('-')
+    return brief or 'work'
+
+
+def run_branch(name, kind, brief, taken):
+    """-> `<name>/<kind>/<brief>` (name = '<user>/<account>-claude-auto-runner'), with `-2`, `-3`, ... added while
+    `taken(branch)` says it is in use."""
+    stem = f'{autosafe.runner_prefix(name)}{kind}/{brief}'
+    branch, n = stem, 1
+    while taken(branch):
+        n += 1
+        branch = f'{stem}-{n}'
+    return branch
+
+
+def branch_taken(project, remote):
+    def taken(branch):
+        return any(subprocess.run(['git', '-C', str(project), 'rev-parse', '--verify', '--quiet', ref],
+                                  capture_output=True).returncode == 0
+                   for ref in (f'refs/heads/{branch}', f'refs/remotes/{remote}/{branch}'))
+    return taken
+
+
+def update_base(project, remote, base, dry_run=False):
+    """Team rule: start from the remote's latest base. -> the start point (`<remote>/<base>`, or `base` when the repository has
+    no such remote). A fetch that fails stops the run: an unattended run must not build on old code."""
+    if not autosafe.has_remote(project, remote):
+        say(f'no remote "{remote}": starting from the local {base}; nothing will be published')
+        return base
+    start = f'{remote}/{base}'
+    if dry_run:
+        say(f'would fetch {base} from {remote} and start from {start}')
+        return start if git(project, 'rev-parse', '--verify', '--quiet', start, check=False) else base
+    env = {**child_env(), 'GIT_TERMINAL_PROMPT': '0'}           # unattended: fail instead of waiting for a password
+    r = subprocess.run(['git', '-C', str(project), 'fetch', '--quiet', remote, base], capture_output=True, text=True,
+                       encoding='utf-8', errors='replace', env=env)
+    if r.returncode != 0 and subprocess.run(['git', '-C', str(project), 'ls-remote', '--exit-code', '--heads', remote, base],
+                                             capture_output=True, env=env).returncode == 2:
+        say(f'{remote} has no branch {base} yet: starting from the local {base}')
+        return base
+    if r.returncode != 0 or not git(project, 'rev-parse', '--verify', '--quiet', start, check=False):
+        last = ((r.stderr or r.stdout).strip().splitlines() or [f'{start} not found after the fetch'])[-1][:300]
+        raise RunnerError(f'could not update {base} from {remote}: {last}. Fix the connection or the remote, then run again.')
+    say(f'fetched {base} from {remote}: starting from {start}')
+    return start
+
+
+def pending_requests(project):
+    pending = project / AUTO_DIR / 'pending'
+    return sorted(p for p in pending.iterdir() if p.is_dir()) if pending.exists() else []
+
+
+def request_errors(d, qtext, cfg):
+    """-> (items text, errors) for one pending request folder, checked against the queue text `qtext`."""
+    items = d / 'items.md'
+    itext = items.read_text(encoding='utf-8') if items.exists() else ''
+    _, errors = queue.validate(qtext, itext, require_kind=autocfg.changelog(cfg)['enabled'],
+                               require_slice=autocfg.principles(cfg)['require_slices'])
+    if not errors:
+        jfile = d / 'journeys.md'
+        errors = request_journeys(itext, jfile.read_text(encoding='utf-8') if jfile.exists() else '')[2]
+    return itext, errors
+
+
+def first_valid_request(project, cfg, qtext):
+    """-> (slug, items text) of the oldest pending request that passes its check, or (None, '')."""
+    for d in pending_requests(project):
+        itext, errors = request_errors(d, qtext, cfg)
+        if not errors:
+            return d.name, itext
+    return None, ''
+
+
 SUITE_TOTAL = re.compile(r'\b\d+ (?:passed|failed|skipped|errors?|xfailed|xpassed|passing|failing|pending|tests?)\b', re.I)
 
 
@@ -587,18 +686,24 @@ def run_pr(argv, cwd):
     return r.returncode, (r.stdout or '') + (r.stderr or '')
 
 
-def publish(project, wt, cfg, base, branch, pr_runner=run_pr):
-    """After a clean run: push the run branch to `publish.remote` and, with `publish.pull_request`, open a pull request.
-    -> None when publishing is off, else a dict for the `publish` event. Never the base branch, a `lanes.protected` branch
-    or a branch outside `branch_prefix`; never with force. A failure is reported, never raised: the work stays on the branch."""
+def publish(project, wt, cfg, base, branch, pr_runner=None, start=None, name=None):
+    """After a clean run: push the run branch to `publish.remote` and, unless `publish.pull_request` is false, open a pull
+    request into `base`. -> None when publishing is off (or left at its default with no remote), else a dict for the
+    `publish` event. Only this runner's own branch (`<user>/<account>-claude-auto-runner/...`), never the base branch or a
+    `lanes.protected` branch, never with force. A failure is reported, never raised: the work stays on the branch.
+    `start` is what the branch is compared with (default `base`)."""
+    pr_runner = pr_runner or run_pr
+    start = start or base
+    name = autosafe.runner_name() if name is None else name
     s = autosafe.publish_settings(cfg)
-    if not s['push']:
+    if not s['push'] or (not s['explicit_push'] and not autosafe.has_remote(project, s['remote'])):
         return None
     out = {'remote': s['remote'], 'branch': branch, 'pushed': False}
-    if branch == base or not branch.startswith(cfg['branch_prefix']) or autosafe.protected_branch(branch, cfg):
-        out['error'] = 'refused: not a run branch'
+    prefix = autosafe.runner_prefix(name or '<user>/<account>-claude-auto-runner')
+    if branch == base or not name or not branch.startswith(prefix) or autosafe.protected_branch(branch, cfg):
+        out['error'] = f'refused: {branch} is not this runner\'s branch; rename it to {prefix}<type>/<brief> or publish it by hand'
         return out
-    ahead = int(git(wt, 'rev-list', '--count', f'{base}..{branch}', check=False) or 0)
+    ahead = int(git(wt, 'rev-list', '--count', f'{start}..{branch}', check=False) or 0)
     out['commits'] = ahead
     if ahead == 0:
         out['error'] = 'nothing to publish: no commits on the run branch'
@@ -611,17 +716,25 @@ def publish(project, wt, cfg, base, branch, pr_runner=run_pr):
         return out
     out['pushed'] = True
     if s['pull_request']:
-        log = git(wt, 'log', '--oneline', '--no-decorate', f'{base}..{branch}', check=False)
+        log = git(wt, 'log', '--oneline', '--no-decorate', f'{start}..{branch}', check=False)
         body = ('Opened by auto-runner after its own test run passed on every commit. Read the diff before merging.\n\n'
                 + '\n'.join(f'- {line}' for line in log.splitlines()))
         code, text = pr_runner(['gh', 'pr', 'create', '--head', branch, '--base', base,
-                                '--title', f'auto-runner: {ahead} commit(s) from {branch}', '--body', body], wt)
+                                '--title', pr_title(branch, name, ahead), '--body', body], wt)
         urls = [w for w in text.split() if w.startswith('https://')]
         if code == 0 and urls:
             out['pr_url'] = urls[-1]
         else:
             out['pr_error'] = f'gh pr create failed (exit {code}): ' + (text.strip().splitlines() or ['no output'])[-1][:300]
     return out
+
+
+def pr_title(branch, name, commits):
+    """`alok/bhawish-claude-auto-runner/fix/login-page` -> 'fix: login page (alok via bhawish-claude-auto-runner)'."""
+    parts = branch.split('/', 3)
+    if len(parts) == 4 and f'{parts[0]}/{parts[1]}' == name:
+        return f'{parts[2]}: {parts[3].replace("-", " ")} ({parts[0]} via {parts[1]})'
+    return f'auto-runner: {commits} commit(s) from {branch}'
 
 
 class Lock:
@@ -659,14 +772,16 @@ class Lock:
             pass
 
 
-def apply_pending(project, wt, cfg, queue_rel):
-    """Safe moments only: nothing is running in the worktree. Valid requests are added to the worktree queue; bad ones are moved to .auto/rejected."""
-    pending = project / AUTO_DIR / 'pending'
-    if not pending.exists():
-        return
+def apply_pending(project, wt, cfg, queue_rel, limit=None):
+    """Safe moments only: nothing is running in the worktree. Valid requests are added to the worktree queue (at most `limit`,
+    oldest first; the runner passes 1 when it starts a new branch: one request per branch); bad ones are moved to
+    .auto/rejected. -> the names of the requests added."""
+    added = []
     wq = wt / queue_rel
     tracked = bool(git(wt, 'ls-files', queue_rel, check=False))
-    for d in sorted(p for p in pending.iterdir() if p.is_dir()):
+    for d in pending_requests(project):
+        if limit is not None and len(added) >= limit:
+            break
         items = d / 'items.md'
         qtext = wq.read_text(encoding='utf-8')
         itext = items.read_text(encoding='utf-8') if items.exists() else ''
@@ -709,6 +824,8 @@ def apply_pending(project, wt, cfg, queue_rel):
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(d), str(dest))
         say(f"added request '{d.name}' to the queue")
+        added.append(d.name)
+    return added
 
 
 def first_open_id(qtext, known=None):
@@ -842,7 +959,7 @@ def project_slug(project, cfg):
 
 
 def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False, allow_dirty=False,
-        claude=run_claude, tests=run_tests, transport=None, browser_runner=None, pr_runner=run_pr, sleep=time.sleep,
+        claude=run_claude, tests=run_tests, transport=None, browser_runner=None, pr_runner=None, sleep=time.sleep,
         journey_hooks=None):
     """-> exit code. 0 = finished or stopped cleanly, 1 = refused or stopped on a problem a person should look at,
     75 (USAGE_LIMIT_EXIT) = stopped by Claude's usage limit; start it again after the reset.
@@ -887,7 +1004,8 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             say('Not added:\n- ' + '\n- '.join(errors))
             return 1
         if lock.held():
-            say(f"a run is in progress. Request '{enqueue}' is checked and waiting; it is added between its iterations.")
+            say(f"a run is in progress. Request '{enqueue}' is checked and waiting; it starts on a new branch in a later run "
+                "(one request per branch).")
             return 0
     if not dry_run:
         if claude is run_claude and not shutil.which('claude'):
@@ -898,29 +1016,41 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                               'or pass --allow-dirty:\n' + '\n'.join(dirty))
 
     stamp = datetime.now().strftime('%Y%m%d-%H%M')
-    if wt.exists():
-        branch = git(wt, 'branch', '--show-current')
-        say(f'reusing worktree {wt} on branch {branch}')
-        if dry_run:
-            behind = int(git(wt, 'rev-list', '--count', f'HEAD..{base}') or 0)
-            if behind:
-                say(f'{base} has {behind} commit(s) {branch} lacks: '
-                    + ('it would be moved up to them (its own work is already merged)' if _is_ancestor(wt, 'HEAD', base)
-                       else 'merge them into it yourself'))
-        else:
-            try:
-                action, n = catch_up(wt, base)
-            except RunnerError as e:
-                raise RunnerError(f'could not bring {branch} up to {base}: {e}')
-            if action == 'advanced':
-                say(f'{branch} was already merged into {base}: moved it up {n} commit(s) to {base}, so new work starts from it')
-            elif action == 'behind':
-                say(f'warning: {base} has {n} commit(s) that {branch} lacks and {branch} has unmerged work of its own; '
-                    f'merge {base} into it if this run needs them')
+    name = autosafe.runner_name()
+    remote = autosafe.publish_settings(cfg)['remote']
+    start = update_base(project, remote, base, dry_run)
+    taken = branch_taken(project, remote)
+    qnow = (wt / queue_rel if (wt / queue_rel).exists() else pq)
+    request, request_text = first_valid_request(project, cfg, qnow.read_text(encoding='utf-8') if qnow.exists() else '')
+    if request:
+        fresh = run_branch(name, branch_type(request_text), branch_brief(request), taken)
     else:
-        branch = f'{cfg["branch_prefix"]}{stamp}'
-        say(f'would create worktree {wt} on new branch {branch} (from {base})' if dry_run
-            else f'creating worktree {wt} on new branch {branch} (from {base})')
+        fresh = run_branch(name, 'feat', f'queue-{stamp}', taken)
+    new_branch = False
+    if wt.exists():
+        current = git(wt, 'branch', '--show-current')
+        own = int(git(wt, 'rev-list', '--count', f'{start}..HEAD') or 0)
+        if own == 0:
+            # merged into the base (or no work of its own): a new request gets a new branch from the latest base
+            branch, new_branch = fresh, True
+            say(f'reusing worktree {wt}: {current or "HEAD"} has no work outside {start}, so ' +
+                (f'would start new branch {branch} from {start}' if dry_run else f'starting new branch {branch} from {start}'))
+        else:
+            branch = current
+            say(f'reusing worktree {wt} on branch {branch} ({own} commit(s) not in {start} yet): continuing its items')
+            behind = int(git(wt, 'rev-list', '--count', f'HEAD..{start}') or 0)
+            if behind:
+                say(f'warning: {start} has {behind} commit(s) that {branch} lacks; merge {start} into it if this run needs them')
+    else:
+        branch, new_branch = fresh, True
+        say(f'would create worktree {wt} on new branch {branch} (from {start})' if dry_run
+            else f'creating worktree {wt} on new branch {branch} (from {start})')
+
+    def report_waiting():
+        """Requests still in .auto/pending wait for a fresh branch: one request per branch, the next once this one is merged."""
+        for d in pending_requests(project):
+            say(f"request '{d.name}' waits: {branch} is not merged into {start} yet (one request per branch; "
+                'it starts on a new branch in the first run after the merge)')
 
     prompt = build_prompt(cfg, queue_rel, principles=principles_text(project, cfg))
     allowed = (list(BASE_ALLOWED) + ([f'Bash({cfg["test_command"]}:*)'] if cfg['test_command'] else [])
@@ -1018,14 +1148,21 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         if stop.exists():
             stop.unlink()
         if not wt.exists():
-            git(project, 'worktree', 'add', str(wt), '-b', branch, base)
+            git(project, 'worktree', 'add', str(wt), '-b', branch, start)
+        elif new_branch:
+            try:
+                git(wt, 'switch', '-q', '-c', branch, start)
+            except RunnerError as e:
+                raise RunnerError(f'could not start {branch} in {wt}: {e}. Commit or remove the changes there, then run again.')
         wq = wt / queue_rel
         if not wq.exists() and pq.exists():           # an untracked queue is not in the worktree
             wq.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(pq, wq)
         share(project, wt, cfg['share_dirs'])
         copy_env_files(project, wt, cfg['env_files'])
-        apply_pending(project, wt, cfg, queue_rel)
+        if new_branch:
+            apply_pending(project, wt, cfg, queue_rel, limit=1)
+        report_waiting()
         known = {i: (s, d) for i, s, d in queue.statuses(pq.read_text(encoding='utf-8'))} if pq.exists() else {}
         statuses.update({i: sd for i, sd in known.items() if sd[0] in ('blocked', 'rejected')})
         new_dirs = [wt / AUTO_DIR / 'blockers' / autoblock.NEW, auto / 'blockers' / autoblock.NEW]
@@ -1173,7 +1310,6 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 reason = 'stop_file'
                 break
             if i > 1:
-                apply_pending(project, wt, cfg, queue_rel)
                 deliver()
             qtext = wq.read_text(encoding='utf-8')
             before = queue.open_count(qtext)
@@ -1222,7 +1358,8 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             sync_back(wq, pq, statuses)
             t0 = time.time()
             cmd = ['claude', '-p', prompt, '--permission-mode', 'acceptEdits', '--output-format', 'stream-json', '--verbose',
-                   '--allowedTools', *allowed, '--max-budget-usd', str(max_budget_usd), *model]
+                   '--allowedTools', *allowed, '--disallowedTools', *autosafe.PUSH_DENIED,
+                   '--max-budget-usd', str(max_budget_usd), *model]
             code, out = claude(cmd, wt)
             entry = {'time': datetime.now().isoformat(timespec='seconds'), 'item': item, 'result': None, 'commit': None,
                      'duration_s': None, 'cost_usd': parse_cost(out)}
@@ -1454,7 +1591,8 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         else:
             reason = 'max_iterations'
         exit_code = 0
-        published = publish(project, wt, cfg, base, branch, pr_runner)
+        report_waiting()
+        published = publish(project, wt, cfg, base, branch, pr_runner, start, name)
         if published is not None:
             published = autobrowser.redact_obj(published, generated())
             ledger.emit('publish', detail=published)
@@ -1471,7 +1609,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         PATH_PREPEND.clear()
         if last_suite:
             say(f'suite at the last independent run: {autobrowser.redact(last_suite, generated())}')
-    say(f'done. Review: git log {base}..{branch} --oneline   and   git diff {base}...{branch}')
+    say(f'done. Review: git log {start}..{branch} --oneline   and   git diff {start}...{branch}')
     say('Merge only after reading the diff.')
     return 0
 

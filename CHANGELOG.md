@@ -4,6 +4,21 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-23
+
+### Changed
+- The runner follows the team git rules (decision record 0006; unverified beyond fakes). Every run needs
+  `AUTO_RUNNER_USER` (the person) and `AUTO_RUNNER_ACCOUNT` (the Claude account in use) in the environment, and run
+  branches are `<user>/<account>-claude-auto-runner/<type>/<brief>`, the type from the request's `*Kind:*` lines and the
+  brief from its slug. `branch_prefix` is ignored.
+- Each run fetches the base from the remote and starts from `<remote>/<base>`; a failed fetch stops the run.
+- One request per branch: a new branch takes only the oldest pending request, and later requests wait until that branch
+  is merged instead of joining it between iterations.
+- Publishing (push, then a pull request titled `<type>: <brief> (<user> via <account>-claude-auto-runner)`) is on by
+  default; `"publish": {"push": false}` or `"pull_request": false` turns it off.
+- The runner starts every agent with `--disallowedTools Bash(git push:*) PowerShell(git push:*)`, so
+  `.claude/settings.json` no longer needs a `git push` deny rule and `auto_init` stops adding one.
+
 ## [0.13.0] - 2026-11-19
 
 ### Added

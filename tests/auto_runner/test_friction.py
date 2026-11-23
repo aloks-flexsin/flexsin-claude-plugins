@@ -137,7 +137,7 @@ def commit_on(cwd, name):
     sh(cwd, '-c', 'user.email=t@example.com', '-c', 'user.name=T', 'commit', '-q', '-m', name)
 
 
-def test_a_merged_branch_is_moved_up_to_the_base(project, capsys):
+def test_a_merged_branch_is_followed_by_a_new_branch_from_the_base(project, capsys):
     assert ar.run(project, max_iterations=1, claude=fake_agent()) == 0           # A1 done on the run branch
     wt = worktree(project)
     branch = ar.git(wt, 'branch', '--show-current')
@@ -145,8 +145,9 @@ def test_a_merged_branch_is_moved_up_to_the_base(project, capsys):
     commit_on(project, 'slice38.txt')                                            # ... and main moves on
     capsys.readouterr()
     assert ar.run(project, max_iterations=1, claude=fake_agent(), allow_dirty=True) == 0
-    assert (wt / 'slice38.txt').exists()
-    assert 'already merged into main: moved it up 1 commit(s)' in capsys.readouterr().out
+    new = ar.git(wt, 'branch', '--show-current')
+    assert new != branch and new.startswith('tester/acct-claude-auto-runner/feat/') and (wt / 'slice38.txt').exists()
+    assert f'{branch} has no work outside main, so starting new branch {new} from main' in capsys.readouterr().out
 
 
 def test_a_branch_with_unmerged_work_is_left_alone_with_a_warning(project, capsys):

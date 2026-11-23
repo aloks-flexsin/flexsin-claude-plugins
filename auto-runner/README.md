@@ -1,7 +1,8 @@
 # auto-runner
 
 A Claude Code plugin. You plan a task with `/auto`, the plan becomes queue items, and a runner works through them unattended in a separate git worktree:
-one item per iteration, an independent test run after each, one commit per green item. Nothing is pushed, deployed or merged.
+one item per iteration, an independent test run after each, one commit per green item. After a clean run the runner pushes its own
+branch and opens a pull request (the team git rules below); nothing is merged or deployed.
 
 Status: **built and tested with a fake `claude` command; never run on a real second project or live.** Treat it as unverified until it has.
 The foundations added later (event ledger, blockers, delivery, staleness, evaluation harness; ADR 0029) are likewise **unverified**: they are
@@ -41,6 +42,29 @@ Check the manifest with `claude plugin validate ./auto-runner` (needs the `claud
 3. `/auto-runner:status` and `/auto-runner:log` are read-only reports (counts by state, the running item, blocked questions, recorded spend; the last iterations and log tails; `--full N` prints one whole log).
 
 The runner can also be started by hand: `python bin/auto_run.py [--project DIR] [--max-iterations 8] [--max-budget-usd 5] [--enqueue SLUG] [--dry-run] [--allow-dirty]`.
+
+### Team git rules (0.14.0; tested with local bare remotes, a fake `gh` and a fake `claude`; never with two real runners)
+- **Whose run:** every run needs `AUTO_RUNNER_USER` (the real person working, for example `alok`) and `AUTO_RUNNER_ACCOUNT`
+  (the Claude account that person runs it with, for example `bhawish`), set per person or machine and never in
+  `.claude/auto.json`. Without either, or with anything but lower-case letters, digits, `.`, `_` and `-`, the preflight
+  refuses. `/auto-runner:init` says how to set them (PowerShell:
+  `[Environment]::SetEnvironmentVariable('AUTO_RUNNER_USER', 'alok', 'User')`, the same for `AUTO_RUNNER_ACCOUNT`).
+- **Branch name:** the team convention `<user>/<account>-claude-<surface>/<type>/<brief>` with the surface `auto-runner`:
+  `<user>/<account>-claude-auto-runner/<type>/<brief>`, for example `alok/bhawish-claude-auto-runner/fix/login`. `<brief>` is the
+  request's slug (`queue-<stamp>` when the queue has open items but no request); `<type>` comes from the request's `*Kind:*`
+  lines: any `feature`/`breaking` -> `feat`, else any `fix` -> `fix`, else only `internal` -> `chore`; none -> `feat`.
+  A name already taken locally or on the remote gets `-2`, `-3`, ….
+- **Latest base:** each run first runs `git fetch <remote> <base>` (`publish.remote`, default `origin`) and starts from
+  `<remote>/<base>`. A failed fetch stops the run. No such remote, or a remote without the base branch yet, means the local
+  base, with a notice.
+- **One request per branch:** a new branch takes only the oldest pending request (`.auto/pending/<slug>`). While the worktree's
+  branch has commits that are not in `<remote>/<base>` (its pull request is not merged), the runner only continues that
+  branch's items and every other request waits, listed as `request '<slug>' waits: <branch> is not merged ...` at the start and
+  end of the run. Once it is merged, the next run starts a new branch in the same worktree. Requests are no longer added
+  between iterations. "Merged" is judged by ancestry, so after a **squash** merge remove the worktree
+  (`git worktree remove <project>-auto`) before the next run.
+- **Push and pull request:** see "Publishing a run"; both are on unless turned off.
+
 Create `.auto/STOP` to stop a run between iterations. `.auto/lock` keeps a second run out; delete it by hand only if a run died.
 Each iteration works the first *ready* item and names it in the prompt: an item whose status is `blocked` is skipped (delete or rewrite its
 status line once the question is answered), and an item with a `  *Depends on:* A1, A2` line waits until each of those boxes is ticked.
@@ -89,7 +113,7 @@ Every key is optional; unknown keys and wrong types are errors that name the key
 | `env_files` | `[]` | Gitignored files (such as `.env`) copied into the worktree at the start of a run, so the suite and the app use the real configuration. Preflight refuses an entry outside the project, missing, not ignored by git or tracked. Values of 8 characters or more are redacted from iteration logs and events. A copy, not a link: a change in the worktree never reaches the project's file. |
 | `worktree_suffix` | `-auto` | Worktree folder = project folder name + suffix, next to the project. |
 | `base_branch` | `""` | Branch the worktree starts from. Empty = detect: `origin/HEAD`, else the current branch if it is main/master/trunk/develop, else one answer is needed. |
-| `branch_prefix` | `auto/` | Run branches are `<prefix><stamp>`. |
+| `branch_prefix` | `auto/` | **Deprecated, ignored** since 0.14.0 (still accepted so old files load): run branches are `<user>/<account>-claude-auto-runner/<type>/<brief>`. |
 | `commit_trailer` | `""` | Line added to each commit message. |
 
 Schema v2 sections (objects, every nested key optional, unknown nested keys and wrong types fail naming `section.key`). They are **parsed and validated only**, with one exception: `models.implementer` is passed to `claude -p` as `--model <value>` (no flag when it is unset or `inherit`). The preflight refuses any `models.<role>` value that is not `opus`, `sonnet`, `haiku`, `inherit` or a name starting with `claude-`, naming the key. A section appears in the loaded config only when the file sets it, so a config with only the keys above behaves exactly as before. `config.schema.json` describes every key.
@@ -102,7 +126,7 @@ Schema v2 sections (objects, every nested key optional, unknown nested keys and 
 | `budgets` | `iteration_usd`, `run_usd`, `max_iterations` |
 | `docs` | `adr_dir`, `required` (list of files), `map` (doc map path, default `docs/doc-map.json`), `check` (docs gate, default on) |
 | `central` | `enabled`, `url`, `project`, `token_env` (the name of the variable holding the token; never a token) |
-| `publish` | `push`, `pull_request` (flags, default off), `remote` (default `origin`): see "Publishing a run" |
+| `publish` | `push`, `pull_request` (flags, default **on**; `false` turns each off), `remote` (default `origin`): see "Publishing a run" |
 | `principles` | `enabled` (default on), `file` (default the plugin's `docs/engineering-principles.md`), `require_slices` (default on): see "Engineering principles" |
 | `safety` | `allow_env_read` (`true`: the agent may read `.env` files; init leaves out the `Read(./.env)` rules and preflight stops demanding them. Default off) |
 | `locks` | `path`, `stale_after_minutes` |
@@ -132,23 +156,30 @@ permissively licensed open-source packages; building it yourself needs a reason 
   `"enabled": false` turns both off: the prompt is then exactly as before.
 
 ## Publishing a run (tested with a local bare remote and a fake `gh`; never against GitHub)
-The agent can never push (the deny rules stay). With `"publish": {"push": true}` the runner itself, a plain Python step with
-your own git credentials, does it after a run that ends cleanly (exit 0, every commit passed the runner's own test run):
+The agent can never push: the runner starts every agent with `--disallowedTools Bash(git push:*) PowerShell(git push:*)`,
+whatever the project's settings say. Publishing is **on by default** (since 0.14.0): the runner itself, a plain Python step with
+your own git credentials, pushes after a run that ends cleanly (exit 0, every commit passed the runner's own test run).
+`"publish": {"push": false}` turns it off; `"pull_request": false` pushes without opening a pull request. Left at the default,
+a repository with no remote simply is not published; `"push": true` written out with no remote is refused.
 
 - `git push --porcelain <remote> refs/heads/<run branch>:refs/heads/<run branch>`: only the run's own branch (it must start
-  with `branch_prefix` and not match `lanes.protected`), never the base branch, never with force, with `GIT_TERMINAL_PROMPT=0`
+  with `<AUTO_RUNNER_USER>/<AUTO_RUNNER_ACCOUNT>-claude-auto-runner/` and not match `lanes.protected`), never the base branch, never with force, with `GIT_TERMINAL_PROMPT=0`
   so it fails rather than waits for a password. A run with no commits pushes nothing.
-- With `"pull_request": true` it then runs `gh pr create --head <branch> --base <base>` with the commit list as the body.
+- Then `gh pr create --head <branch> --base <base>` with the title `<type>: <brief> (<user> via <account>-claude-auto-runner)` and the commit
+  list as the body. A second clean run on the same unmerged branch pushes again; `gh` then reports that the pull request
+  exists, which is recorded as `pr_error` and is harmless.
 - The outcome is a `publish` event (`pushed`, `commits`, `pr_url` or `pr_error`, or `error`) in `.auto/events.jsonl` and,
   with central on, on the central service. A failed push or pull request is reported and never fails the run.
 - A red run, or one stopped on a problem, publishes nothing. Merging, tagging and deploying stay with a person.
 
 ## Safety preflight
 The runner refuses to start unless:
-- `.claude/settings.json` denies `git push`, `git remote`, `git reset --hard`, `git clean`, checking out or switching to the base branch, and reading `.env` files
+- `AUTO_RUNNER_USER` and `AUTO_RUNNER_ACCOUNT` hold valid names (see "Team git rules");
+- `.claude/settings.json` denies `git remote`, `git reset --hard`, `git clean`, checking out or switching to the base branch, and reading `.env` files
+  (`git push` is no longer demanded there: the runner blocks it for every agent itself; an existing rule is left alone)
   (not demanded with `"safety": {"allow_env_read": true}`; the suite and the app can load `.env` either way, since the rule only stops the agent reading it, and `env_files` puts it in the worktree);
 - every `env_files` entry is inside the project, exists, is ignored by git and is not tracked;
-- with `publish.push`: the remote exists, `branch_prefix` is set, run branches are neither the base branch nor match `lanes.protected`, and `publish.pull_request` is only on together with `push`;
+- with publishing on: `"push": true` written out needs the remote, run branches are neither the base branch nor match `lanes.protected`, and `"pull_request": true` written out needs `push` on;
 - a `test_command` exists, or `check_only` is true;
 - the repository has at least one commit;
 - when `central.enabled` is true: `central.url` and `central.project` are set and the token is in the environment variable

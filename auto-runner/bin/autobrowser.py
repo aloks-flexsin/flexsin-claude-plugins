@@ -419,7 +419,7 @@ FINDINGS_DIR = '.auto/findings'
 EXPLORE_MCP_FILE = '.auto/run/explore-mcp.json'
 MCP_PACKAGE = '@playwright/mcp@latest'
 EXPLORE_TOOLS = ('mcp__playwright', f'Write({FINDINGS_DIR}/new/**)')
-EXPLORE_DENIED = ('Bash', 'Edit', 'MultiEdit', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Task')
+EXPLORE_DENIED = ('Bash', 'Edit', 'MultiEdit', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Task', 'PowerShell(git push:*)')
 
 
 def findings_root(root):

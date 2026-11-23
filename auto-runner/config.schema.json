@@ -23,7 +23,7 @@
     "env_files": {"$ref": "#/$defs/texts", "description": "Gitignored files (such as .env) copied into the worktree at the start of a run; their values are redacted from logs and events."},
     "worktree_suffix": {"$ref": "#/$defs/text"},
     "base_branch": {"$ref": "#/$defs/text", "description": "'' = detect."},
-    "branch_prefix": {"$ref": "#/$defs/text"},
+    "branch_prefix": {"$ref": "#/$defs/text", "description": "Deprecated and ignored since 0.14.0: run branches are <user>/<account>-claude-auto-runner/<type>/<brief> (AUTO_RUNNER_USER, AUTO_RUNNER_ACCOUNT)."},
     "commit_trailer": {"$ref": "#/$defs/text"},
     "models": {
       "type": "object", "additionalProperties": false,
@@ -85,7 +85,7 @@
     },
     "publish": {
       "type": "object", "additionalProperties": false,
-      "description": "After a clean run the runner pushes its own run branch (never the base or a lanes.protected branch, never with force) to remote (default origin), and with pull_request opens a PR with gh. Merging stays with a person.",
+      "description": "After a clean run the runner pushes its own run branch (never the base or a lanes.protected branch, never with force) to remote (default origin) and opens a PR with gh. push and pull_request default to true; false turns each off. Merging stays with a person.",
       "properties": {
         "push": {"$ref": "#/$defs/flag"},
         "pull_request": {"$ref": "#/$defs/flag"},
