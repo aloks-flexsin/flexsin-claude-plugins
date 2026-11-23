@@ -63,6 +63,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -1081,8 +1082,12 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             found[autosafe.token_env(cfg)] = central_token
         return found
 
-    ledger = autoevents.Ledger(auto, stamp, slug, redact=lambda d: autobrowser.redact_obj(d, generated()))
-    ledger.emit('run_start', detail={'branch': branch, 'base': base, 'max_iterations': max_iterations})
+    # the run id is unique across people and machines (two runners may start in the same minute); logs keep the stamp
+    run_id = f'{stamp}-{uuid.uuid4().hex[:6]}'
+    ledger = autoevents.Ledger(auto, run_id, slug, redact=lambda d: autobrowser.redact_obj(d, generated()))
+    user, account = autosafe.runner_identity()
+    ledger.emit('run_start', detail={'branch': branch, 'base': base, 'max_iterations': max_iterations,
+                                     'user': user, 'account': account})
     exit_code, reason = None, 'error'
     last_suite = ''
     statuses = {}

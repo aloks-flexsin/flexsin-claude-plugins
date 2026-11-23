@@ -78,6 +78,15 @@ may not stick over plain http. The API endpoints do not use the cookie.
   Only `https://host/owner/repo`, `ssh://[user@]host[:port]/owner/repo` and `user@host:owner/repo` are taken; a password, any
   user in an https URL, queries, fragments, other schemes and local paths are refused. The service never holds git credentials.
 
+## Runs
+
+- `/projects/<slug>/runs` (any member): each run of the project, newest first, and a "Working now" list. Built from the
+  stored events (`runs.summarise`, no table of its own): who ran it (`user` and `account` from the `run_start` event,
+  plugin 0.17.0+; "unknown" for older runners), branch, state (*running*; *finished*; *stopped* with its reason; *silent*
+  when a run has no end and no event for 2 hours), the item in progress, items done and blocked, blockers raised, the last
+  independent test result and the pull request (a link only when it is an `https://` address). Only the newest 5000 events
+  of a project are read.
+
 ## Blockers
 
 - `/projects/<slug>/blockers` (any member): the project's blockers, the ones waiting for an answer first.

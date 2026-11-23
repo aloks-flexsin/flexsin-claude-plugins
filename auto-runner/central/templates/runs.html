@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} runs{% endblock %}
+{% block content %}
+<h1>{{ project.name }} <small>({{ project.slug }})</small> runs</h1>
+<p class="crumbs"><a href="{{ url_for('projects.projects_page') }}">Projects</a> / <a href="{{ url_for('projects.members_page', slug=project.slug) }}">{{ project.name }}</a> / Runs · <a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}">Blockers</a></p>
+{% if active %}
+<h2>Working now</h2>
+<ul>
+{% for r in active %}
+  <li><strong>{{ r.user or "unknown" }}</strong>{% if r.account %} ({{ r.account }} account){% endif %} on <code title="{{ r.branch or '' }}">{{ r.branch_short or "(branch not sent)" }}</code>{% if r.current %}, item {{ r.current }}{% endif %} ({{ r.done }} done{% if r.blocked %}, {{ r.blocked }} blocked{% endif %})</li>
+{% endfor %}
+</ul>
+{% endif %}
+{% if runs %}
+<table>
+  <thead><tr><th>Who</th><th>Branch</th><th>State</th><th>Items</th><th>Tests</th><th>Pull request</th><th>Started</th><th>Last event</th></tr></thead>
+  <tbody>
+  {% for r in runs %}
+    <tr>
+      <td><strong>{{ r.user or "unknown" }}</strong>{% if r.account %}<br><span class="muted">{{ r.account }} account</span>{% elif not r.user %}<br><span class="muted">runner before 0.17.0</span>{% endif %}</td>
+      <td><code title="{{ r.branch or '' }}">{{ r.branch_short }}</code></td>
+      <td>
+        {% if r.state == "running" %}<span class="badge warn">running{% if r.current %}: {{ r.current }}{% endif %}</span>
+        {% elif r.state == "finished" %}<span class="badge ok">finished</span>
+        {% elif r.state == "stopped" %}<span class="badge warn">stopped: {{ r.reason or "unknown" }}</span>
+        {% else %}<span class="badge off">silent for over {{ stale_hours }} h</span>{% endif %}
+      </td>
+      <td>{{ r.done }} done{% if r.blocked %}, {{ r.blocked }} blocked{% endif %}{% if r.blockers %} ({{ r.blockers }} blocker{{ "s" if r.blockers != 1 }} raised){% endif %}</td>
+      <td>{{ r.tests or "" }}</td>
+      <td>{% if r.pr_url %}<a href="{{ r.pr_url }}" title="{{ r.pr_url }}" rel="noopener noreferrer">{{ r.pr_label }}</a>{% elif r.pushed %}pushed{% if r.publish_error %} ({{ r.publish_error }}){% endif %}{% elif r.publish_error %}{{ r.publish_error }}{% endif %}</td>
+      <td class="nowrap">{{ r.started_at }}</td>
+      <td class="nowrap">{{ r.last_at }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="muted">Built from the events each runner sends. A run with no end is shown as silent after {{ stale_hours }} hours without an event.</p>
+{% else %}
+<p class="card empty">No runs yet. A run appears here as soon as a runner connected to this project sends its first events.</p>
+{% endif %}
+{% endblock %}

@@ -2,7 +2,7 @@
 {% block title %}{{ project.name }} members{% endblock %}
 {% block content %}
 <h1>{{ project.name }} <small>({{ project.slug }})</small></h1>
-<p class="crumbs"><a href="{{ url_for('projects.projects_page') }}">Projects</a> · <a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}">Blockers</a> · Your role: {{ my_role }}{% if can_tokens %} · <a href="{{ url_for('projects.tokens_page', slug=project.slug) }}">API tokens</a>{% endif %}</p>
+<p class="crumbs"><a href="{{ url_for('projects.projects_page') }}">Projects</a> · <a href="{{ url_for('runs.runs_page', slug=project.slug) }}">Runs</a> · <a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}">Blockers</a> · Your role: {{ my_role }}{% if can_tokens %} · <a href="{{ url_for('projects.tokens_page', slug=project.slug) }}">API tokens</a>{% endif %}</p>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 <h2>Repository</h2>
 <p>{% if project.repo_url %}<code>{{ project.repo_url }}</code>{% else %}Not set yet: the plugin's init and join need it.{% endif %}</p>
