@@ -31,13 +31,14 @@ def create_app(config=None):
 
     app.teardown_appcontext(db.close_db)
 
-    from . import access, admin, auth, blockers, deliveries, ingest
+    from . import access, admin, auth, blockers, deliveries, ingest, runs
     auth.init_app(app)
     app.register_blueprint(admin.bp)
     app.register_blueprint(access.bp)
     app.register_blueprint(ingest.bp)
     app.register_blueprint(deliveries.bp)
     app.register_blueprint(blockers.bp)
+    app.register_blueprint(runs.bp)
 
     @app.get("/healthz")
     def healthz():

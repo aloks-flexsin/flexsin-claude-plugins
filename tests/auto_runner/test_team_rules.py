@@ -157,3 +157,17 @@ def test_after_the_merge_the_waiting_request_gets_its_own_branch(project, capsys
     assert ar.run(project, max_iterations=1, claude=picking_agent(), allow_dirty=True) == 0
     assert ar.git(wt, 'branch', '--show-current') == 'tester/acct-claude-auto-runner/fix/later'
     assert not (project / '.auto' / 'pending' / 'later').exists()
+
+
+# ---------- who ran it ----------
+
+def test_run_start_names_who_ran_it_and_run_ids_are_unique(project):
+    import json
+    import re
+    assert ar.run(project, max_iterations=1, claude=picking_agent()) == 0
+    assert ar.run(project, max_iterations=1, claude=picking_agent(), allow_dirty=True) == 0
+    events = [json.loads(line) for line in (project / '.auto' / 'events.jsonl').read_text(encoding='utf-8').splitlines()]
+    starts = [e for e in events if e['type'] == 'run_start']
+    assert len(starts) == 2 and starts[0]['run'] != starts[1]['run']
+    assert all(re.fullmatch(r'\d{8}-\d{4}-[0-9a-f]{6}', e['run']) for e in starts)
+    assert starts[0]['detail']['user'] == 'tester' and starts[0]['detail']['account'] == 'acct'

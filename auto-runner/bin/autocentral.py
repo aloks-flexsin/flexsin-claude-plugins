@@ -187,12 +187,14 @@ def _blockers(auto, site, slug):
 def _how(site, slug):
     return [
         'Using the page:',
-        f'  - your projects: {site}/projects; this one: {site}/projects/{slug}/blockers (blockers), '
+        f'  - your projects: {site}/projects; this one: {site}/projects/{slug}/runs (who is running what), '
+        f'{site}/projects/{slug}/blockers (blockers), '
         f'{site}/projects/{slug}/members, {site}/projects/{slug}/tokens',
         '  - owners, managers and admins answer a blocker there (pick an option and/or write an answer); developers and '
         'viewers can read it. Accounts are made by an admin; there is no sign-up.',
         '  - the runner picks the answer up at its next pull (between iterations, or when it next starts) and resumes the item.',
-        '  - today the page shows blockers only: run events are stored there but no runs page exists yet.',
+        '  - the runs page shows each run: who (user and Claude account), branch, state, items done, tests and pull '
+        'request, built from the events the runners send.',
         f'  - the full guide: {GUIDE}',
     ]
 

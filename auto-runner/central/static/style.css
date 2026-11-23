@@ -92,3 +92,4 @@ ul{padding-left:20px;margin:0 0 12px}
   input[type=text],input[type=email],input[type=password],select{min-width:0;width:100%}
   table{display:block;overflow-x:auto}
 }
+.nowrap{white-space:nowrap}

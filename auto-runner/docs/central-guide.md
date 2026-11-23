@@ -6,10 +6,11 @@ show up and are answered away from the terminal. The runner picks the answer up 
 **Status: unverified against the live service.** Every step below is tested only against the real app on SQLite through
 its test client. How the service itself is deployed is in `auto-runner/central/README.md`.
 
-What the page shows today: your projects, each project's blockers (question, options, recommendation, evidence, the
-answers so far), its members and its tokens. Each run also sends its events (start, end, item changes, test results,
-publish) and the service stores them, but **there is no runs page yet**, so progress is still read with
-`/auto-runner:status` and `/auto-runner:log`.
+What the page shows today: your projects; each project's **runs** (who is running what: the person and Claude account,
+branch, state, the item in progress, items done and blocked, the last test result and the pull request), its blockers
+(question, options, recommendation, evidence, the answers so far), its members and its tokens. Runs are built from the
+events each runner sends (plugin 0.17.0 or later names who ran it; older runners show as "unknown"). A run with no end
+shows as *running*, then as *silent* after 2 hours without an event (the runner stopped without saying so).
 
 ## Who can do what
 

@@ -235,7 +235,9 @@ When the agent stops because a tool call was refused for lack of permission (rea
 or from refused tool results in the transcript), the item's status names the call, for example "needs permission for Bash:
 corepack pnpm install: allow it in .claude/settings.json, or put the tool on PATH with path_prepend", and the log lists them.
 It also stops on a browser-acceptance failure, a STOP file, uncommitted leftovers, or two iterations without progress. Cost per iteration is recorded in `.auto/runs.jsonl` only when the CLI reports it; otherwise it is `null`.
-Every run also appends to `.auto/events.jsonl` (schema `event.v1`, `bin/autoevents.py`): run start and end (with exit code and reason), each item state change (from, to) and each independent test result, one line per event, never rewritten. `runs.jsonl` keeps its old shape.
+Every run also appends to `.auto/events.jsonl` (schema `event.v1`, `bin/autoevents.py`), under a run id that is unique across people
+and machines (`<YYYYMMDD-HHMM>-<6 hex>`; 0.17.0): run start (with branch, base, and who ran it: `user` and `account` from
+`AUTO_RUNNER_USER` / `AUTO_RUNNER_ACCOUNT`, which the central service's runs page shows) and end (with exit code and reason), each item state change (from, to) and each independent test result, one line per event, never rewritten. `runs.jsonl` keeps its old shape.
 
 ## Modules (all stdlib, all unverified beyond fakes)
 Every child process (the agent, the test command, git) is read as UTF-8, with an undecodable byte replaced rather than

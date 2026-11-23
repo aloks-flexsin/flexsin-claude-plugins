@@ -1,0 +1,120 @@
+"""The project's runs page: who is running what, built only from the events the runners send (`event.v1` bodies stored by
+`POST /api/v1/events`). No table of its own: each run is summarised from its events when the page is shown.
+
+A run is the events that share one `run` id. Its start event (`run_start`, from plugin 0.17.0) names who ran it
+(`user`, `account`), the branch and the base; `item_state` events give each item's latest state; `tests` the last
+independent test result; `publish` the pushed branch and pull request; `run_end` how it ended. A run with no end is
+*running* while its last event is less than STALE old, and *silent* after that (the runner stopped without saying so:
+a crash, a closed laptop, a lost connection). Only the newest MAX_EVENTS events of a project are read.
+"""
+import datetime
+import json
+
+from flask import Blueprint, g, render_template
+
+from .access import project_access
+from .db import get_db
+
+bp = Blueprint("runs", __name__)
+
+MAX_EVENTS = 5000
+STALE = datetime.timedelta(hours=2)
+SHOWN_TYPES = ("run_start", "run_end", "publish", "item_state", "tests", "blocker")
+
+
+def _when(text):
+    try:
+        t = datetime.datetime.fromisoformat(text)
+    except (TypeError, ValueError):
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=datetime.timezone.utc)
+
+
+def _short_time(text):
+    t = _when(text)
+    return t.astimezone(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC") if t else ""
+
+
+def _display(r):
+    """Short forms for the page: the branch without the `<user>/<account>-claude-auto-runner/` part the Who column already
+    shows, times to the minute, and `#N` for a pull request."""
+    prefix = "%s/%s-claude-auto-runner/" % (r["user"], r["account"]) if r["user"] and r["account"] else None
+    branch = r["branch"] or ""
+    r["branch_short"] = branch[len(prefix):] if prefix and branch.startswith(prefix) else branch
+    r["started_at"], r["last_at"] = _short_time(r["started"]), _short_time(r["last"])
+    tail = (r["pr_url"] or "").rstrip("/").rsplit("/", 2)
+    r["pr_label"] = "#" + tail[2] if len(tail) == 3 and tail[1] == "pull" and tail[2].isdigit() else r["pr_url"]
+    return r
+
+
+def summarise(events, now):
+    """`events`: event.v1 dicts of one project, any order -> run summaries, newest start first."""
+    runs = {}
+    for e in sorted(events, key=lambda e: (e.get("time") or "", e.get("id") or "")):
+        run_id, kind, detail = e.get("run"), e.get("type"), e.get("detail") or {}
+        if not isinstance(run_id, str) or not isinstance(detail, dict):
+            continue
+        r = runs.setdefault(run_id, {
+            "run": run_id, "user": None, "account": None, "branch": None, "base": None, "started": e.get("time"),
+            "last": e.get("time"), "ended": None, "exit": None, "reason": None, "items": {}, "current": None,
+            "tests": None, "pushed": None, "pr_url": None, "publish_error": None, "blockers": 0})
+        r["last"] = e.get("time") or r["last"]
+        if kind == "run_start":
+            r["started"] = e.get("time")
+            for k in ("user", "account", "branch", "base"):
+                if isinstance(detail.get(k), str) and detail[k]:
+                    r[k] = detail[k]
+        elif kind == "run_end":
+            r["ended"], r["exit"], r["reason"] = e.get("time"), detail.get("exit"), detail.get("reason")
+        elif kind == "item_state" and e.get("item"):
+            r["items"][e["item"]] = detail.get("to")
+            r["current"] = e["item"] if detail.get("to") == "running" else (
+                None if r["current"] == e["item"] else r["current"])
+        elif kind == "tests":
+            r["tests"] = detail.get("result")
+        elif kind == "publish":
+            url = detail.get("pr_url")
+            # event text comes from runners: only an https:// address ever becomes a link
+            r["pushed"], r["pr_url"] = detail.get("pushed") is True, url if isinstance(url, str) and url.startswith("https://") else None
+            r["publish_error"] = detail.get("error") or detail.get("pr_error")
+            r["branch"] = r["branch"] or detail.get("branch")
+        elif kind == "blocker" and detail.get("action") == "raised":
+            r["blockers"] += 1
+    out = []
+    for r in runs.values():
+        states = list(r["items"].values())
+        r["done"] = states.count("done")
+        r["blocked"] = states.count("blocked")
+        if r["ended"]:
+            r["state"] = "finished" if r["exit"] == 0 else "stopped"
+        else:
+            last = _when(r["last"])
+            r["state"] = "running" if last is not None and now - last < STALE else "silent"
+        r["who"] = (r["user"] + (" via %s-claude-auto-runner" % r["account"] if r["account"] else "")) if r["user"] \
+            else "unknown (runner older than 0.17.0)"
+        out.append(_display(r))
+    out.sort(key=lambda r: (r["started"] or "", r["run"]), reverse=True)
+    return out
+
+
+def project_events(db, project_id, limit=MAX_EVENTS):
+    rows = db.query("SELECT body FROM event WHERE project_id = ? AND type IN (%s) ORDER BY ts DESC LIMIT %d"
+                    % (", ".join("?" * len(SHOWN_TYPES)), int(limit)), (project_id,) + SHOWN_TYPES)
+    events = []
+    for row in rows:
+        try:
+            body = json.loads(row["body"])
+        except (TypeError, ValueError):
+            continue
+        if isinstance(body, dict):
+            events.append(body)
+    return events
+
+
+@bp.get("/projects/<slug>/runs")
+@project_access("viewer")
+def runs_page(slug):
+    now = datetime.datetime.now(datetime.timezone.utc)
+    runs = summarise(project_events(get_db(), g.project["id"]), now)
+    return render_template("runs.html", project=g.project, runs=runs,
+                           active=[r for r in runs if r["state"] == "running"], stale_hours=int(STALE.total_seconds() // 3600))

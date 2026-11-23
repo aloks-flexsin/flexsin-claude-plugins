@@ -4,6 +4,18 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-23
+
+### Added
+- Central service: a **Runs** page per project (`/projects/<slug>/runs`, any member) showing who is running what: the
+  person and Claude account, branch, state (running, finished, stopped with its reason, or silent after 2 hours without an
+  event), the item in progress, items done and blocked, the last test result and the pull request. Built from the events
+  the runners already send; no migration.
+
+### Changed
+- The runner's `run_start` event names who ran it (`user`, `account`), and run ids are unique across people and machines
+  (`<YYYYMMDD-HHMM>-<6 hex>`), so two runs started in the same minute stay apart.
+
 ## [0.16.0] - 2026-11-23
 
 ### Changed
