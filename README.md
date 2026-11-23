@@ -50,4 +50,4 @@ The repository is private. Each teammate needs a GitHub account with read access
 
 ## Contributing
 
-Change the plugin in `auto-runner/`, bump `version` in `auto-runner/.claude-plugin/plugin.json`, and open a pull request. Never commit secrets, `.env` files or client data.
+Change the plugin in `auto-runner/`, bump `version` in `auto-runner/.claude-plugin/plugin.json`, and open a pull request from your own branch (naming and flow: "Team git rules" in `CLAUDE.md`). Never commit secrets, `.env` files or client data.
