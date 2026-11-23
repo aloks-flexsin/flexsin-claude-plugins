@@ -3,7 +3,7 @@ import importlib.util
 import json
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
@@ -36,7 +36,7 @@ class Probe(su.SystemProbe):
         self.installed = set(installed)
 
     def exists(self, path):
-        if Path(path).is_absolute() or path == MAIL:                                       # the machine, never the real one
+        if Path(path).is_absolute() or PureWindowsPath(path).is_absolute() or path == MAIL:  # the machine, on any host OS
             return path in self.installed
         return super().exists(path)
 
