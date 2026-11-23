@@ -79,11 +79,16 @@ Then call ExitPlanMode so the user can accept or change the plan. If they ask fo
    `python "${CLAUDE_PLUGIN_ROOT}/bin/auto_run.py" --project "${CLAUDE_PROJECT_DIR}" --enqueue <slug> --allow-dirty --max-iterations <number of items> --max-budget-usd 5`
 
    Use `budget=` or `iterations=` from the user's text if they gave them. If it prints "Not added" with reasons, fix `items.md` and run it once more; after two failures stop and show the user the reasons.
-   If it says a run is already in progress, the request is checked and waiting: tell the user it will be added when the next runner starts.
-   If it refuses to start (preflight), show the reasons and suggest the init command.
+   If it says a run is already in progress, the request is checked and waiting: tell the user it starts on its own branch in a later run.
+   If it says the request waits because a branch is not merged yet, tell the user which branch and pull request to review and merge first
+   (one request per branch).
+   If it refuses to start (preflight), show the reasons and suggest the init command. When the reason is a missing `AUTO_RUNNER_USER`
+   or `AUTO_RUNNER_ACCOUNT`, ask the user for their username and the Claude account they use; never guess them. They set the
+   variables themselves (the refusal shows how) and restart Claude Code.
 4. Tell the user, briefly: what was queued (IDs and titles), the cap (iterations and USD per iteration), that the run reads only committed files (say if `git status` shows uncommitted work it will not see),
    how to watch (the status and log commands), how to stop (create `.auto/STOP`), and that you will review the result when the run ends. Also list the "Needs a person" items.
 
 ## 3. When the run ends (you will be notified)
 Run the log command, read the commits and the diff on the run's branch, and any question left in the queue file. Report what was done, what the tests prove, what is unverified,
-any question waiting, and what the user must do next (review, merge, the "Needs a person" list). Never merge, push or deploy on your own.
+any question waiting, and what the user must do next (review and merge the pull request the runner opened, or push the branch when
+publishing is off; the "Needs a person" list). Never merge, push or deploy on your own: only the runner pushes its own branch.

@@ -9,8 +9,9 @@ Set a project up for the auto-runner. Shows a preview; nothing is written withou
     python auto_init.py --remove --apply   # take it away
 
 What it does, and only this:
-  * `.claude/settings.json`: appends the deny rules the preflight demands (git push/remote/reset --hard/clean, checkout of the base
-    branch, reading .env; git tag too when `changelog.enabled`). Existing rules, other keys and the order are kept; duplicates are skipped; nothing is removed or overwritten.
+  * `.claude/settings.json`: appends the deny rules the preflight demands (git remote/reset --hard/clean, checkout of the base
+    branch, reading .env; git tag too when `changelog.enabled`). `git push` is blocked by the runner itself for every agent it
+    starts, so no rule is added for it (an existing one is kept). Existing rules, other keys and the order are kept; duplicates are skipped; nothing is removed or overwritten.
   * `.claude/auto.json`: created only if absent, with the detected test command (pytest, npm test, dotnet test, go test, cargo test),
     `env_files: [".env"]` when a gitignored `.env` exists (copied into each run's worktree, values redacted), and with
     --allow-env-read `"safety": {"allow_env_read": true}` (then the .env read deny rules are not written).
@@ -22,6 +23,8 @@ What it does, and only this:
     changed; when it is enabled, the same check runs. Without those options and without --local, init refuses.
   * `.auto/queue.md`: created only if absent. `.gitignore`: appends missing lines.
   * Reports an existing project `auto` command or auto_run scripts; never touches them.
+  * Says when AUTO_RUNNER_USER or AUTO_RUNNER_ACCOUNT (who runs it and with which Claude account; run branches are
+    `<user>/<account>-claude-auto-runner/<type>/<brief>`) is not set, and how to set it; per person or machine, never in a file.
 Everything it adds is recorded in `.auto/init-manifest.json`, so --remove takes away only that. Running it again changes nothing.
 """
 import argparse
@@ -250,6 +253,9 @@ def make_plan(project, central=None, env=None, send=None, allow_env_read=False):
             rules_file = None
         else:
             notes.append('No CLAUDE.md: a short AUTO_RULES.md is available with --with-rules.')
+    for problem in autosafe.runner_name_problems(env):
+        var = next(v for v in (autosafe.RUNNER_USER_ENV, autosafe.RUNNER_ACCOUNT_ENV) if v in problem)
+        notes.append(problem + f" In PowerShell: [Environment]::SetEnvironmentVariable('{var}', '<value>', 'User')")
 
     queue_path = project / cfg['queue_file']
     gi = project / '.gitignore'

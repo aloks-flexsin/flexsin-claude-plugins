@@ -10,7 +10,7 @@ The project file is `.claude/auto.json`; every key is optional and a missing fil
     share_dirs       folders linked into the worktree instead of copied (a venv, node_modules)
     worktree_suffix  worktree folder = <project folder name><suffix> next to the project (default -auto)
     base_branch      branch the worktree starts from ('' = detect)
-    branch_prefix    run branches are <prefix><stamp> (default auto/)
+    branch_prefix    deprecated, ignored since 0.14.0 (run branches are <user>/<account>-claude-auto-runner/<type>/<brief>)
     commit_trailer   line added to each commit message ('' = none)
 
 Schema v2 adds optional sections (objects; each nested key optional, unknown nested keys and wrong types fail naming

@@ -2,15 +2,22 @@
 Safety preflight for the auto-runner plugin (stdlib only). The runner calls preflight() before it creates a worktree or starts the agent,
 and auto_init.py uses required_rules() to write the same rules, so the two can never disagree.
 
-An unattended agent must not be able to publish or destroy work. The project's `.claude/settings.json` must therefore deny:
-git push, git remote, git reset --hard, git clean, checking out (or switching to) the base branch, and reading `.env` files.
+An unattended agent must not be able to publish or destroy work. The runner itself starts every agent with
+`--disallowedTools` PUSH_DENIED, so no agent can `git push` whatever the project's settings say. The project's
+`.claude/settings.json` must also deny: git remote, git reset --hard, git clean, checking out (or switching to) the base
+branch, and reading `.env` files. (A `git push` rule there is no longer required; one that exists is left alone.)
 `"safety": {"allow_env_read": true}` drops the `.env` read rules from both lists (env_read_allowed): the project's owner has
 chosen to let the agent see those values.
 Each `env_files` entry must be a relative path inside the project, exist, be ignored by git and not be tracked
 (env_file_problems), so a file copied into the worktree can never be committed. `env_file_values` reads the values to redact.
-With `publish.push` the remote must exist, `branch_prefix` must be set, and neither the base branch nor any run branch may
-match `lanes.protected`; `publish.pull_request` needs `publish.push` (publish_problems). The agent's deny rules stay: only the
-runner pushes, and only its own run branch.
+Every run needs who runs it: AUTO_RUNNER_USER (the real person, e.g. alok) and AUTO_RUNNER_ACCOUNT (the Claude account in use,
+e.g. bhawish), each lower-case letters, digits, `.`, `_`, `-`, set per person or machine and never in the committed config
+(runner_name_problems). Run branches follow the team convention `<user>/<account>-claude-<surface>/<type>/<brief>` with the
+surface `auto-runner`: `<user>/<account>-claude-auto-runner/<type>/<brief>` (runner_name, runner_prefix).
+Publishing (push, then a pull request) is on unless `publish.push` / `publish.pull_request` is `false`. With `publish.push`
+written as `true` the remote must exist; left at its default, a missing remote only turns publishing off. Neither the base
+branch nor a run branch may match `lanes.protected`, and the base must not start with `<name>/`; `publish.pull_request`
+needs `publish.push` (publish_problems). Only the runner pushes, and only its own run branch.
 A rule counts if it is written for Bash or PowerShell; other rules in the file are never inspected or changed.
 With `changelog.enabled` it must also deny `git tag` (TAG_RULES, both `git tag:*` and bare `git tag`): `autochange.py release`
 prepares a release, a person tags it. Projects with the section off are not asked for these rules.
@@ -47,6 +54,47 @@ TAG_RULES = ['Bash(git tag:*)', 'Bash(git tag)']
 CENTRAL_TOKEN_ENV = 'AUTO_RUNNER_CENTRAL_TOKEN'
 CENTRAL_TOKEN_PREFIX = 'art_'
 ENV_NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,127}$')
+RUNNER_USER_ENV = 'AUTO_RUNNER_USER'
+RUNNER_ACCOUNT_ENV = 'AUTO_RUNNER_ACCOUNT'
+RUNNER_NAME = re.compile(r'[a-z0-9][a-z0-9._-]{0,63}')
+RUNNER_SURFACE = 'claude-auto-runner'
+PUSH_DENIED = ('Bash(git push:*)', 'PowerShell(git push:*)')     # passed as --disallowedTools to every agent the runner starts
+
+
+def runner_prefix(name):
+    """'alok/bhawish-claude-auto-runner' -> 'alok/bhawish-claude-auto-runner/': every run branch starts with it."""
+    return f'{name}/'
+
+
+def _plain(value):
+    return bool(RUNNER_NAME.fullmatch(value)) and '..' not in value and not value.endswith(('.', '.lock'))
+
+
+def runner_identity(env=None):
+    """-> (user, account) from AUTO_RUNNER_USER and AUTO_RUNNER_ACCOUNT, stripped; '' for an unset one."""
+    env = os.environ if env is None else env
+    return (env.get(RUNNER_USER_ENV) or '').strip(), (env.get(RUNNER_ACCOUNT_ENV) or '').strip()
+
+
+def runner_name(env=None):
+    """-> '<user>/<account>-claude-auto-runner', the part every run branch starts with; '' unless both are set and valid."""
+    user, account = runner_identity(env)
+    return f'{user}/{account}-{RUNNER_SURFACE}' if user and account and _plain(user) and _plain(account) else ''
+
+
+def runner_name_problems(env=None):
+    """Messages when AUTO_RUNNER_USER or AUTO_RUNNER_ACCOUNT is missing or not a plain lower-case name."""
+    problems = []
+    for var, value, example, what in zip((RUNNER_USER_ENV, RUNNER_ACCOUNT_ENV), runner_identity(env), ('alok', 'bhawish'),
+                                         ('your username (the person working)', 'the Claude account you run it with')):
+        if not value:
+            problems.append(f'Set {var} to {what}, for example {example}: run branches are '
+                            f'<user>/<account>-{RUNNER_SURFACE}/<type>/<brief>, so the runner needs to know whose it is. '
+                            'Set it per person or machine, not in auto.json.')
+        elif not _plain(value):
+            problems.append(f'{var} ("{value}") must be lower-case letters, digits, ".", "_" or "-", starting with a letter '
+                            f'or digit (for example {example}).')
+    return problems
 
 
 def changelog_enabled(cfg):
@@ -63,7 +111,7 @@ def required_rules(base, changelog=False, env_read=False):
     """Ordered deny rules init writes and preflight demands; `base` is the branch the worktree starts from.
     `changelog` (the section is on) adds the git tag rules: the agent prepares a release, only a person tags it.
     `env_read` (safety.allow_env_read) leaves out the `.env` read rules."""
-    rules = ['Bash(git push:*)', 'Bash(git remote:*)', 'Bash(git reset --hard:*)', 'Bash(git clean:*)']
+    rules = ['Bash(git remote:*)', 'Bash(git reset --hard:*)', 'Bash(git clean:*)']
     if base:
         rules += [f'Bash(git checkout {base}:*)', f'Bash(git switch {base}:*)']
     if not env_read:
@@ -121,8 +169,7 @@ def missing_rules(settings, base, changelog=False, env_read=False):
     """Human labels of the deny rules that are not in `settings`."""
     deny = deny_list(settings)
     out = []
-    for label, command in (('git push', 'git push'), ('git remote', 'git remote'), ('git reset --hard', 'git reset --hard'),
-                           ('git clean', 'git clean')):
+    for label, command in (('git remote', 'git remote'), ('git reset --hard', 'git reset --hard'), ('git clean', 'git clean')):
         if not _denies(deny, command):
             out.append(label)
     if base:
@@ -299,8 +346,12 @@ def publish_settings(cfg):
     """{'push', 'pull_request', 'remote'} with defaults (off, off, origin)."""
     s = cfg.get('publish') if isinstance(cfg, dict) else None
     s = s if isinstance(s, dict) else {}
-    return {'push': s.get('push') is True, 'pull_request': s.get('pull_request') is True,
-            'remote': (s.get('remote') or '').strip() or 'origin'}
+    return {'push': s.get('push') is not False, 'pull_request': s.get('pull_request') is not False,
+            'remote': (s.get('remote') or '').strip() or 'origin', 'explicit_push': s.get('push') is True}
+
+
+def has_remote(project, remote):
+    return subprocess.run(['git', '-C', str(project), 'remote', 'get-url', remote], capture_output=True).returncode == 0
 
 
 def protected_branch(name, cfg):
@@ -311,22 +362,23 @@ def protected_branch(name, cfg):
     return any(fnmatch.fnmatchcase(name, p) for p in patterns)
 
 
-def publish_problems(project, cfg, base):
-    """Messages when `publish` is on but cannot be done safely; [] when it is off or fine."""
+def publish_problems(project, cfg, base, env=None):
+    """Messages when `publish` is on but cannot be done safely; [] when it is off or fine. A default (unwritten) `push` with
+    no remote is not a problem: the runner then simply does not publish."""
     s = publish_settings(cfg)
     if s['pull_request'] and not s['push']:
-        return ['.claude/auto.json: "publish.pull_request" needs "publish.push": true (a pull request needs the pushed branch).']
+        if (cfg.get('publish') or {}).get('pull_request') is True:
+            return ['.claude/auto.json: "publish.pull_request" needs "publish.push" (a pull request needs the pushed branch).']
+        return []
     if not s['push']:
         return []
     problems = []
-    prefix = (cfg.get('branch_prefix') or '').strip()
-    if not prefix:
-        problems.append('.claude/auto.json: "publish.push" needs a "branch_prefix", so the runner only ever pushes its own branches.')
-    elif base and (base.startswith(prefix) or protected_branch(prefix + '20000101-0000', cfg)):
-        problems.append(f'.claude/auto.json: run branches ("{prefix}...") must not be the base branch or match "lanes.protected".')
+    name = runner_name(env)
+    if name and base and (base.startswith(name + '/') or protected_branch(runner_prefix(name) + 'feat/x', cfg)):
+        problems.append(f'Run branches ("{runner_prefix(name)}...") must not be the base branch or match "lanes.protected".')
     if not re.fullmatch(r'[A-Za-z0-9._-]+', s['remote']):
         problems.append('.claude/auto.json: "publish.remote" must be a remote name such as origin.')
-    elif subprocess.run(['git', '-C', str(project), 'remote', 'get-url', s['remote']], capture_output=True).returncode != 0:
+    elif s['explicit_push'] and not has_remote(project, s['remote']):
         problems.append(f'"publish.push" is on but this repository has no remote "{s["remote"]}".')
     return problems
 
@@ -365,15 +417,17 @@ def journey_problems(cfg):
     return problems
 
 
-def preflight(project, cfg, base, doctor=None):
-    """-> list of problems; empty means the runner may start. `doctor(project) -> results` is injectable for tests."""
-    problems = model_problems(cfg)
+def preflight(project, cfg, base, doctor=None, env=None):
+    """-> list of problems; empty means the runner may start. `doctor(project) -> results` and `env` (default os.environ) are
+    injectable for tests."""
+    problems = runner_name_problems(env)
+    problems += model_problems(cfg)
     problems += base_url_problems(cfg)
     problems += journey_problems(cfg)
     problems += central_problems(cfg)
     problems += env_file_problems(project, cfg)
     problems += path_prepend_problems(project, cfg)
-    problems += publish_problems(project, cfg, base)
+    problems += publish_problems(project, cfg, base, env)
     problems += principles_problems(project, cfg)
     problems += capability_problems(project, cfg, doctor)
     if not has_commit(project):

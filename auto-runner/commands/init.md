@@ -18,6 +18,9 @@ Set up the auto-runner for this project. The central service is the default: blo
    section (the token variable it names, default `AUTO_RUNNER_TOKEN_<SLUG>`), and anything it found and will leave alone.
    When it lists steps to connect to the central service, give them to the user as they are: what to create on the site, and the
    PowerShell line that stores the token without echoing it. The user runs that line themselves, then restarts Claude Code.
+   When it says `AUTO_RUNNER_USER` or `AUTO_RUNNER_ACCOUNT` is not set, explain that run branches are
+   `<user>/<account>-claude-auto-runner/<type>/<brief>` and ask the user to set both (their username and the Claude account they
+   run it with) with the PowerShell line shown; never set or guess them for the user.
 4. If the preview says REFUSED, explain why (for example: this folder's `origin` is not the project's repository, or the token is
    another project's) and stop. Do not work around it.
 5. Ask whether to apply. Only after a clear yes, run the same command with `--apply` added, and report what was written.

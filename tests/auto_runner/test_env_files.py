@@ -26,7 +26,7 @@ def ignored_env(p, text=ENV_TEXT, name='.env'):
 def test_allow_env_read_drops_only_the_env_rules():
     assert 'Read(./.env)' in safe.required_rules('main')
     rules = safe.required_rules('main', env_read=True)
-    assert not any('.env' in r for r in rules) and 'Bash(git push:*)' in rules
+    assert not any('.env' in r for r in rules) and 'Bash(git remote:*)' in rules
 
 
 def test_preflight_honours_the_opt_out(project):
