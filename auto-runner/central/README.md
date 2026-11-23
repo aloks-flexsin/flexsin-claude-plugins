@@ -68,6 +68,11 @@ may not stick over plain http. The API endpoints do not use the cookie.
 - Sessions expire after 12 hours, or 2 hours idle. A password change or reset signs the person out everywhere.
 - Global roles `admin` and `user`; project roles `owner`, `manager`, `developer`, `viewer`. Non-members get 404.
 - Every sign-in (success and failure, never the password) and every account, token, membership and decision action is audited.
+- **One project per repository.** On the create form the admin pastes the repository URL; the slug and name may be left
+  empty and are then filled in from it (`projects.slug_from_repo`: the repository's name, lower case, other characters as
+  `-`; `<owner>-<repo>` when that slug is taken). Every URL form of one repository has one `repo_key` (`host/owner/repo`,
+  lower case, no user, port or `.git`; `projects.repo_key`, kept equal to the plugin's `autocentral.repo_key` by a test),
+  and a unique index refuses a second project for it, on create and on a repository URL change.
 - A project has a repository URL (`repo_url`), required when an admin creates it and changed by owners and admins on the project
   page (audited as `project.repo_url` with the old and new value; a refusal as `project.repo_url.refused`, without the value).
   Only `https://host/owner/repo`, `ssh://[user@]host[:port]/owner/repo` and `user@host:owner/repo` are taken; a password, any
@@ -106,8 +111,13 @@ None of these steps has been tried. Check each result before going on.
    DATABASE_URL="postgres://..." python -m central init-db
    ```
    (`pip install -r central/requirements.txt` first, for psycopg.) It is safe to run again. On a database made by an older
-   version it also adds the columns listed in `db.COLUMNS_ADDED` (for now `project.repo_url`) and prints each one; the same
-   change by hand is `ALTER TABLE project ADD COLUMN IF NOT EXISTS repo_url VARCHAR(500);`.
+   version it also adds the columns listed in `db.COLUMNS_ADDED` (`project.repo_url`, `project.repo_key`) and prints each
+   one, fills `repo_key` from each project's repository URL and creates the unique index `project_repo_key`.
+   **If two projects already name the same repository it stops before changing anything** (exit code 3) and lists them as
+   `host/owner/repo: slug, slug`; keep one (move its members and tokens, delete the others) and run it again. The same
+   change by hand: `ALTER TABLE project ADD COLUMN IF NOT EXISTS repo_url VARCHAR(500);`,
+   `ALTER TABLE project ADD COLUMN IF NOT EXISTS repo_key VARCHAR(500);`, fill `repo_key`, then
+   `CREATE UNIQUE INDEX IF NOT EXISTS project_repo_key ON project (repo_key);`.
 2. **Vercel project.** Create a new Vercel project from this repository with the root directory `auto-runner/central`.
    Set the environment variables for Production: `SECRET_KEY` (from
    `python -c "import secrets; print(secrets.token_hex(32))"`), `DATABASE_URL`, `CENTRAL_ENV=production` and `PUBLIC_URL`
@@ -117,10 +127,11 @@ None of these steps has been tried. Check each result before going on.
    python -m central create-admin --email you@example.com
    ```
    Sign in at `PUBLIC_URL/signin`.
-4. **Project and token.** Create the project with its repository URL (its slug must equal the `project` the runner uses;
-   set the repository URL on the page of any project made before it existed), add members, and create a token with the
+4. **Project and token.** Create the project from its repository URL (leave slug and name empty to fill them in; set the
+   repository URL on the page of any project made before it existed), add members, and create a token with the
    `pull` scope (and `ingest`, for when the runner sends events). Copy it; it is shown only once.
-5. **Runner.** `/auto-runner:init` with `--central-url` and `--central-project` writes this and checks the repository; by hand,
+5. **Runner.** `/auto-runner:central` (or `/auto-runner:init --central-url URL`, which reads the project from `origin`) writes
+   this and checks the repository; by hand,
    in the project's `.claude/auto.json`:
    ```json
    "central": {"enabled": true, "url": "https://<PUBLIC_URL host>", "project": "<slug>"}

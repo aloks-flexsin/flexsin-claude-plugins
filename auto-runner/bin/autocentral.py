@@ -79,6 +79,17 @@ def repo_key(url):
     return _key(parts.hostname, parts.path)
 
 
+def slug_from_repo(url):
+    """The slug the central service gives a repository: its name, lower case, other characters as '-'
+    (`.../Case-Study-VA.git` -> 'case-study-va'); None when `url` is not a repository. The service's
+    projects.slug_from_repo does the same, and uses '<owner>-<repo>' when that slug is taken, so the service's answer
+    (`GET /api/v1/project`) is what counts."""
+    key = repo_key(url)
+    if key is None:
+        return None
+    return re.sub(r'[^a-z0-9]+', '-', key.rsplit('/', 1)[1].lower()).strip('-')[:64].strip('-') or None
+
+
 def clean_url(url):
     """The URL without a user or password in an https/http URL (a remote may carry a token: never show it)."""
     url = (url or '').strip()
@@ -137,13 +148,16 @@ FLEXSIN_URL = 'https://auto-runner-central.vercel.app'
 
 def _routes(project):
     here = f'"{Path(project)}"'
+    slug = slug_from_repo(remote_url(project) or '')
     return [
         'Connect it, either way (each previews first and writes only after you agree):',
-        '  - this checkout: /auto-runner:init --central-url URL --central-project SLUG',
-        f'      (python "{HERE / "auto_init.py"}" --project {here} --central-url URL --central-project SLUG, then --apply)',
+        '  - this checkout: /auto-runner:init --central-url URL'
+        + (f' (the project, "{slug}", is read from origin)' if slug else ' (needs an origin remote to read the project from)'),
+        f'      (python "{HERE / "auto_init.py"}" --project {here} --central-url URL, then --apply)',
         '  - a fresh clone of a project registered there: /auto-runner:join SLUG --central-url URL',
         f'      (python "{HERE / "auto_join.py"}" SLUG --central-url URL, then --apply)',
-        f'  URL is the service address (Flexsin: {FLEXSIN_URL}); SLUG is the project\'s name on it. Ask the person; never guess.',
+        f'  URL is the service address (Flexsin: {FLEXSIN_URL}); for join, SLUG is the project\'s name on it. Ask the '
+        'person; never guess.',
     ]
 
 
@@ -191,6 +205,11 @@ def status(project, env=None, send=None):
     env = os.environ if env is None else env
     auto = project / '.auto'
     lines, ok = [], False
+    main_checkout = autosafe.worktree_main(project)
+    if main_checkout is not None:
+        return [f'This folder is a git worktree of {main_checkout}. Connect and run the auto-runner from that main checkout '
+                'instead: run /auto-runner:central there. (The project and its central connection are the same; only the '
+                'local .auto/ state differs, and a worktree\'s goes away with it.)'], False
     try:
         cfg = autocfg.load(project)
     except Exception as e:                                 # a broken auto.json is reported, not raised

@@ -184,6 +184,29 @@ def missing_rules(settings, base, changelog=False, env_read=False):
     return out
 
 
+def worktree_main(project):
+    """-> the main checkout's folder when `project` is a linked git worktree (for example one Claude Code made under
+    `.claude/worktrees/`), else None. A project is connected and run from its main checkout only: a worktree's `.auto/`
+    state is its own and goes away with it."""
+    r = subprocess.run(['git', '-C', str(project), 'rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'],
+                       capture_output=True, text=True, encoding='utf-8', errors='replace')
+    lines = r.stdout.split('\n') if r.returncode == 0 else []
+    if len(lines) < 2 or not lines[0].strip() or not lines[1].strip():
+        return None
+    git_dir, common = Path(lines[0].strip()).resolve(), Path(lines[1].strip()).resolve()
+    if git_dir == common:
+        return None
+    return common.parent if common.name == '.git' else common
+
+
+def worktree_problems(project):
+    main = worktree_main(project)
+    if main is None:
+        return []
+    return [f'This folder is a git worktree of {main}. Set the project up and run the auto-runner from that main checkout; '
+            'a worktree\'s .auto/ state is its own and goes away with it.']
+
+
 def has_commit(project):
     r = subprocess.run(['git', '-C', str(project), 'rev-parse', '--verify', '-q', 'HEAD'], capture_output=True, text=True, encoding='utf-8', errors='replace')
     return r.returncode == 0
@@ -420,7 +443,8 @@ def journey_problems(cfg):
 def preflight(project, cfg, base, doctor=None, env=None):
     """-> list of problems; empty means the runner may start. `doctor(project) -> results` and `env` (default os.environ) are
     injectable for tests."""
-    problems = runner_name_problems(env)
+    problems = worktree_problems(project)
+    problems += runner_name_problems(env)
     problems += model_problems(cfg)
     problems += base_url_problems(cfg)
     problems += journey_problems(cfg)

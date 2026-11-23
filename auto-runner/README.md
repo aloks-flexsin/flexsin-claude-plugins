@@ -87,10 +87,18 @@ The central service is the starting point for a project: an admin creates it the
 the checkout to it. Step by step for admins and teammates, with roles and troubleshooting: `docs/central-guide.md`;
 `/auto-runner:central` checks a checkout and guides the rest.
 
-- `auto_init.py --central-url URL --central-project SLUG [--token-env NAME]` adds `"central": {"enabled": true, "url", "project",
-  "token_env"}` to a new `.claude/auto.json`, or to an existing one with no `central` key (recorded, so `--remove` takes it out
-  again unless it was edited). `token_env` defaults to `AUTO_RUNNER_TOKEN_<SLUG>` (upper case, `-` to `_`).
-- Without those options and without `--local`, init refuses: a project can no longer slip into local mode unnoticed. An existing
+- **One project per repository; nobody types a slug** (0.16.0, decision record 0007). `auto_init.py --central-url URL
+  [--central-project SLUG] [--token-env NAME]` reads the project from this folder's `origin` (`autocentral.slug_from_repo`:
+  the repository's name, lower case, other characters as `-`, the same rule the service uses) unless `--central-project`
+  is given. Once the token is set, the service's own slug for this repository wins (it is `<owner>-<repo>` when the plain
+  name was taken), and the token must still be that repository's project. No `origin` remote: init refuses rather than guess.
+- It adds `"central": {"enabled": true, "url", "project", "token_env"}` to a new `.claude/auto.json`, or to an existing one
+  with no `central` key (recorded, so `--remove` takes it out again unless it was edited). `token_env` defaults to
+  `AUTO_RUNNER_TOKEN_<SLUG>` (upper case, `-` to `_`).
+- **Main checkout only:** in a linked git worktree (for example one Claude Code made under `.claude/worktrees/`) init,
+  `/auto-runner:central` and the runner's preflight refuse and name the main checkout (`autosafe.worktree_main`). The
+  project and its connection are the same there; only the local `.auto/` state would differ, and it goes away with the worktree.
+- Without `--central-url` and without `--local`, init refuses: a project can no longer slip into local mode unnoticed. An existing
   `central` section is never changed and needs no options.
 - While the token variable is empty, the preview lists what to create on the site (the project with this folder's `origin` as its
   repository URL, a token with `ingest` and `pull`) and the PowerShell line that stores the token without echoing it:

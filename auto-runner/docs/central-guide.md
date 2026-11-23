@@ -23,19 +23,21 @@ publish) and the service stores them, but **there is no runs page yet**, so prog
 There is no sign-up: an admin creates each account. Someone who is not a member of a project gets "not found" on its pages.
 
 ## Admin: once per project
-1. Create the project on `<service>/projects` with its **slug** (the short name, for example `acme-web`) and its
-   **repository URL** (the `origin` everyone clones, for example `https://github.com/org/acme-web`).
+1. Create the project on `<service>/projects` by pasting its **repository URL** (the `origin` everyone clones, for example
+   `https://github.com/org/acme-web`). Leave slug and name empty: they are filled in from the repository (`acme-web`; or
+   `org-acme-web` when that is taken). **One project per repository:** a second project for the same repository, in any
+   URL form, is refused and names the existing one.
 2. On `<service>/projects/<slug>/members`, add each teammate with a role (see the table).
 3. On `<service>/projects/<slug>/tokens`, an owner or manager creates a token with the **ingest** and **pull** scopes. It
    is shown once. Each teammate who runs the runner stores it in their own environment (step 3 below); never send it
    in chat or commit it. Several people may share one project token; revoke and rotate it there when someone leaves.
-4. Tell teammates the service address and the slug. That replaces sharing clone commands: `/auto-runner:join <slug>`
+4. Tell teammates the service address (and, for `/auto-runner:join`, the slug). That replaces sharing clone commands: `/auto-runner:join <slug>`
    reads the repository URL from the service.
 
 ## Teammate: the quick way
 Open Claude Code in the project folder (or any folder, to clone) and run **`/auto-runner:central`**. It checks what is
 missing and, with your yes at each step:
-- connects this checkout (`/auto-runner:init --central-url ... --central-project <slug>`) or clones the project from the
+- connects this checkout (`/auto-runner:init --central-url ...`; the project is read from `origin`, no slug to type) or clones the project from the
   service (`/auto-runner:join <slug>`),
 - sets your runner identity (`AUTO_RUNNER_USER`, `AUTO_RUNNER_ACCOUNT`),
 - tells you the one step you always do yourself: storing the token with a hidden prompt. Claude never sees the token.
@@ -44,8 +46,8 @@ Restart Claude Code after setting a variable, then run `/auto-runner:central` ag
 
 ## Teammate: by hand
 1. **Get the code.** New machine: `/auto-runner:join <slug> --central-url <service>` (previews the folder, clones with your
-   own git credentials, then shows init's preview). Existing checkout: `/auto-runner:init --central-url <service>
-   --central-project <slug>`. Both check with the service that your token is that project's and that your `origin` is its
+   own git credentials, then shows init's preview). Existing checkout: `/auto-runner:init --central-url <service>` (the
+   project is read from `origin`). Both check with the service that your token is that project's and that your `origin` is its
    repository, and write nothing until you agree.
 2. **Your identity** (per person and machine, never in a file):
    `[Environment]::SetEnvironmentVariable('AUTO_RUNNER_USER', 'alok', 'User')` and
@@ -75,5 +77,7 @@ Restart Claude Code after setting a variable, then run `/auto-runner:central` ag
 | the token belongs to project "x" | You stored another project's token in this project's variable: use this project's. |
 | no repository URL on the central service | An owner or admin sets it on the project page. |
 | this folder's origin ... is not project ...'s repository | Wrong folder or wrong slug: run it in a clone of that repository. |
+| This folder is a git worktree of ... | Open Claude Code in the main checkout it names and run `/auto-runner:central` there. |
+| no "origin" remote to read the project from | Clone the repository (or add its origin), or pass `--central-project`. |
 | Runner identity: MISSING | Set `AUTO_RUNNER_USER` and `AUTO_RUNNER_ACCOUNT`, then restart Claude Code. |
 | N not sent yet | Normal between runs: the next run sends them. If it stays high while connected, look at `.auto/central-push.json`. |

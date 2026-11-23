@@ -1,12 +1,14 @@
 ---
 description: Set this project up for unattended runs (preview first, then apply after you agree)
-argument-hint: [--central-url URL --central-project SLUG | --local] [--token-env NAME] [--with-rules]
+argument-hint: [--central-url URL | --local] [--central-project SLUG] [--token-env NAME] [--with-rules]
 ---
 
 Set up the auto-runner for this project. The central service is the default: blockers are raised and answered there.
 
-1. Unless `$ARGUMENTS` already holds `--central-url` and `--central-project`, or `--local`, ask the user for:
-   - the central service's address (for Flexsin: `https://auto-runner-central.vercel.app`) and the project's slug there, or
+1. Unless `$ARGUMENTS` already holds `--central-url` or `--local`, ask the user for:
+   - the central service's address (for Flexsin: `https://auto-runner-central.vercel.app`). Do not ask for the project's
+     slug: init reads it from this folder's `origin`, and the service confirms it. Only pass `--central-project` when the
+     user gives one; or
    - whether to keep this project local instead (`--local`: blockers are answered on this machine only).
    Do not pick for them. Never ask for the token itself and never put a token on a command line or in a file.
 2. Run the preview. It writes nothing:

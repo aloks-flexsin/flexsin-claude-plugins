@@ -16,7 +16,13 @@ TABLES = (
 # (nullable, so existing rows stay valid). Keep schema.sql's CREATE TABLE in step.
 COLUMNS_ADDED = (
     ("project", "repo_url", "VARCHAR(500)"),
+    ("project", "repo_key", "VARCHAR(500)"),
 )
+REPO_KEY_INDEX = "CREATE UNIQUE INDEX IF NOT EXISTS project_repo_key ON project (repo_key)"
+
+
+class DuplicateRepositories(RuntimeError):
+    """Two or more projects name the same repository: a person decides which one stays (init_db changes nothing then)."""
 
 
 def parse_url(url):
@@ -126,15 +132,48 @@ def add_missing_columns(db):
     return added
 
 
+def _repo_keys(db):
+    """-> [(project id, slug, stored repo_key or None, key computed from repo_url or None)]."""
+    from . import projects as _projects                          # the one place that turns a URL into a key
+    cols = db.columns("project")
+    extra = [c for c in ("repo_url", "repo_key") if c in cols]
+    rows = db.query("SELECT %s FROM project" % ", ".join(["id", "slug"] + extra))
+    return [(r["id"], r["slug"], r["repo_key"] if "repo_key" in cols else None,
+             _projects.repo_key(r["repo_url"]) if "repo_url" in cols else None) for r in rows]
+
+
+def duplicate_repositories(db):
+    """-> {repo_key: [slugs]} for repositories that more than one project names (empty when there are none)."""
+    owners = {}
+    for _, slug, stored, computed in _repo_keys(db):
+        if stored or computed:
+            owners.setdefault(stored or computed, []).append(slug)
+    return {k: sorted(v) for k, v in owners.items() if len(v) > 1}
+
+
+def fill_repo_keys(db):
+    """Set `project.repo_key` from `repo_url` where it is missing."""
+    for project_id, _, stored, computed in _repo_keys(db):
+        if computed and not stored:
+            db.execute("UPDATE project SET repo_key = ? WHERE id = ?", (computed, project_id))
+
+
 def init_db(url):
-    """Apply schema.sql (idempotent: every table is CREATE TABLE IF NOT EXISTS), then add each COLUMNS_ADDED column
-    an older database lacks. Return the columns added ("table.column")."""
+    """Apply schema.sql (idempotent: every table is CREATE TABLE IF NOT EXISTS), add each COLUMNS_ADDED column an older
+    database lacks, fill `project.repo_key` and make it unique (one project per repository). Return the columns added
+    ("table.column"). Raise DuplicateRepositories, before adding any column, key or index, when two projects name the
+    same repository."""
     with open(SCHEMA_PATH, encoding="utf-8") as f:
         script = f.read()
     db = connect(url)
     try:
-        db.executescript(script)
+        db.executescript(script)                    # only creates what is missing; existing rows are untouched
+        duplicates = duplicate_repositories(db)      # checked before any column, key or index is added
+        if duplicates:
+            raise DuplicateRepositories(duplicates)
         added = add_missing_columns(db)
+        fill_repo_keys(db)
+        db.execute(REPO_KEY_INDEX)
         db.commit()
     finally:
         db.close()
