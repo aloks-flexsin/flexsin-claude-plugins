@@ -116,8 +116,9 @@ def repo_url_set(slug):
 @bp.get("/api/v1/project")
 @tokens.bearer_token(None)
 def api_project():
-    project = g.token_project
-    return jsonify(slug=project["slug"], name=project["name"], repo_url=project.get("repo_url"))
+    project, account = g.token_project, g.get("token_account")
+    return jsonify(slug=project["slug"], name=project["name"], repo_url=project.get("repo_url"),
+                   account=account["email"] if account else None)
 
 
 @bp.post("/projects/<slug>/members")

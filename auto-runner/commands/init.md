@@ -17,7 +17,9 @@ Set up the auto-runner for this project. The central service is the default: blo
 
 3. Show the user the preview in plain words: the test command it detected (or that none was found, which means every result will be
    marked "unverified: no tests"), the deny rules it would add to `.claude/settings.json`, the files it would create, the `central`
-   section (the token variable it names, default `AUTO_RUNNER_TOKEN_<SLUG>`), and anything it found and will leave alone.
+   section, and anything it found and will leave alone. For the token, people sign in with `/auto-runner:central` (a
+   personal token; nothing to copy); the project-token variable it names (default `AUTO_RUNNER_TOKEN_<SLUG>`) is only for
+   machines nobody signs in on.
    When it lists steps to connect to the central service, give them to the user as they are: what to create on the site, and the
    PowerShell line that stores the token without echoing it. The user runs that line themselves, then restarts Claude Code.
    When it says `AUTO_RUNNER_USER` or `AUTO_RUNNER_ACCOUNT` is not set, explain that run branches are

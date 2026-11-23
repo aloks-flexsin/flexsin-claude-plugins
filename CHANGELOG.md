@@ -4,6 +4,22 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-23
+
+### Added
+- **Sign in from Claude** (decision record 0008, second part). `/auto-runner:central` signs a computer in: it shows an
+  address and a short code, the person approves it on the central site (which names the computer and repository), and the
+  plugin stores a **personal token** without printing it: the user variable `AUTO_RUNNER_TOKEN` on Windows,
+  `~/.config/auto-runner/credentials` (mode 600) on macOS and Linux. `autocentral.py login start` / `login wait`.
+- Central service: personal tokens work for every project where the account is a developer or above, checked on every
+  call (`?project=<slug>`), stop after 90 days unused, and are listed and revoked on **My tokens**; admins can revoke all of
+  an account's. Events sent with one are stamped with the account, and the runs page shows "signed in as". Needs `init-db`
+  (tables `device_login`, `personal_token`, column `event.account_id`).
+
+### Changed
+- The plugin finds the central token in this order: `AUTO_RUNNER_TOKEN`, the credentials file, then the project token in
+  `central.token_env`. Every call to the service names the project. Project tokens keep working, for machines.
+
 ### Added
 - Central service: **invites** instead of shared passwords (decision record 0008, first part). Owners and admins invite
   an email with a role from a project's members page; someone new gets an account with no password and the inviter

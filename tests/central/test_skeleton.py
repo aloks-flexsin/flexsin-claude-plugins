@@ -21,7 +21,7 @@ def _tables(url):
 def test_schema_applies_twice_and_creates_all_tables(db_url):
     db.init_db(db_url)
     db.init_db(db_url)
-    assert len(db.TABLES) == 14
+    assert len(db.TABLES) == 16
     assert set(db.TABLES) <= _tables(db_url)
 
 
@@ -60,7 +60,7 @@ def test_schema_is_portable_sql():
     for sqlite_only in ('AUTOINCREMENT', 'PRAGMA', 'WITHOUT ROWID', 'INSERT OR ', 'STRICT'):
         assert sqlite_only not in upper
     statements = db.split_script(text)
-    assert len(statements) == 14
+    assert len(statements) == 16
     for statement in statements:
         assert statement.upper().startswith('CREATE TABLE IF NOT EXISTS ')
     created = [re.match(r'CREATE TABLE IF NOT EXISTS (\w+)', s, re.I).group(1) for s in statements]

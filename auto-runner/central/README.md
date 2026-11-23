@@ -111,13 +111,30 @@ may not stick over plain http. The API endpoints do not use the cookie.
 
 ## API
 
-Send the project token as `Authorization: Bearer art_...`. A missing, wrong or revoked token gets 401; a token without the
-needed scope gets 403.
+Send a token as `Authorization: Bearer ...`. A missing, wrong or revoked token gets 401; a token without the needed scope
+gets 403.
+
+- **Personal token** (`arp_...`, one per person and computer, from signing in; `personal.py`): has both scopes and no project
+  of its own. Every call names the project, `?project=<slug>` (or `?repo=<host/owner/repo>` while the slug is not known),
+  and the account must be an enabled developer or above there, or an admin: otherwise 403. Membership is checked on every
+  call. Unused for 90 days it stops working; people revoke their own on **My tokens** (`/account/tokens`) and an admin
+  revokes all of an account's on Accounts. Events sent with one are stamped with the account (`event.account_id`), and the
+  runs page shows "signed in as <email>".
+- **Project token** (`art_...`, made on a project's tokens page): for machines nobody signs in on. It may also send
+  `?project=`, which must then be its own project.
+
+**Sign in from Claude** (device codes; the plugin's `autocentral.py login start` / `login wait`):
+`POST /api/v1/device/start` (no token; at most 10 a minute from one address, in memory) with `client_name` and `repo` returns
+`device_code` (kept by the plugin), `user_code` (shown to the person, like `KQ4M-7RXD`), `verification_uri` (`/device`),
+`interval` (5 s) and `expires_in` (600 s). The person opens `/device` signed in, types the code, sees the computer and the
+repository, and approves or denies (audited). `POST /api/v1/device/token` with the `device_code` answers 400 with
+`authorization_pending`, `slow_down`, `access_denied` or `expired_token`, or once 200 with `token` and `email`. Both codes are
+stored only as SHA-256 (table `device_login`), and a request gives a token once.
 
 | Endpoint | Scope | What it does |
 | --- | --- | --- |
 | `POST /api/v1/events` | `ingest` | One `event.v1` object or a list. Replies `accepted`, `duplicates`, `ids`, `duplicate_ids`. The same id with a different body gets 409, an unknown schema or bad event 400, a body over 256 KB 413, more than 120 requests a minute per token 429 (counted per process). The event's `project` must be the token's project. Run-level events (`run_start`, `run_end`, `publish`) have no item. Secrets in `detail` are redacted before storing. |
-| `GET /api/v1/project` | any | `{"slug", "name", "repo_url"}` of the token's project (`repo_url` is null for a project made before the column existed). The plugin's init and join use it to check they are pointed at the right repository. |
+| `GET /api/v1/project` | any | `{"slug", "name", "repo_url", "account"}` of the token's project (`account`: the signed-in email for a personal token, else null) (`repo_url` is null for a project made before the column existed). The plugin's init and join use it to check they are pointed at the right repository. |
 | `GET /api/v1/deliveries/pending` | `pull` | `{"deliveries": [...]}`: the project's answers not yet acknowledged, oldest first; each is marked delivered. |
 | `POST /api/v1/deliveries/<delivery_id>/ack` | `pull` | Marks a delivery acknowledged (a second ack changes nothing). Unknown or another project's id: 404; never delivered: 409. |
 

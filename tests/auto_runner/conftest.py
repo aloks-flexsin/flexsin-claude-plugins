@@ -25,3 +25,10 @@ def _no_real_gh(monkeypatch):
     for mod in list(sys.modules.values()):
         if getattr(mod, '__file__', '') and str(mod.__file__).endswith('auto_run.py') and hasattr(mod, 'run_pr'):
             monkeypatch.setattr(mod, 'run_pr', refuse)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_credentials(tmp_path_factory, monkeypatch):
+    """Tests never see a real personal token: AUTO_RUNNER_TOKEN is unset and the credentials file points to an empty folder."""
+    monkeypatch.delenv('AUTO_RUNNER_TOKEN', raising=False)
+    monkeypatch.setenv('AUTO_RUNNER_CREDENTIALS', str(tmp_path_factory.mktemp('credentials') / 'credentials'))

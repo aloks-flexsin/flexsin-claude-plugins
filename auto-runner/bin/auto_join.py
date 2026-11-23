@@ -65,13 +65,13 @@ def make_plan(slug, central_url, token_env='', dest='', cwd='.', env=None, send=
         plan['problems'].append('--token-env must be an environment variable name (letters, digits and _), not a token.')
     if plan['problems']:
         return plan
-    token = (env.get(name) or '').strip()
+    token, _ = auto_init.autosafe.central_token({'central': {'token_env': name}}, env)
     if not token:
-        plan['problems'].append(f'the token is not in {name} yet.')
+        plan['problems'].append(f'no token yet: sign this computer in with /auto-runner:central, or put a project token in {name}.')
         plan['steps'] = autocentral.token_steps(central_url, slug, name)
         return plan
     try:
-        info = autocentral.lookup(central_url, token, send=send)
+        info = autocentral.lookup(central_url, token, send=send, project=slug if autocentral.is_personal(token) else None)
     except autodeliver.TransportRefused as e:
         plan['problems'].append(f'the central service refused the token in {name} ({e}).')
         return plan

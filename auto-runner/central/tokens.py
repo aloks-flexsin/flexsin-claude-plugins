@@ -5,7 +5,12 @@
 - Scopes: `ingest` (send events) and `pull` (fetch and acknowledge deliveries). A token has one or both.
 - Revoke sets `revoked_at`; rotate revokes the old token and creates a new one with the same scopes, in one commit.
 - `bearer_token(scope)` answers 401 for a missing, unknown or revoked token and 403 when the token lacks the scope;
-  `bearer_token(None)` takes a token with any scope. It sets `g.token` (the row) and `g.token_project` (the project row).
+  `bearer_token(None)` takes a token with any scope. It sets `g.token` (the row), `g.token_project` (the project row) and
+  `g.token_account` (None for a project token).
+- A **personal token** (`personal.PREFIX`, decision record 0008) has both scopes and no project of its own: the request
+  names the project (`?project=<slug>`, or `?repo=<host/owner/repo>` when the slug is not known yet), and the account must be an enabled developer or above there, or an admin
+  (403 otherwise; 401 for an unknown, revoked, idle-expired or disabled one). A project token may also be sent with
+  `?project=`, which must then be its own project.
 """
 import functools
 import hashlib
@@ -13,6 +18,7 @@ import secrets
 
 from flask import abort, g, jsonify, make_response, request
 
+from . import auth, personal, projects
 from .db import get_db
 
 PREFIX = "art_"
@@ -129,13 +135,30 @@ def bearer_token(scope):
         @functools.wraps(view)
         def wrapped(*args, **kwargs):
             db = get_db()
-            row = lookup(db, _bearer())
+            raw = _bearer()
+            named = (request.args.get("project") or "").strip()
+            if raw and raw.startswith(personal.PREFIX):
+                moment = auth.now()
+                row, account = personal.lookup(db, raw, moment)
+                if row is None:
+                    _fail(401, "a valid bearer token is required")
+                repo = (request.args.get("repo") or "").strip()
+                project = projects.get_by_slug(db, named) if named else projects.get_by_repo_key(db, repo.lower() or None)
+                if project is None or not projects.allows(projects.effective_role(db, project, account), "developer"):
+                    _fail(403, "name a project (?project=<slug>) where this account is a developer or above")
+                personal.touch(db, row, moment)
+                g.token = {"id": row["id"], "scopes": " ".join(SCOPES), "kind": "personal"}
+                g.token_project, g.token_account = project, account
+                return view(*args, **kwargs)
+            row = lookup(db, raw)
             project = db.query_one("SELECT * FROM project WHERE id = ?", (row["project_id"],)) if row else None
             if project is None:
                 _fail(401, "a valid bearer token is required")
+            if named and named != project["slug"]:
+                _fail(403, "this token belongs to another project")
             if scope is not None and scope not in scopes_of(row):
                 _fail(403, "this token does not have the %s scope" % scope)
-            g.token, g.token_project = row, project
+            g.token, g.token_project, g.token_account = row, project, None
             return view(*args, **kwargs)
         return wrapped
     return decorate

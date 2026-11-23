@@ -57,7 +57,8 @@ def summarise(events, now):
         r = runs.setdefault(run_id, {
             "run": run_id, "user": None, "account": None, "branch": None, "base": None, "started": e.get("time"),
             "last": e.get("time"), "ended": None, "exit": None, "reason": None, "items": {}, "current": None,
-            "tests": None, "pushed": None, "pr_url": None, "publish_error": None, "blockers": 0})
+            "tests": None, "pushed": None, "pr_url": None, "publish_error": None, "blockers": 0, "signed_in": None})
+        r["signed_in"] = r["signed_in"] or e.get("_signed_in")
         r["last"] = e.get("time") or r["last"]
         if kind == "run_start":
             r["started"] = e.get("time")
@@ -98,7 +99,8 @@ def summarise(events, now):
 
 
 def project_events(db, project_id, limit=MAX_EVENTS):
-    rows = db.query("SELECT body FROM event WHERE project_id = ? AND type IN (%s) ORDER BY ts DESC LIMIT %d"
+    rows = db.query("SELECT e.body, a.email FROM event e LEFT JOIN account a ON a.id = e.account_id"
+                    " WHERE e.project_id = ? AND e.type IN (%s) ORDER BY e.ts DESC LIMIT %d"
                     % (", ".join("?" * len(SHOWN_TYPES)), int(limit)), (project_id,) + SHOWN_TYPES)
     events = []
     for row in rows:
@@ -107,7 +109,7 @@ def project_events(db, project_id, limit=MAX_EVENTS):
         except (TypeError, ValueError):
             continue
         if isinstance(body, dict):
-            events.append(body)
+            events.append(dict(body, _signed_in=row["email"]))    # the account the service verified (personal token)
     return events
 
 

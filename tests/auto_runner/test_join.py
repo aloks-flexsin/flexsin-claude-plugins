@@ -69,7 +69,7 @@ def test_without_the_token_join_says_how_to_get_one(tmp_path, central, monkeypat
     code, git = join(tmp_path, central, '--apply', env={}, monkeypatch=monkeypatch)
     out = capsys.readouterr().out
     assert code == 1 and git.calls == [] and central.calls == []
-    assert f'the token is not in {ENV}' in out and 'Read-Host' in out
+    assert 'no token yet' in out and ENV in out and '/auto-runner:central' in out and 'Read-Host' in out
 
 
 def test_a_token_of_another_project_is_refused(tmp_path, central, monkeypatch, capsys):

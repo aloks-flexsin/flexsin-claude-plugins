@@ -171,19 +171,23 @@ class HttpTransport(Transport):
     ack: 404 -> KeyError, 409 -> ValueError; any other 4xx -> TransportRefused. The token goes only in the
     Authorization header: never in a URL, a message or repr()."""
 
-    def __init__(self, base_url, token, send=None, timeout=10):
+    def __init__(self, base_url, token, send=None, timeout=10, project=None):
         if not base_url or not token:
             raise ValueError('HttpTransport needs a base url and a token')
         self.base_url = base_url.rstrip('/')
         self._token = token
         self.send = send or urllib_send
         self.timeout = timeout
+        self.project = project                    # sent as ?project=<slug>: a personal token needs it (decision record 0008)
 
     def __repr__(self):
         return f'HttpTransport({self.base_url!r})'
 
-    def _call(self, method, path, refusals=None, payload=None, timeout=None):
+    def _call(self, method, path, refusals=None, payload=None, timeout=None, query=None):
         """-> the JSON object of a 2xx reply. A 4xx raises refusals[status] (default TransportRefused) with the message."""
+        from urllib.parse import urlencode
+        params = {k: v for k, v in {'project': self.project, **(query or {})}.items() if v}
+        path = path + ('?' + urlencode(params) if params else '')
         headers = {'Authorization': f'Bearer {self._token}', 'Accept': 'application/json'}
         body = None
         if method == 'POST':
@@ -220,9 +224,11 @@ class HttpTransport(Transport):
         from urllib.parse import quote
         return self._call('POST', f'/api/v1/deliveries/{quote(did, safe="")}/ack', {404: KeyError, 409: ValueError})
 
-    def project_info(self):
-        """GET /api/v1/project (any scope) -> {'slug', 'name', 'repo_url'} of the token's project (repo_url may be None)."""
-        data = self._call('GET', '/api/v1/project')
+    def project_info(self, repo=None):
+        """GET /api/v1/project (any scope) -> {'slug', 'name', 'repo_url', 'account'} of the token's project (repo_url may be
+        None; account is the signed-in email for a personal token). A personal token names the project by `self.project`,
+        or, when that is not known yet, by `repo` (`host/owner/repo`)."""
+        data = self._call('GET', '/api/v1/project', query={'repo': repo} if repo and not self.project else None)
         if not isinstance(data.get('slug'), str) or not isinstance(data.get('repo_url'), (str, type(None))):
             raise TransportUnavailable('GET /api/v1/project: unreadable reply')
         return data

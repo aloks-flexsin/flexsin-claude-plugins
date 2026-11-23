@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS event (
     ts VARCHAR(40),
     body TEXT NOT NULL,
     body_hash VARCHAR(64) NOT NULL,
-    received_at VARCHAR(32) NOT NULL
+    received_at VARCHAR(32) NOT NULL,
+    account_id VARCHAR(64)
 );
 
 CREATE TABLE IF NOT EXISTS task (
@@ -147,4 +148,32 @@ CREATE TABLE IF NOT EXISTS invite (
     created_at VARCHAR(32) NOT NULL,
     expires_at VARCHAR(32) NOT NULL,
     used_at VARCHAR(32)
+);
+
+-- Sign-in from Claude (decision record 0008): a request a person approves on /device; only the codes' SHA-256 is kept.
+CREATE TABLE IF NOT EXISTS device_login (
+    id VARCHAR(64) PRIMARY KEY,
+    device_hash VARCHAR(64) NOT NULL UNIQUE,
+    user_hash VARCHAR(64) NOT NULL UNIQUE,
+    client_name VARCHAR(100) NOT NULL,
+    repo VARCHAR(300),
+    created_at VARCHAR(32) NOT NULL,
+    expires_at VARCHAR(32) NOT NULL,
+    approved_by VARCHAR(64) REFERENCES account (id) ON DELETE CASCADE,
+    approved_at VARCHAR(32),
+    denied_at VARCHAR(32),
+    delivered_at VARCHAR(32),
+    last_poll_at VARCHAR(32)
+);
+
+-- Personal tokens: one account, any project where it is a developer or above; only the SHA-256 is kept.
+CREATE TABLE IF NOT EXISTS personal_token (
+    id VARCHAR(64) PRIMARY KEY,
+    account_id VARCHAR(64) NOT NULL REFERENCES account (id) ON DELETE CASCADE,
+    token_hash VARCHAR(64) NOT NULL UNIQUE,
+    prefix VARCHAR(16) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    created_at VARCHAR(32) NOT NULL,
+    last_used_at VARCHAR(32),
+    revoked_at VARCHAR(32)
 );

@@ -52,8 +52,8 @@ def test_unset_token_gives_the_steps_and_calls_nothing(tmp_path, central):
     p = repo(tmp_path, REPO)
     connect(p)
     text, ok = run(p, central, ME)
-    assert not ok and f'Token: NOT SET ({ENV}' in text
-    assert f'{BASE}/projects/{SLUG}/tokens' in text and 'Read-Host' in text and central.calls == []
+    assert not ok and 'Token: NOT SET' in text and 'login start' in text and 'login wait' in text
+    assert f'project token in {ENV}' in text and f'{BASE}/projects/{SLUG}/tokens' in text and central.calls == []
 
 
 def test_a_token_in_the_config_is_refused_without_calling(tmp_path, central):
@@ -163,5 +163,6 @@ def test_the_guide_and_command_exist_and_say_the_essentials():
                    'AUTO_RUNNER_USER', 'AUTO_RUNNER_ACCOUNT', 'ingest', 'pull', 'unverified'):
         assert needle in guide
     command = (root / 'commands' / 'central.md').read_text(encoding='utf-8')
-    assert 'autocentral.py" status' in command and 'Never ask for the token' in command and '--apply' in command
+    assert 'autocentral.py" status' in command and 'Never ask for a token' in command and '--apply' in command
+    assert 'login start' in command and 'login wait' in command
     assert ac.GUIDE == root / 'docs' / 'central-guide.md'

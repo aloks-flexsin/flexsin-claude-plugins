@@ -24,7 +24,8 @@ def fake_send(central, seen):
     """The HTTP binding of docs/delivery-contract.md, answered from `central` (a FakeCentral)."""
     def send(method, url, headers, body, timeout):
         seen.append((method, url, dict(headers)))
-        path = url[len(URL):]
+        path, _, query = url[len(URL):].partition('?')
+        assert query == 'project=' + SLUG                       # every call names the project (a personal token needs it)
         if method == 'GET' and path == '/api/v1/deliveries/pending':
             return 200, json.dumps({'deliveries': central.pull_pending(SLUG)}).encode()
         if method == 'POST' and path.startswith('/api/v1/deliveries/') and path.endswith('/ack'):
@@ -147,7 +148,7 @@ def test_run_pulls_from_central_with_the_slug_and_never_writes_the_token(project
     assert ab.Store(auto).load(b['id'])['state'] == 'RESUMED'
 
     gets = [s for s in seen if s[0] == 'GET']
-    assert gets and all(u == URL + '/api/v1/deliveries/pending' for _, u, _ in gets)
+    assert gets and all(u == URL + '/api/v1/deliveries/pending?project=' + SLUG for _, u, _ in gets)
     assert all(h['Authorization'] == f'Bearer {TOKEN}' for _, _, h in seen)
     assert all(TOKEN not in u for _, u, _ in seen)
     out = capsys.readouterr()
