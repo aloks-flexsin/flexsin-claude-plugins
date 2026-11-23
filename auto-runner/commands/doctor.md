@@ -13,3 +13,5 @@ Check this project's capabilities for the auto-runner. This command writes nothi
 3. If anything is missing, say that `/auto-runner:setup` previews the fix and applies it only after they agree.
 
 Do not install, download or edit anything as part of this command.
+
+For the central service (connection, token, where blockers are answered), point the user to `/auto-runner:central`.

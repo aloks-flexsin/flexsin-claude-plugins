@@ -11,8 +11,16 @@ repository URLs, and asking the service which repository a project is.
   not match. The token comes only from the environment and is never printed.
 - `token_steps(...)` are the lines that tell a person what to create on the site and how to store the token (PowerShell
   `Read-Host -AsSecureString`, so the token is not echoed or kept in the shell history).
+- `status(project)` (`python autocentral.py status --project DIR`, `/auto-runner:central`) says whether this checkout is
+  connected and what to do next: the `central` section, the token variable (never its value), the service's answer to
+  `GET /api/v1/project` and the repository check, the runner's identity, events not sent yet, blockers waiting here with
+  their page links, and how the page is used. Read-only: it never pulls deliveries (that would mark answers delivered),
+  never sends events and writes nothing. Exit code 0 when connected, 1 otherwise.
 """
+import argparse
 import importlib.util
+import json
+import os
 import re
 import subprocess
 import sys
@@ -121,3 +129,135 @@ def token_steps(central_url, slug, token_env, repo_url=None):
         f"   macOS/Linux: read -rsp 'Token for {slug}: ' {token_env} && export {token_env}  (add it to your shell profile)",
         '4. Restart Claude Code so it sees the variable. Never put the token in .claude/auto.json or a committed file.',
     ]
+
+
+GUIDE = HERE.parent / 'docs' / 'central-guide.md'
+FLEXSIN_URL = 'https://auto-runner-central.vercel.app'
+
+
+def _routes(project):
+    here = f'"{Path(project)}"'
+    return [
+        'Connect it, either way (each previews first and writes only after you agree):',
+        '  - this checkout: /auto-runner:init --central-url URL --central-project SLUG',
+        f'      (python "{HERE / "auto_init.py"}" --project {here} --central-url URL --central-project SLUG, then --apply)',
+        '  - a fresh clone of a project registered there: /auto-runner:join SLUG --central-url URL',
+        f'      (python "{HERE / "auto_join.py"}" SLUG --central-url URL, then --apply)',
+        f'  URL is the service address (Flexsin: {FLEXSIN_URL}); SLUG is the project\'s name on it. Ask the person; never guess.',
+    ]
+
+
+def _sync(auto):
+    path = auto / 'events.jsonl'
+    total = len((path.read_text(encoding='utf-8') if path.exists() else '').split('\n')[:-1])
+    state = autodeliver._push_state(auto)
+    sent = min(state['lines'], total)
+    line = f'Events: {total} recorded here, {total - sent} not sent yet (each run sends them as it goes and at its end)'
+    if state['skipped']:
+        line += f'; {len(state["skipped"])} refused by the service for good'
+    return line
+
+
+def _blockers(auto, site, slug):
+    autoblock = _load('autorunner_block', 'autoblock.py')
+    found, problems = autoblock.Store(auto).all()
+    open_ = autoblock.waiting(found)
+    lines = [f'Blockers waiting for an answer: {len(open_)}']
+    for b in open_:
+        where = f' -> {site}/projects/{slug}/blockers/{b["id"]}' if site else ''
+        lines.append(f'  {b["id"]} ({b.get("task") or "no item"}): {b.get("question") or "(no question recorded)"}{where}')
+    lines += [f'  unreadable blocker file: {p}' for p in problems]
+    return lines
+
+
+def _how(site, slug):
+    return [
+        'Using the page:',
+        f'  - your projects: {site}/projects; this one: {site}/projects/{slug}/blockers (blockers), '
+        f'{site}/projects/{slug}/members, {site}/projects/{slug}/tokens',
+        '  - owners, managers and admins answer a blocker there (pick an option and/or write an answer); developers and '
+        'viewers can read it. Accounts are made by an admin; there is no sign-up.',
+        '  - the runner picks the answer up at its next pull (between iterations, or when it next starts) and resumes the item.',
+        '  - today the page shows blockers only: run events are stored there but no runs page exists yet.',
+        f'  - the full guide: {GUIDE}',
+    ]
+
+
+def status(project, env=None, send=None):
+    """-> (lines, ok). See the module docstring. `env` (default os.environ) and `send` (an HTTP sender) are for tests."""
+    autocfg = _load('autorunner_cfg', 'autocfg.py')
+    autosafe = _load('autorunner_safe', 'autosafe.py')
+    project = Path(project).resolve()
+    env = os.environ if env is None else env
+    auto = project / '.auto'
+    lines, ok = [], False
+    try:
+        cfg = autocfg.load(project)
+    except Exception as e:                                 # a broken auto.json is reported, not raised
+        return [f'.claude/auto.json cannot be read: {e}', 'Fix it first (init will not overwrite it).'], False
+    c = cfg.get('central') if isinstance(cfg.get('central'), dict) else None
+    site, slug = '', ''
+    if c is None:
+        lines.append('Central service: NOT CONNECTED (no "central" section in .claude/auto.json; blockers are answered on this '
+                     'machine only).')
+        lines += _routes(project)
+    elif not autosafe.central_enabled(cfg):
+        lines.append('Central service: OFF ("central.enabled" is not true in .claude/auto.json, so answers stay local). '
+                     'Set it to true to use the service again.')
+    else:
+        site, slug = (c.get('url') or '').strip().rstrip('/'), (c.get('project') or '').strip()
+        name = autosafe.token_env(cfg)
+        lines.append(f'Central service: {site or "(no url)"}, project "{slug or "(none)"}", token variable {name}')
+        problems = [p for p in autosafe.central_problems(cfg, env) if 'the environment variable' not in p]
+        if problems or not site or not slug:
+            lines += problems or ['.claude/auto.json: "central" needs "url" and "project".']
+        elif not (env.get(name) or '').strip():
+            lines.append(f'Token: NOT SET ({name} is empty in this environment). Steps (you do them; never paste the token '
+                         'into Claude or a file):')
+            lines += ['  ' + s for s in token_steps(site, slug, name, remote_url(project))]
+        else:
+            lines.append(f'Token: set in {name} (not shown)')
+            try:
+                info = lookup(site, env[name].strip(), send=send)
+            except autodeliver.TransportRefused as e:
+                lines.append(f'Service: REFUSED the token ({e}). Make a new token on {site}/projects/{slug}/tokens, store '
+                             'it again with the line init prints, and restart Claude Code.')
+            except autodeliver.TransportUnavailable as e:
+                lines.append(f'Service: NOT REACHABLE at {site} ({e}). Check the address and your connection, then try again.')
+            else:
+                found = check(info, slug, remote_url(project))
+                if found:
+                    lines += ['Service: answers, but ' + found[0]]
+                else:
+                    ok = True
+                    lines.append(f'Service: CONNECTED. The token is project "{slug}"\'s and this folder\'s origin is its '
+                                 f'repository ({info["repo_url"]}).')
+    identity = autosafe.runner_name_problems(env)
+    lines.append('Runner identity: ' + (autosafe.runner_name(env) if not identity else 'MISSING'))
+    for problem in identity:
+        var = next(v for v in (autosafe.RUNNER_USER_ENV, autosafe.RUNNER_ACCOUNT_ENV) if v in problem)
+        lines.append(f"  {problem} PowerShell: [Environment]::SetEnvironmentVariable('{var}', '<value>', 'User'); "
+                     f"macOS/Linux: export {var}=<value> in your shell profile.")
+    lines.append(_sync(auto))
+    lines += _blockers(auto, site, slug)
+    if site and slug:
+        lines += _how(site, slug)
+    else:
+        lines.append(f'How the central page is used, and how to join: {GUIDE}')
+    return lines, ok and not identity
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description='Is this checkout connected to the central service, and what to do next '
+                                             '(read-only).')
+    sub = ap.add_subparsers(dest='cmd', required=True)
+    st = sub.add_parser('status', help='check the connection and print the next steps')
+    st.add_argument('--project', default=os.environ.get('CLAUDE_PROJECT_DIR') or '.')
+    a = ap.parse_args(argv)
+    lines, ok = status(a.project)
+    print('\n'.join(lines))
+    return 0 if ok else 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

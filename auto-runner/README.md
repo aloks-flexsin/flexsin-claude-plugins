@@ -39,6 +39,11 @@ Check the manifest with `claude plugin validate ./auto-runner` (needs the `claud
    Unverified beyond a fake reviewer. When you accept the plan it writes the request to `.auto/pending/<slug>/items.md` and starts the runner.
    `/auto-runner:update` checks the marketplace for a newer auto-runner, shows the changelog entries in between and, after you
    agree, installs it (`bin/autoupdate.py check` / `apply`, both through the `claude plugin` command line); restart Claude to load it.
+   `/auto-runner:central` checks whether the project is connected to the central service (config, token variable,
+   the service's answer to `GET /api/v1/project` and the repository check, runner identity, events not sent yet, waiting
+   blockers with their page links) and walks you through what is missing, changing anything only after you agree
+   (`bin/autocentral.py status` is the read-only check; tested with the real central app through Flask's test client,
+   never against the live service). How teammates and admins use the page: `docs/central-guide.md`.
 3. `/auto-runner:status` and `/auto-runner:log` are read-only reports (counts by state, the running item, blocked questions, recorded spend; the last iterations and log tails; `--full N` prints one whole log).
 
 The runner can also be started by hand: `python bin/auto_run.py [--project DIR] [--max-iterations 8] [--max-budget-usd 5] [--enqueue SLUG] [--dry-run] [--allow-dirty]`.
@@ -79,7 +84,8 @@ It also writes the `central` section (next section) or, with `--local`, none. Wh
 
 ## Central-first setup (tested with the real central app through Flask's test client; never against the live service)
 The central service is the starting point for a project: an admin creates it there with its repository URL, and init connects
-the checkout to it.
+the checkout to it. Step by step for admins and teammates, with roles and troubleshooting: `docs/central-guide.md`;
+`/auto-runner:central` checks a checkout and guides the rest.
 
 - `auto_init.py --central-url URL --central-project SLUG [--token-env NAME]` adds `"central": {"enabled": true, "url", "project",
   "token_env"}` to a new `.claude/auto.json`, or to an existing one with no `central` key (recorded, so `--remove` takes it out
@@ -238,7 +244,7 @@ such as `₹` never breaks a run on Windows.
 | `bin/autostale.py` | Artifact front-matter (`version`, `hash`, `built_from`, `status`), `scan`, `status`, `revalidate`; stale artifacts refuse a resume. |
 | `bin/autoeval.py` | Evaluation harness: `run --benchmark ID --runner fake`, `validate`, `validate-results FILE`. |
 | `bin/auto_init.py`, `bin/auto_report.py` | Init (preview/apply/remove, the `central` section and its repository check) and the status/log reports. |
-| `bin/autocentral.py` | What init and join share: `default_token_env`, `repo_key` / `clean_url`, `remote_url`, `lookup` (`GET /api/v1/project`), `check`, `token_steps`. |
+| `bin/autocentral.py` | What init and join share: `default_token_env`, `repo_key` / `clean_url`, `remote_url`, `lookup` (`GET /api/v1/project`), `check`, `token_steps`; and `status` (`python autocentral.py status`, `/auto-runner:central`): the read-only connection check with next steps, exit 0 when connected. |
 | `bin/auto_join.py` | Join: repository URL from the central service, `git clone` into a folder you confirm, then init's preview. |
 | `bin/autojourney.py` | Journey check: parses journeys, starts and stops the app, runs the click-through agent, validates `journey.v1`, writes fix items. |
 | `bin/autodeck.py` | Journey deck: after each journey check, the passing journeys' screenshots replace their slides in `.auto/journeys/deck.html` (`deck.v1` in `deck.json`). |
