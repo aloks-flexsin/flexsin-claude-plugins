@@ -95,8 +95,20 @@ the chips at the top narrow it to one project):
   a runner has gone quiet.
 - **Recently done**, with pull requests.
 Open a task for its full story: where it is (Open → Planned → Approval → Building → Done), the plan, each item's state,
-the runs and an Activity list of who did what. Pages with work in progress reload every 30 seconds; nobody is notified
-yet: check My work.
+the runs and an Activity list of who did what. Pages with work in progress reload every 30 seconds; the bell in the top
+bar tells you when something waits on you (see Notifications).
+
+## Notifications (push unverified on the live service)
+- **What you get:** a notification when a plan waits for your approval, changes are asked on your task, a task is given
+  to you, or a blocker in your project waits for an answer (managers and owners). Only members of the project get them.
+- **The bell** in the top bar shows how many are waiting that you have not opened. **Notifications** lists yours,
+  waiting ones first; open one to go to its task or blocker. Once the thing is decided or answered it moves to **Done**.
+- **On your phone or desktop:** on **Account**, "Notifications on this browser" › **Turn on** (once per browser). It says
+  "push is not set up on this service" until an admin sets the push keys.
+- **Did it arrive?** Each notification says how it was delivered: *push sent*, *push failed: reason*, *push off* (push
+  not set up, or no browser of yours turned on) or *in-app* (only on the page).
+- **Admins:** **Accounts › Notification log** lists recent notifications for everyone, with recipient, project, kind,
+  delivery and time; filter by person and kind to see why someone missed one.
 
 ## Tasks: what each person's runner does next
 - On a project, **New task** (top right) adds a task for yourself (title, what and why, and optionally how we know it's

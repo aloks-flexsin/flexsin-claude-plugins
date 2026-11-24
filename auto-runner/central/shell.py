@@ -3,6 +3,7 @@ counts, and the project Overview.
 
 - `nav_badge(db, account)`: decisions waiting for this person across projects (plans they may approve + blockers they
   may answer), for the My work link. Cheap: two queries per project, no event parsing.
+- `notif_count`: the person's unread, unresolved notifications, for the bell in the top bar.
 - `project_nav(db, project, account, role, now)`: what every project page's header shows: role, members, whether this
   person can run runners, and the tab counts (open tasks, plans waiting, live runs, waiting blockers).
 - `overview(db, project, account, role, now)`: Needs attention (plans waiting, blockers waiting, silent claims), Working
@@ -13,7 +14,7 @@ import json
 
 from flask import g, request
 
-from . import auth, blockers, projects, runners, runs, tasks, ui
+from . import auth, blockers, notifications, projects, runners, runs, tasks, ui
 from .db import get_db
 
 RECENT = 12
@@ -123,7 +124,8 @@ def init_app(app):
         if account is None or request.path.startswith("/api/"):
             return {}
         db = get_db()
-        out = {"nav_badge": nav_badge(db, account), "nav_endpoint": request.endpoint or ""}
+        out = {"nav_badge": nav_badge(db, account), "nav_endpoint": request.endpoint or "",
+               "notif_count": notifications.unread_count(db, account["id"])}
         project = g.get("project")
         if project is not None:
             out["pnav"] = project_nav(db, project, account, g.get("project_role"), auth.now())

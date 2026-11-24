@@ -29,6 +29,8 @@ and an owner, manager or admin answers it there.
 | `identities.py` | Claude identities (`claude_identity`): the username and Claude account a signed-in person's runners report in `run_start` events; project-token events record nothing; first sighting audited as `identity_seen`; each row also has a surface (`auto-runner`, `cli`, `desktop` or `browser`; today every caller records `auto-runner`), and `init_db` rebuilds an older table without `surface` once, copying its rows as `auto-runner` (unverified in production) |
 | `audit.py` | The audit log |
 | `runners.py` | Runner presence: `POST /api/v1/runners/beat`, silent after 2 hours, pause/stop returned; Pause, Resume and Stop on the pages |
+| `notifications.py` | In-app notifications: `notify` (members only, no duplicates), `resolve`, `unread_count`, `for_account`, `delivery`, `recent`; the Notifications page, open and read-all (the admins' log is in `admin.py`) |
+| `push.py` | Browser push subscriptions: `POST /push/subscribe`, `POST /push/unsubscribe`, the Account page's push section |
 | `cli.py` | `python -m central init-db` and `python -m central create-admin --email X` |
 | `api/index.py`, `vercel.json` | Vercel entry point; every route is rewritten to it |
 | `templates/`, `static/style.css` | The pages (`base.html` holds the top bar) and their one stylesheet, served by Flask at `/static/style.css` because the CSP allows only same-origin styles; no inline styles or scripts |
@@ -43,6 +45,9 @@ Listed in `.env.example`; no value is ever kept in the repo.
 | `DATABASE_URL` | `sqlite:///path/to/central.db` locally, the Supabase `postgres://...` connection string in production. |
 | `CENTRAL_ENV` | `production` turns on the production check (so does Vercel's `VERCEL_ENV=production`). |
 | `PUBLIC_URL` | The service's `https://` address; required in production. |
+| `CENTRAL_VAPID_PUBLIC_KEY` | VAPID public key for browser push (shown to the page). Optional: push is off unless all three VAPID settings are set. |
+| `CENTRAL_VAPID_PRIVATE_KEY` | VAPID private key that signs pushes; never shown on a page. |
+| `CENTRAL_VAPID_SUBJECT` | Contact for push services, `mailto:...` or an `https://` address. |
 
 ## Local run and tests
 
@@ -145,6 +150,81 @@ may not stick over plain http. The API endpoints do not use the cookie.
 - **Starting a watcher:** `/auto-runner:central` offers watch mode (`/auto-runner:auto watch`) as its optional last
   step once a checkout is connected and signed in; people read about it in `docs/central-guide.md` ("Hands-free work").
   The service needs nothing for it beyond `runners/beat` and the task API. Unverified on the live service.
+
+## Notifications (`notifications.py`)
+
+A `notification` row is kept per person for each thing that waits on them. Only enabled **members** of the project
+get one: a site admin who is not a member gets none (they still see everything on My work). While a person has an
+unresolved notification with the same key, the same event again adds nothing; once the thing no longer waits, every
+notification with its key is marked resolved. Each new notification is also pushed to the person's browsers (see
+"Sending pushes" below).
+
+| Kind | When | Who | Text and link | Resolved when |
+|------|------|-----|---------------|---------------|
+| `plan` | a plan is posted (`tasks.post_plan`) or proposed for page approval (`POST /api/v1/tasks` with `"approval": "page"`) | the assignee, managers and owners | "Plan waiting: #N title" → the task page | any decision on the plan; a reassignment |
+| `changes` | a plan is sent back with changes | the assignee | "Changes asked on #N title" → the task page | the next plan is posted; a reassignment |
+| `assigned` | an admin adds a task for someone else, or gives a task to a new person (release with an assignee) | the new assignee | "Assigned to you: #N title" → the task page | not resolved |
+| `blocker` | a new raised blocker arrives through ingest | managers and owners | "Blocker waiting: question" → `/projects/<slug>/blockers/<id>` | the blocker is answered (`deliveries.record_decision`) |
+
+Taking a task back without a new person leaves a plan that still waits for approval (and its notification) as it is.
+`python -m central init-db` adds the table to an existing database.
+
+**Bell and Notifications page.** Signed in, the top bar shows a bell linking to `/notifications`, with a count of the
+person's notifications that are unread and still waiting (`notifications.unread_count`, from `shell`'s context
+processor); the count is hidden at zero. The page lists only the person's own notifications (`for_account`): waiting ones
+first, newest first, each with its project and time, and below them the resolved ones marked "Done" (never counted).
+Each notification is a small form: `POST /notifications/<id>/open` marks it read and redirects to its link, only when
+the link is a same-site path (`ui.safe_next`; otherwise back to the page); another person's id gets 404.
+`POST /notifications/read-all` ("Mark all as read") clears the count. Both carry the CSRF token like every form; no
+inline styles or scripts.
+
+**Push subscriptions (`push.py`).** A `push_subscription` row (account, endpoint (unique), `p256dh`, `auth`, user agent,
+`created_at`, `last_ok_at`, `failures`) records each browser where a person turned push on; `init-db` adds the table to
+an existing database. `POST /push/subscribe` takes the browser's `PushSubscription` JSON (`endpoint`, `keys.p256dh`,
+`keys.auth`) and `POST /push/unsubscribe` takes `{"endpoint": ...}`; both need a signed-in session (401 otherwise) and
+the page's CSRF token in the `X-CSRF-Token` header (`auth._check_csrf` accepts the header when the form field is
+missing; a missing or wrong token gets 400). The endpoint must be `https://` (400 otherwise). One row per endpoint:
+subscribing again updates the keys, and if another person turns push on in the same browser the row becomes theirs.
+Unsubscribe deletes the endpoint only when it is your own. Without all three `CENTRAL_VAPID_*` settings, subscribe
+answers 409 and the Account page's "Notifications on this browser" section says push is not set up on this service.
+With them, the section carries the public key, the CSRF token and both URLs as `data-` attributes, says in how many
+browsers the account has it on, and holds the Turn on / Turn off buttons, hidden until the browser script (N4) finds
+push support.
+
+**Service worker and the browser side.** `GET /sw.js` serves `static/sw.js` from the site root as `text/javascript`
+with `Service-Worker-Allowed: /` and `Cache-Control: no-cache`, so it can control scope `/`. On `push` it shows a
+notification from the JSON payload `{"title", "body", "link"}` (title defaults to "auto-runner"); on
+`notificationclick` it focuses a tab already showing the link or opens one. Links are same-origin only: any other
+link opens `/notifications`. In `static/app.js`, when the Account page has the push section and the browser supports
+service workers, `PushManager` and `Notification`, the script registers `/sw.js`, shows Turn on or Turn off for this
+browser's state, and: Turn on asks permission, subscribes with the VAPID public key from `data-vapid-public-key`
+(`userVisibleOnly`) and posts the subscription to the subscribe URL with `X-CSRF-Token`; Turn off unsubscribes the
+browser and posts its endpoint to the unsubscribe URL. Requests go only to same-origin URLs; no inline script, so it
+works under the CSP (`default-src 'self'` covers the worker and `fetch`). Not yet tried in a real browser
+(**unverified**); the tests check the headers and that the handlers exist.
+
+**Sending pushes.** `notifications.notify` pushes each notification it adds to every subscription of its recipient
+(`push.send_to_account`), with the payload `{"title": project name, "body": text, "link": link, "tag": key}`, through
+`push_sender(subscription, payload, vapid, timeout=5)`: in production `push.push_sender`, which uses `pywebpush` (in
+`requirements.txt`) with the VAPID private key and `CENTRAL_VAPID_SUBJECT` as the `sub` claim; tests set
+`app.config["PUSH_SENDER"]` to a fake. The notification row records `push_state`: `off` (with the reason in
+`push_detail`) when the VAPID settings are missing or the person has no subscription, `sent` when at least one browser
+took it, or `failed` with the reason in `push_detail`. A 404 or 410 from the push service deletes that subscription
+(the browser dropped it); any other failure adds one to its `failures`, and a success sets `last_ok_at` and resets
+`failures`. Pushing never raises into the caller: the request that caused the notification still succeeds. A repeated
+event that adds no notification sends no push. The push goes out before the caller commits, so if the caller's
+change is then rolled back, the person may already have been pushed about it. Each request waits at most 5 seconds,
+in the request that caused the notification. Not yet tried against a real push service (**unverified**); the tests use
+a fake sender.
+
+**Delivery and the notification log.** Each row on `/notifications` says how it reached the person
+(`notifications.delivery`): "push sent", "push failed: <reason>" (the reason from `push_detail`), "push off" (no VAPID
+keys or no browser with push turned on), or "in-app" for rows where no push was tried (made before pushing existed).
+Admins also have `GET /admin/notifications` ("Notification log", linked from Accounts): the newest 200 notifications
+across everyone (`notifications.recent`), each with its recipient, project, kind, delivery and time, newest first.
+`?account=` (an account id or email) and `?kind=` (`plan`, `changes`, `assigned`, `blocker`) narrow it, together or
+alone; an unknown account or kind lists nothing. Anyone else, signed out included, gets 404, like every admin page.
+Delivery words for real pushes are **unverified** until push is tried live.
 
 ## Presentation (UX audit foundations)
 

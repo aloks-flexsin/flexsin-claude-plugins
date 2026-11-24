@@ -17,6 +17,7 @@
     <a href="{{ url_for('projects.projects_page') }}"{% if ep.split(".")[0] in ("projects", "tasks", "runs", "blockers") %} aria-current="page"{% endif %}>Projects</a>
     {% if g.account.role == "admin" %}<a href="{{ url_for('admin.accounts_page') }}"{% if ep == "admin.accounts_page" %} aria-current="page"{% endif %}>Accounts</a>{% endif %}
   </nav>
+  <a class="bell" href="{{ url_for('notifications.notifications_page') }}"{% if ep.startswith("notifications.") %} aria-current="page"{% endif %} aria-label="Notifications{% if notif_count %}, {{ notif_count }} waiting{% endif %}" title="Notifications"><svg class="bell-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12 3a6 6 0 0 0-6 6v4l-2 3h16l-2-3V9a6 6 0 0 0-6-6zm-2 15a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>{% if notif_count %}<span class="pill attention bell-count">{{ notif_count }}</span>{% endif %}</a>
   <details class="account-menu">
     <summary aria-label="Account menu"><span class="av" aria-hidden="true">{{ g.account | display_name | initials }}</span><span class="account-name">{{ g.account | display_name }}</span></summary>
     <div class="menu">
