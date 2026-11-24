@@ -292,3 +292,58 @@ def test_release_clears_a_waiting_note(app, team, conn):
     assert post(team['clients']['admin'], '/projects/alpha/tasks/%d/release' % n, confirm='1').status_code == 302
     assert tasks.get(conn, team['alpha']['id'], n)['status'] == 'approved'
     assert not tasks.get(conn, team['alpha']['id'], n)['note']
+
+
+# ---------- closing a task from its page ----------
+
+def close(team, number, who='dev', reason='Not needed any more.', **form):
+    return post(team['clients'][who], '/projects/alpha/tasks/%d/close' % number, reason=reason, **form)
+
+
+def test_the_assignee_and_an_admin_close_an_open_task_with_a_reason(app, team, conn):
+    n, m = add(team), add(team, title='Other')
+    assert 'Close task' in close(team, n).get_data(as_text=True)                 # asks first
+    assert tasks.get(conn, team['alpha']['id'], n)['status'] == 'open'
+    assert close(team, n, confirm='1').status_code == 302
+    row = tasks.get(conn, team['alpha']['id'], n)
+    assert (row['status'], row['note'], row['claim_id']) == ('rejected', 'Not needed any more.', None)
+    assert close(team, m, who='admin', reason='Duplicate.', confirm='1').status_code == 302
+    assert tasks.get(conn, team['alpha']['id'], m)['status'] == 'rejected'
+    assert take(app, team)['task'] is None                                       # next no longer takes it
+    assert len(audit.rows(conn, 'task.close')) == 2
+    page = team['clients']['viewer'].get('/projects/alpha/tasks/%d' % n).get_data(as_text=True)
+    assert 'closed this task: Not needed any more.' in page and 'Dev closed' in page
+
+
+def test_close_is_for_deciders_and_shows_its_form_only_to_them(app, team, conn):
+    n = add(team, who='manager')
+    assert close(team, n, who='dev', confirm='1').status_code == 403            # a developer who is not the assignee
+    assert tasks.get(conn, team['alpha']['id'], n)['status'] == 'open'
+    assert close(team, n, who='dev').status_code == 403                          # refused before any confirm step
+    assert 'id="close-reason"' not in team['clients']['dev'].get('/projects/alpha/tasks/%d' % n).get_data(as_text=True)
+    assert 'id="close-reason"' in team['clients']['manager'].get('/projects/alpha/tasks/%d' % n).get_data(as_text=True)
+    assert close(team, n, who='manager', confirm='1').status_code == 302
+
+
+def test_a_building_or_final_task_is_not_closed(app, team, conn):
+    n = add(team)
+    plan(app, team, n, take(app, team)['claim'])
+    decide(team, n, 'approve')
+    assert take(app, team)['action'] == 'build'
+    resp = close(team, n, confirm='1')
+    assert resp.status_code == 409 and 'stop its runner first' in resp.get_data(as_text=True)
+    assert tasks.get(conn, team['alpha']['id'], n)['status'] == 'building'
+    assert 'id="close-reason"' not in team['clients']['dev'].get('/projects/alpha/tasks/%d' % n).get_data(as_text=True)
+    done = add(team, title='Done one')
+    assert close(team, done, confirm='1').status_code == 302
+    assert close(team, done, confirm='1').status_code == 409                     # already closed
+    assert len(audit.rows(conn, 'task.close')) == 1
+
+
+def test_close_needs_a_reason_and_csrf(app, team, conn):
+    n = add(team)
+    assert close(team, n, reason='  ', confirm='1').status_code == 400
+    assert close(team, n, reason='x' * 501, confirm='1').status_code == 400
+    assert tasks.get(conn, team['alpha']['id'], n)['status'] == 'open'
+    resp = team['clients']['dev'].post('/projects/alpha/tasks/%d/close' % n, data={'reason': 'x', 'confirm': '1'})
+    assert resp.status_code == 400 and tasks.get(conn, team['alpha']['id'], n)['status'] == 'open'

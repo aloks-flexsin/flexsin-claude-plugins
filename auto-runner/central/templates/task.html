@@ -23,6 +23,19 @@
 
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 
+{% if can_close %}
+<details class="pop" id="close">
+  <summary class="btn">Close task…</summary>
+  <form method="post" action="{{ url_for('tasks.task_close', slug=project.slug, number=task.number) }}" class="pop-body"
+        data-confirm="Close task #{{ task.number }} {{ task.title }}?" data-confirm-detail="The task is marked rejected with your reason and no runner will take it." data-confirm-action="Close task">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="close-reason">Why is it closed?</label>
+    <textarea id="close-reason" name="reason" rows="3" maxlength="500" required></textarea>
+    <button type="submit" class="btn danger">Close task</button>
+  </form>
+</details>
+{% endif %}
+
 {% if can_decide %}
 <div class="decision-bar" id="decide">
   <div><strong>The plan waits for your decision.</strong>

@@ -119,6 +119,12 @@ may not stick over plain http. The API endpoints do not use the cookie.
   A queued task's heartbeat may carry a `note` (at most 300 characters) saying why it waits, such as "waits:
   <branch> is not merged into origin/main yet"; the task page shows it under the Queued line. The note is cleared when
   the task moves to `building` (a heartbeat or the next-task call) or is released (unverified until seen live).
+- **Close a task** from its page (unverified until used live): `POST /projects/<slug>/tasks/<n>/close` with a required
+  `reason` (at most 500 characters), by the assignee or a project manager, owner or admin, after a confirm step. It works
+  for `open`, `planning`, `changes_requested`, `approved` and `queued` tasks: the task becomes `rejected`, the reason is
+  stored in `note`, the claim ends and `task.close` is audited. A `building` task is refused ("stop its runner first");
+  final states are refused too. The task page shows the Close form for those states and roles only, and its Activity
+  says who closed it and why.
 - **Plan approval** on the task page: Approve, Request changes (a comment is required) or Reject, by the assignee or a
   project manager, owner or admin. Audited.
 - **Claims:** only the runner holding a task's claim may post its plan, beat or report. A claim lives while its runner

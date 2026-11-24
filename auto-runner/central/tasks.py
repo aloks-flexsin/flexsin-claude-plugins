@@ -252,6 +252,32 @@ def decide(db, project, row, account, decision, comment, moment):
     return get(db, project["id"], row["number"])
 
 
+CLOSABLE = ("open", "planning", "changes_requested", "approved", "queued")
+MAX_CLOSE_REASON = 500
+
+
+def close(db, project, row, account, reason, moment):
+    """End a task that will not be built: rejected, with the reason in `note` and the claim cleared."""
+    if not can_decide(db, project, row, account):
+        raise TaskError("only the assignee or a manager, owner or admin closes a task", 403)
+    if row["status"] == "building":
+        raise TaskError("task %d is being built: stop its runner first" % row["number"], 409)
+    if row["status"] not in CLOSABLE:
+        raise TaskError("task %d is already %s" % (row["number"], row["status"].replace("_", " ")), 409)
+    reason = (reason or "").strip() if isinstance(reason, str) else ""
+    if not reason:
+        raise TaskError("say why the task is closed")
+    if len(reason) > MAX_CLOSE_REASON:
+        raise TaskError("the reason is at most %d characters" % MAX_CLOSE_REASON)
+    at = _at(moment)
+    db.execute("UPDATE project_task SET status = 'rejected', note = ?, claim_id = NULL, claim_runner = NULL,"
+               " heartbeat_at = NULL, decided_by = ?, decided_at = ?, updated_at = ? WHERE id = ?",
+               (reason, account["id"], at, at, row["id"]))
+    for kind in ("plan", "changes"):
+        notifications.resolve(db, notifications.task_key(project, row["number"], kind), moment)
+    return reason
+
+
 def release(db, project, row, assignee, moment):
     """An admin ends the claim (and, with `assignee`, gives the task to someone else). Work in progress goes back to
     the step it was at: planning -> open, building -> approved."""
@@ -585,6 +611,7 @@ def _detail(number, error=None, status=200):
                            step=STEP_OF.get(row["status"]), stale_hours=int(_runs.STALE.total_seconds() // 3600),
                            live=live, quiet=bool(row["claim_id"]) and not live and row["status"] in RUNNER_SIDE,
                            can_decide=row["status"] == "plan_review" and can_decide(db, g.project, row, g.account),
+                           can_close=row["status"] in CLOSABLE and can_decide(db, g.project, row, g.account),
                            is_admin=g.account["role"] == projects.ADMIN, assignees=_runners(db, g.project),
                            activity=_activity(db, g.project, number, task_runs), error=error,
                            ttl_hours=int(CLAIM_TTL.total_seconds() // 3600), shots=shots,
@@ -620,6 +647,36 @@ def task_decide(slug, number):
                  detail={"number": number})
     db.commit()
     return redirect(ui.safe_next(request.form.get("next")) or url_for("tasks.task_page", slug=slug, number=number))
+
+
+@bp.post("/projects/<slug>/tasks/<int:number>/close")
+@project_access("viewer")
+def task_close(slug, number):
+    db, moment = get_db(), auth.now()
+    row = get(db, g.project["id"], number)
+    if row is None:
+        abort(404)
+    reason = request.form.get("reason")
+    try:
+        if not ui.confirmed():
+            # check first, so a refused close never reaches the confirm step
+            if not can_decide(db, g.project, row, g.account):
+                raise TaskError("only the assignee or a manager, owner or admin closes a task", 403)
+            if row["status"] == "building" or row["status"] not in CLOSABLE:
+                close(db, g.project, row, g.account, reason, moment)
+            text = (reason or "").strip()
+            if not text or len(text) > MAX_CLOSE_REASON:
+                close(db, g.project, row, g.account, reason, moment)
+            return ui.confirm_page("Close task #%d %s?" % (number, row["title"]),
+                                   "The task is marked rejected with your reason and no runner will take it.",
+                                   "Close task", url_for("tasks.task_page", slug=slug, number=number))
+        reason = close(db, g.project, row, g.account, reason, moment)
+    except TaskError as e:
+        return _detail(number, error=str(e), status=e.status)
+    audit.record(db, "task.close", _at(moment), account_id=g.account["id"], project_id=g.project["id"],
+                 detail={"number": number, "reason": reason})
+    db.commit()
+    return redirect(url_for("tasks.task_page", slug=slug, number=number))
 
 
 @bp.post("/projects/<slug>/tasks/<int:number>/release")
