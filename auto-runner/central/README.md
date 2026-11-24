@@ -175,7 +175,9 @@ may not stick over plain http. The API endpoints do not use the cookie.
   and Approve.
 - **Account** (`/account`, was Password): your name (`POST /account/name`) and your password (`POST /account/password`,
   as before; `GET /account/password` redirects here). Admins set anyone's name from Accounts
-  (`POST /admin/accounts/<id>/name`). Name changes are audited as `account.name`.
+  (`POST /admin/accounts/<id>/name`). Name changes are audited as `account.name`. The page also lists **Your Claude
+  accounts** (from `identities.of_account`); on **Runs**, a run sent with a personal token shows the person's name,
+  username and Claude account (runs from project tokens keep the old text; unverified in production).
 
 ## My work and task progress
 

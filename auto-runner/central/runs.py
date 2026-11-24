@@ -59,8 +59,9 @@ def summarise(events, now):
             "run": run_id, "user": None, "account": None, "branch": None, "base": None, "started": e.get("time"),
             "last": e.get("time"), "ended": None, "exit": None, "reason": None, "items": {}, "current": None,
             "tests": None, "pushed": None, "pr_url": None, "publish_error": None, "blockers": 0, "signed_in": None,
-            "task": None})
+            "signed_in_name": None, "task": None})
         r["signed_in"] = r["signed_in"] or e.get("_signed_in")
+        r["signed_in_name"] = r["signed_in_name"] or e.get("_signed_in_name")
         r["last"] = e.get("time") or r["last"]
         if kind in ("run_start", "run_end") and isinstance(detail.get("task"), int) and not isinstance(detail["task"], bool):
             r["task"] = detail["task"]                    # the central task this run builds (plugin 0.21.0+)
@@ -155,7 +156,7 @@ def for_task(db, project_id, number, now):
 
 
 def project_events(db, project_id, limit=MAX_EVENTS):
-    rows = db.query("SELECT e.body, a.email FROM event e LEFT JOIN account a ON a.id = e.account_id"
+    rows = db.query("SELECT e.body, a.email, a.name FROM event e LEFT JOIN account a ON a.id = e.account_id"
                     " WHERE e.project_id = ? AND e.type IN (%s) ORDER BY e.ts DESC LIMIT %d"
                     % (", ".join("?" * len(SHOWN_TYPES)), int(limit)), (project_id,) + SHOWN_TYPES)
     events = []
@@ -165,7 +166,7 @@ def project_events(db, project_id, limit=MAX_EVENTS):
         except (TypeError, ValueError):
             continue
         if isinstance(body, dict):
-            events.append(dict(body, _signed_in=row["email"]))    # the account the service verified (personal token)
+            events.append(dict(body, _signed_in=row["email"], _signed_in_name=row["name"]))    # the account the service verified (personal token)
     return events
 
 

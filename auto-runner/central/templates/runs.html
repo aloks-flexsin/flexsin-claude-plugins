@@ -4,7 +4,11 @@
 {% block title %}{{ project.name }} runs{% endblock %}
 {% block body_attrs %} data-refresh="30"{% endblock %}
 {% macro who(r) -%}
+{% if r.signed_in and r.user and r.account -%}
+{{ ui.person(r.signed_in, r.signed_in_name, r.user ~ " · Claude account " ~ r.account) }}
+{%- else -%}
 {{ ui.person(r.user or "unknown", r.user or "Unknown", (r.account ~ " account") if r.account else ("runner before 0.17.0" if not r.user else None)) }}
+{%- endif %}
 {%- endmacro %}
 {% block content %}
 {{ header(project, "runs") }}
