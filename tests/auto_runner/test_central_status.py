@@ -166,3 +166,22 @@ def test_the_guide_and_command_exist_and_say_the_essentials():
     assert 'autocentral.py" status' in command and 'Never ask for a token' in command and '--apply' in command
     assert 'login start' in command and 'login wait' in command
     assert ac.GUIDE == root / 'docs' / 'central-guide.md'
+
+
+def test_the_command_and_guide_offer_watch_mode():
+    root = ai.HERE.parent
+    command = (root / 'commands' / 'central.md').read_text(encoding='utf-8')
+    assert 'go to step 9 (the optional watch mode)' in command   # a connected check reaches the offer
+    step = command[command.index('9. **Optional last step: watch mode.**'):]
+    assert '/auto-runner:auto watch' in step and 'clear yes' in step and 'CONNECTED' in step
+    assert 'unverified' in step and 'Hands-free work' in step and '.auto/STOP' in step
+    guide = (root / 'docs' / 'central-guide.md').read_text(encoding='utf-8')
+    section = guide[guide.index('## Hands-free work'):]
+    section = section[:section.index('\n## ')]
+    for needle in ('/auto-runner:auto watch', '/auto-runner:central', 'watch.daily_budget_usd', 'watch.plan_budget_usd',
+                   'Pause', 'Resume', 'Stop', '.auto/STOP', 'unverified', 'My work'):
+        assert needle in section
+    assert '"W. Watch mode"' in command and 'W. Watch mode' in (root / 'commands' / 'auto.md').read_text(encoding='utf-8')
+    for readme in (root / 'README.md', root / 'central' / 'README.md'):
+        text = readme.read_text(encoding='utf-8')
+        assert 'Hands-free work' in text and '/auto-runner:auto watch' in text

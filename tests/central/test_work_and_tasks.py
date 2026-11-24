@@ -93,18 +93,18 @@ def test_my_work_warns_when_a_runner_went_quiet(app, team, conn, clock):
 
 def test_tasks_list_tabs_mine_and_search(app, team, conn):
     planned(app, team, title='CSV export')
-    add(team, title='Dark mode')
+    add(team, title='Dark sidebar')       # not "Dark mode": the top bar's theme button carries that text on every page
     add(team, title='Admin report', who='admin', assignee=team['accounts']['dev']['id'])
     add(team, title='Owner thing', who='owner')
     c = team['clients']['dev']
     page = c.get('/projects/alpha/tasks').get_data(as_text=True)                   # opens on the first tab with tasks
     assert 'aria-current="page">Needs approval <span class="count">1</span>' in page and 'CSV export' in page
-    assert 'Open <span class="count">3</span>' in page and 'Dark mode' not in page
+    assert 'Open <span class="count">3</span>' in page and 'Dark sidebar' not in page
     page = c.get('/projects/alpha/tasks?state=open&mine=1').get_data(as_text=True)
-    assert 'Dark mode' in page and 'Admin report' in page and 'Owner thing' not in page
+    assert 'Dark sidebar' in page and 'Admin report' in page and 'Owner thing' not in page
     assert 'Open <span class="count">2</span>' in page and 'mine=1' in page        # tabs keep the filter
     page = c.get('/projects/alpha/tasks?state=open&q=DARK').get_data(as_text=True)
-    assert 'Dark mode' in page and 'Admin report' not in page
+    assert 'Dark sidebar' in page and 'Admin report' not in page
     assert 'No task here matches.' in c.get('/projects/alpha/tasks?state=done&q=zzz').get_data(as_text=True)
 
 

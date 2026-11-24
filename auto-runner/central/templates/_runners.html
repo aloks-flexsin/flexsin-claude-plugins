@@ -1,0 +1,43 @@
+{#- Watching runners (runners.views) with Pause, Resume and Stop for the runner's person and admins. Import with:
+    {% import "_runners.html" as rn %}  then  {{ rn.section(runners, next_url) }} -#}
+{% import "_ui.html" as ui %}
+
+{% macro control_form(r, action, label, question, detail, next_url) -%}
+<form method="post" action="{{ url_for('runners.control_runner', slug=r.project.slug, runner_id=r.id, action=action) }}" class="inline" data-confirm="{{ question }}" data-confirm-detail="{{ detail }}" data-confirm-action="{{ label }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="next" value="{{ next_url }}">
+  <button type="submit" class="btn{{ ' danger' if action == 'stop' }}">{{ label.split(' ')[0] }}</button>
+</form>
+{%- endmacro %}
+
+{% macro section(runners, next_url, title="Runners", show_project=False, empty_text="No runner has checked in with this project.") -%}
+<section class="block" id="runners">
+  <div class="block-head"><h2>{{ title }}</h2><span class="muted">Watching runners say where they are each step</span></div>
+  {% if runners %}
+  <div class="list">
+    {% for r in runners %}
+    {% set name = r.label | runner_label %}
+    <div class="list-row runner-row" data-runner="{{ r.id }}">
+      {{ ui.person(r.person, None, name) }}
+      <div class="grow">
+        <div>{% if r.key == "other" %}<span class="runner-state">{{ r.text }}</span>{% else %}{{ ui.status("runner", r.key, ("task #" ~ r.task) if r.task and r.key in ("planning", "building") else "") }}{% endif %}
+          {%- if r.task and r.key in ("planning", "building") %} <a href="{{ url_for('tasks.task_page', slug=r.project.slug, number=r.task) }}">Open task</a>{% endif %}
+          {%- if r.key == "silent" %} <span class="muted">no beat for 2 hours or more</span>{% endif %}</div>
+        <div class="row-sub muted">{% if show_project %}{{ r.project.name }} · {% endif %}Last beat {{ ui.when(r.beat_at) }} · spent today ${{ "%.2f" | format(r.spend_usd or 0) }}</div>
+        {% if r.note %}<div class="warn-line">{{ r.note }}</div>{% endif %}
+      </div>
+      {% if r.can_control %}
+      <div class="row-actions">
+        {% if r.control %}{{ control_form(r, "resume", "Resume runner", "Resume " ~ name ~ "?", "It takes work again at its next step. A runner that has already ended must be started again on its computer.", next_url) }}
+        {% else %}{{ control_form(r, "pause", "Pause runner", "Pause " ~ name ~ "?", "It finishes the step it is on, then waits without taking new work until someone resumes it.", next_url) }}{% endif %}
+        {% if r.control != "stop" %}{{ control_form(r, "stop", "Stop runner", "Stop " ~ name ~ "?", "It finishes the step it is on and ends. Someone has to start it again on its computer.", next_url) }}{% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  {{ ui.empty(empty_text) }}
+  {% endif %}
+</section>
+{%- endmacro %}

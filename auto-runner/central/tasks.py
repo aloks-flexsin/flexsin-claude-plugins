@@ -7,7 +7,8 @@ Life of a task (`status`):
   open --claim--> planning --plan posted--> plan_review --approve--> approved --claim--> building --report done--> done
                       ^                        | request changes                                 \\--report stopped: stays building
                       +---- changes_requested <+         reject --> rejected
-A task typed in the terminal (`/auto-runner:auto <task>`, plan approved there) is recorded straight as `building`.
+A task typed in the terminal (`/auto-runner:auto <task>`, plan approved there) is recorded straight as `building`;
+a plan proposed from the terminal (`"approval": "page"`) is recorded as `plan_review`, claimed, and approved on the page.
 
 **Claims.** A runner takes its person's next task with `POST /api/v1/tasks/next` and gets a claim id; only that claim
 may post a plan, beat or report. A claim stays alive while its runner sends a heartbeat (or any task call) within
@@ -298,18 +299,25 @@ def api_next():
 @bp.post("/api/v1/tasks")
 @tokens.bearer_token("ingest")
 def api_record():
-    """A task typed in the terminal, its plan approved there: recorded as `building`, claimed by this runner."""
+    """A task planned in the terminal, claimed by this runner. Its plan approved there (the default): recorded as
+    `building`. With `"approval": "page"` the plan is proposed instead: stored as `plan_review` (plan and items kept, the
+    claim held while it waits) for a person to approve on the task page."""
     account, moment, body = _api_account(), auth.now(), _body()
 
     def run():
         db = get_db()
+        approval = body.get("approval") or "terminal"
+        if approval not in ("terminal", "page"):
+            raise TaskError('approval is "terminal" (the default) or "page"')
+        on_page = approval == "page"
         runner = _text(body.get("runner"), 200, "the runner") or "a runner"
+        plan = _text(body.get("plan"), MAX_PLAN, "the plan", required=on_page)
+        items = _text(body.get("items"), MAX_PLAN, "the items", required=on_page)
         row = create(db, g.token_project, account, account, body.get("title"), body.get("description"), moment,
-                     status="building", plan=_text(body.get("plan"), MAX_PLAN, "the plan"),
-                     items=_text(body.get("items"), MAX_PLAN, "the items"), runner=runner)
+                     status="plan_review" if on_page else "building", plan=plan, items=items, runner=runner)
         _note_identity(db, account, runner, moment)
         audit.record(db, "task.create", _at(moment), account_id=account["id"], project_id=g.token_project["id"],
-                     detail={"number": row["number"], "via": "terminal"})
+                     detail={"number": row["number"], "via": "terminal", "approval": approval})
         db.commit()
         return jsonify(task=public(row, moment, full=True), claim=row["claim_id"])
     return _api(run)

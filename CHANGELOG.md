@@ -5,6 +5,24 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Central pages: a dark mode toggle in the top bar ("Dark mode" / "Light mode", signed in and signed out). It posts to
+  `POST /theme`, which takes `light` or `dark` (anything else is 400), keeps the choice in the `theme` cookie for a
+  year and returns to the page it came from (same-site paths only, else `/my`). Light stays the default.
+- Propose a terminal plan for approval on the page: `POST /api/v1/tasks` accepts `"approval": "page"` and stores the
+  task as `plan_review` (plan and items kept, claim held by the runner) instead of `building`; the default is unchanged.
+  `autotasks.py propose --title T --plan FILE --items FILE` uses it, and `autotasks.py list` shows such a task as
+  "waiting for approval". Unverified against the live service.
+- Auto-runner watch mode from setup: `/auto-runner:central` offers to start the watcher as its optional last step once
+  the checkout is connected and signed in; the central guide gains a "Hands-free work" section (starting it, limits,
+  runners on the pages, Pause, Resume and Stop), and the plugin and central READMEs say so. Unverified against the live
+  service.
+- Auto-runner watch mode reports and obeys: the watcher beats the central service (`runners/beat`) with what it is
+  doing (watching, planning #N, building #N, paused) and its spend, and between steps obeys Pause (waits without taking
+  work) and Stop (ends cleanly) pressed on the pages. Unverified against the live service.
+- Auto-runner watch mode guardrails and command: `/auto-runner:auto watch` starts the watcher (`bin/autowatch.py`). Every
+  `claude -p` it starts (plans, spec checks, builds) adds its reported cost to `.auto/run/spend-<local date>.json`; at
+  `watch.daily_budget_usd` (default 20 USD) it pauses until local midnight. At Claude's usage limit it waits for the
+  reset; only one watcher (so one build) runs per checkout (`.auto/run/watch.lock`). Unverified against the live CLI.
 - Central service, sign-in and account (UX audit PR 6): a focused **sign-in** with Show and a lockout explanation that
   never reveals whether an email exists; **invite** links ask for your name and show a live password checklist; the
   **device** page shows the code large with a countdown; **Account** (was Password) sets your name and password, and

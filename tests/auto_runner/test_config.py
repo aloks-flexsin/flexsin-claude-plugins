@@ -86,7 +86,7 @@ SCHEMA = json.loads((BIN.parent / 'config.schema.json').read_text(encoding='utf-
 OLD_ONLY = {'test_command': 'pytest -q', 'check_only': False, 'queue_file': 'q.md', 'rules_files': ['CLAUDE.md'],
             'share_dirs': ['venv'], 'worktree_suffix': '-x', 'base_branch': 'main', 'branch_prefix': 'run/',
             'commit_trailer': 'T: x', 'env_files': ['.env'], 'check_command': 'npm run lint',
-            'path_prepend': ['tools/bin']}
+            'path_prepend': ['tools/bin'], 'enforce_runner': True}
 V2_FULL = {
     'models': {'implementer': 'sonnet', 'planner': 'opus', 'plan_reviewer': 'opus', 'work_reviewer': 'claude-opus-5-5',
                'tester': 'haiku', 'scribe': 'inherit'},
@@ -169,7 +169,7 @@ def test_old_only_config_loads_exactly_as_before(tmp_path):
     assert cfg.DEFAULTS == {'test_command': '', 'check_only': False, 'queue_file': '.auto/queue.md', 'rules_files': [],
                             'share_dirs': [], 'worktree_suffix': '-auto', 'base_branch': '', 'branch_prefix': 'auto/',
                             'commit_trailer': '', 'env_files': [], 'check_command': '',
-                            'path_prepend': []}
+                            'path_prepend': [], 'enforce_runner': False}
     _write_cfg(tmp_path, OLD_ONLY)
     assert cfg.load(tmp_path) == OLD_ONLY                     # no v2 section appears unless the file sets it
     assert all(cfg.section(cfg.load(tmp_path), s) == {} for s in cfg.SECTIONS)
@@ -239,6 +239,33 @@ def test_model_aliases_allowed_list(tmp_path):
         _write_cfg(tmp_path, {'models': {'implementer': 'opus', 'scribe': bad}})
         problems = safe.model_problems(cfg.load(tmp_path))                # the loader accepts any text; preflight refuses
         assert len(problems) == 1 and '"models.scribe"' in problems[0], bad
+
+
+def test_watch_section_defaults_loads_and_refuses_unknown(tmp_path):
+    assert cfg.watch(cfg.load(tmp_path)) == {'poll_seconds': 300, 'plan_budget_usd': 2, 'daily_budget_usd': 20}
+    good = {'watch': {'poll_seconds': 60, 'plan_budget_usd': 1.5, 'daily_budget_usd': 10}}
+    _write_cfg(tmp_path, good)
+    c = cfg.load(tmp_path)
+    assert cfg.section(c, 'watch') == good['watch'] and cfg.watch(c) == good['watch'] and _schema_ok(SCHEMA, good)
+    _write_cfg(tmp_path, {'watch': {'poll_seconds': 30}})
+    assert cfg.watch(cfg.load(tmp_path)) == {'poll_seconds': 30, 'plan_budget_usd': 2, 'daily_budget_usd': 20}
+    for bad, needle in [({'watch': {'interval': 5}}, 'unknown key "watch.interval'),
+                        ({'watch': {'poll_seconds': 1.5}}, 'watch.poll_seconds'),
+                        ({'watch': {'plan_budget_usd': -1}}, 'watch.plan_budget_usd'),
+                        ({'watch': {'daily_budget_usd': '20'}}, 'watch.daily_budget_usd'),
+                        ({'watch': 300}, '"watch" must be an object')]:
+        _write_cfg(tmp_path, bad)
+        with pytest.raises(cfg.ConfigError, match=needle.replace('.', r'\.')):
+            cfg.load(tmp_path)
+        assert not _schema_ok(SCHEMA, bad), bad
+
+
+def test_planner_prompt_names_every_required_section():
+    text = (BIN.parent / 'docs' / 'planner-prompt.md').read_text(encoding='utf-8')
+    headings = [line[3:].strip() for line in text.splitlines() if line.startswith('## ')]
+    assert headings == ['Intent', 'Key decisions', 'Slices', 'Journeys', 'Reuse check', 'Queue items', 'Needs a person']
+    for needle in ['*Acceptance:*', '*Slice:*', '*Kind:*', '*Expect:*']:
+        assert needle in text
 
 
 QUEUE = """# Queue

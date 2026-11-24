@@ -107,6 +107,24 @@ yet: check My work.
   loses its claim. An admin can release a claim or give the task to someone else; the old runner stops that task at its
   next step.
 
+## Hands-free work (watch mode; unverified on the live service)
+Instead of running `/auto-runner:auto` again and again, one computer can keep taking your tasks on its own.
+- **Start it:** `/auto-runner:central` offers it as its optional last step once the checkout is connected and signed in,
+  or run **`/auto-runner:auto watch`** yourself. One watcher runs per checkout.
+- **What it does:** it takes your next task, plans a new one (the plan **waits for approval** on the task's page, as
+  always) and builds an approved one on its own branch and pull request, then takes the next. When nothing is waiting
+  it checks again every `watch.poll_seconds` (default 300 seconds).
+- **Limits:** each plan is capped at `watch.plan_budget_usd` (default 2 USD); everything it runs together at
+  `watch.daily_budget_usd` per local day (default 20 USD), after which it pauses until midnight. At Claude's usage limit
+  it waits for the reset.
+- **Seeing it:** the project's **Overview** and **Runs**, and **Your runners** on **My work**, show each runner, what it
+  is doing in words (*Watching for work*, *Planning*, *Building · task #3*, *Paused*, *Silent* after 2 hours without a
+  beat), its last beat and today's spend.
+- **Controlling it:** its own person or an admin presses **Pause** (it finishes the step it is on, then waits without
+  taking work), **Resume** or **Stop** (it ends cleanly); each asks first and is recorded in Recent activity. On the
+  computer itself, creating `.auto/STOP` also stops it (delete the file before starting it again).
+- Nobody merges or deploys what it builds: its pull requests wait for a person, as every run's do.
+
 ## Answering a blocker
 1. A run raises a blocker and stops working on that item; other ready items go on. `/auto-runner:central` and
    `/auto-runner:status` list it, and the page shows it at `<service>/projects/<slug>/blockers`.

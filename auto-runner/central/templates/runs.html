@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_ui.html" as ui %}
+{% import "_runners.html" as rn %}
 {% from "_project.html" import header with context %}
 {% block title %}{{ project.name }} runs{% endblock %}
 {% block body_attrs %} data-refresh="30"{% endblock %}
@@ -30,6 +31,8 @@
   {{ ui.empty("No runner is working on this project right now.") }}
   {% endif %}
 </section>
+
+{{ rn.section(runners, request.full_path if request.query_string else request.path) }}
 
 <section class="block">
   <div class="block-head"><h2>History</h2></div>

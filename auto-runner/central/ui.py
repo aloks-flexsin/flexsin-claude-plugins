@@ -113,6 +113,12 @@ STATUS = {
     ("run", "finished"): ("Finished", "ok", "dot"),
     ("run", "stopped"): ("Stopped", "bad", "square"),
     ("run", "silent"): ("Silent", "bad", "square"),
+    # watching runners (runners.words)
+    ("runner", "watching"): ("Watching for work", "info", "ring"),
+    ("runner", "planning"): ("Planning", "info", "dot"),
+    ("runner", "building"): ("Building", "info", "dot"),
+    ("runner", "paused"): ("Paused", "attention", "square"),
+    ("runner", "silent"): ("Silent", "bad", "square"),
     # blockers
     ("blocker", "OPEN"): ("Waiting for an answer", "attention", "dot"),
     ("blocker", "ESCALATED"): ("Escalated", "attention", "dot"),
@@ -268,8 +274,15 @@ def safe_next(value):
     return value
 
 
+def theme():
+    """The colour theme for this request: `dark` only when the `theme` cookie says exactly that, else `light`.
+    Light is the default; a missing or unknown cookie value never changes it."""
+    return "dark" if request.cookies.get("theme") == "dark" else "light"
+
+
 def init_app(app):
     from markupsafe import Markup
+    app.context_processor(lambda: {"theme": theme()})
     env = app.jinja_env
     env.filters.update(ago=ago, when_abs=when_abs, iso=iso, reason_text=reason_text, next_step=next_step,
                        runner_label=runner_label, display_name=display_name, initials=initials, pr_label=pr_label,

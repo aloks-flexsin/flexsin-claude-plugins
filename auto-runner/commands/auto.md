@@ -1,12 +1,29 @@
 ---
 description: Plan a task, then (once you accept the plan) queue it and run it unattended in a separate worktree
-argument-hint: [<what to build>] [budget=5] [iterations=N]   (no task: take my next task from the central service)
+argument-hint: [<what to build>] [budget=5] [iterations=N]   (no task: take my next task from the central service; `watch`: keep taking them)
 ---
 
 The user wants this done in autonomous mode: **$ARGUMENTS**
 
+**If the arguments are exactly `watch`**, follow "W. Watch mode" and stop there.
 **If no task is given** (only `budget=`/`iterations=` or nothing), follow "0. My next task from the central service" and
 stop there. Otherwise follow steps 1 to 3 in order. Do not skip the plan, and do not start the run before the plan is accepted.
+
+## W. Watch mode (`/auto-runner:auto watch`)
+The watcher takes this person's central tasks one after another with no one at the terminal (decision record 0009): it
+plans new tasks headlessly (the plan waits for approval on the central page) and builds approved ones. It needs the
+project connected and this computer signed in (`/auto-runner:central`).
+1. Start it in the background (Bash tool with `run_in_background: true`):
+   `python "${CLAUDE_PLUGIN_ROOT}/bin/autowatch.py" --project "${CLAUDE_PROJECT_DIR}"`.
+   If it prints "Not started: another watcher holds .auto/run/watch.lock", one is already running on this checkout (only
+   one build runs per checkout): tell the user and stop. If it prints "Not started" for another reason, show it (usually:
+   run `/auto-runner:central` first) and stop.
+2. Tell the user, briefly: what it does each step; the guardrails (each plan is capped by `watch.plan_budget_usd`, default
+   2 USD; all of its `claude -p` calls together by `watch.daily_budget_usd` per local day, default 20 USD, after which it
+   pauses until local midnight; at Claude's usage limit it waits for the reset); where to look (`.auto/run/watch.json` for
+   its state and last step, `.auto/run/spend-<date>.json` for today's spend, the project's Tasks page for plans to
+   approve); and how to stop it: create `.auto/STOP` (and delete it before starting it again).
+3. Do not start the runner yourself while it watches, and do not merge, push or deploy anything it builds.
 
 ## 0. My next task from the central service (no task given)
 Tasks live on the central service (decision record 0007); this needs the project connected and this computer signed in
