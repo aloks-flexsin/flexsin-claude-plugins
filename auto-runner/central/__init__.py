@@ -31,7 +31,7 @@ def create_app(config=None):
 
     app.teardown_appcontext(db.close_db)
 
-    from . import access, admin, auth, blockers, deliveries, ingest, invites, personal, runs, tasks
+    from . import access, admin, auth, blockers, deliveries, ingest, invites, mywork, personal, runs, tasks
     auth.init_app(app)
     app.register_blueprint(admin.bp)
     app.register_blueprint(access.bp)
@@ -42,6 +42,7 @@ def create_app(config=None):
     app.register_blueprint(invites.bp)
     app.register_blueprint(personal.bp)
     app.register_blueprint(tasks.bp)
+    app.register_blueprint(mywork.bp)
 
     @app.get("/healthz")
     def healthz():

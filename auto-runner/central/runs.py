@@ -9,6 +9,7 @@ a crash, a closed laptop, a lost connection). Only the newest MAX_EVENTS events 
 """
 import datetime
 import json
+import re
 
 from flask import Blueprint, g, render_template
 
@@ -57,9 +58,12 @@ def summarise(events, now):
         r = runs.setdefault(run_id, {
             "run": run_id, "user": None, "account": None, "branch": None, "base": None, "started": e.get("time"),
             "last": e.get("time"), "ended": None, "exit": None, "reason": None, "items": {}, "current": None,
-            "tests": None, "pushed": None, "pr_url": None, "publish_error": None, "blockers": 0, "signed_in": None})
+            "tests": None, "pushed": None, "pr_url": None, "publish_error": None, "blockers": 0, "signed_in": None,
+            "task": None})
         r["signed_in"] = r["signed_in"] or e.get("_signed_in")
         r["last"] = e.get("time") or r["last"]
+        if kind in ("run_start", "run_end") and isinstance(detail.get("task"), int) and not isinstance(detail["task"], bool):
+            r["task"] = detail["task"]                    # the central task this run builds (plugin 0.21.0+)
         if kind == "run_start":
             r["started"] = e.get("time")
             for k in ("user", "account", "branch", "base"):
@@ -96,6 +100,34 @@ def summarise(events, now):
         out.append(_display(r))
     out.sort(key=lambda r: (r["started"] or "", r["run"]), reverse=True)
     return out
+
+
+ITEM_ID = re.compile(r"^\s*- \[[ xX]\] \*\*([A-Za-z][A-Za-z0-9-]*?\d+)\b", re.M)
+
+
+def item_ids(items_text):
+    """The queue item ids of a task's approved items ('- [ ] **E1 Title.**' -> 'E1'), in order."""
+    return ITEM_ID.findall(items_text or "")
+
+
+def task_progress(task_runs, items_text):
+    """A task's build progress from its runs (newest first) over its own items -> {total, done, blocked, current,
+    latest} or None when no run has worked on it yet. An item counts as done once any run finished it."""
+    if not task_runs:
+        return None
+    ids = item_ids(items_text)
+    state = {}
+    for r in reversed(task_runs):                      # oldest first, so the newest state wins
+        state.update(r["items"])
+    mine = ids or list(state)
+    latest = task_runs[0]
+    return {"total": len(mine), "done": sum(1 for i in mine if state.get(i) == "done"),
+            "blocked": [i for i in mine if state.get(i) == "blocked"], "current": latest["current"], "latest": latest}
+
+
+def for_task(db, project_id, number, now):
+    """The runs that worked on task `number`, newest first."""
+    return [r for r in summarise(project_events(db, project_id), now) if r["task"] == number]
 
 
 def project_events(db, project_id, limit=MAX_EVENTS):

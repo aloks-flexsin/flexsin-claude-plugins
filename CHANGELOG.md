@@ -4,6 +4,18 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-24
+
+### Added
+- Central service: **My work** (`/my`, first in the top bar): across all your projects, plans waiting for your approval,
+  blockers you can answer, your tasks with build progress, every task a runner is working on now, and recently finished
+  tasks with their pull requests. Admins see every project.
+- The **task page shows its build live**: items done out of the task's own items, the item in progress, the latest run's
+  state and tests, blocked items and every run of the task. The runs page links each run to its task. No migration.
+
+### Changed
+- The runner's `run_start` and `run_end` events name the central task the run builds (`task`).
+
 ## [0.20.0] - 2026-11-23
 
 ### Added

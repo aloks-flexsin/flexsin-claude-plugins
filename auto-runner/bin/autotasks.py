@@ -145,6 +145,19 @@ def adopt(auto_dir, request_dir):
         _save(Path(auto_dir) / CURRENT, json.loads(src.read_text(encoding='utf-8')))
 
 
+def run_task(auto_dir, request_dir, new_branch):
+    """The central task a run is about to work on, known before it starts -> its number or None: the request it takes
+    on a new branch (its task.json), else the task the branch is already working on."""
+    if new_branch and request_dir is not None:
+        try:
+            number = json.loads((Path(request_dir) / 'task.json').read_text(encoding='utf-8')).get('number')
+            return number if isinstance(number, int) else None
+        except (OSError, ValueError, AttributeError):
+            return None
+    task = current(auto_dir)
+    return task['number'] if task else None
+
+
 def current(auto_dir):
     try:
         data = json.loads((Path(auto_dir) / CURRENT).read_text(encoding='utf-8'))

@@ -3,6 +3,7 @@
 <h1>auto-runner central</h1>
 <p class="lead">Signed in as {{ account.email }}.</p>
 <div class="grid">
+  <a class="tile" href="{{ url_for('mywork.my_page') }}"><b>My work</b><span>Plans to approve, blockers to answer, your tasks and what every runner is doing</span></a>
   <a class="tile" href="{{ url_for('projects.projects_page') }}"><b>Projects</b><span>Blockers, members and API tokens</span></a>
   {% if account.role == "admin" %}<a class="tile" href="{{ url_for('admin.accounts_page') }}"><b>Accounts</b><span>Add, disable and reset people</span></a>{% endif %}
   <a class="tile" href="{{ url_for('admin.own_password') }}"><b>Your password</b><span>Change it; signs you out everywhere</span></a>

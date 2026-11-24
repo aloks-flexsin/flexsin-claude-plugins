@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}My work{% endblock %}
+{% macro progress_cell(t) -%}
+  {% if t.progress %}{{ t.progress.done }}/{{ t.progress.total }} done{% if t.progress.current %}, on {{ t.progress.current }}{% endif %}{% if t.progress.blocked %}, blocked: {{ t.progress.blocked | join(", ") }}{% endif %}{% endif %}
+{%- endmacro %}
+{% macro task_link(t) -%}
+  <a href="{{ url_for('tasks.task_page', slug=t.project.slug, number=t.number) }}">#{{ t.number }} {{ t.title }}</a>
+{%- endmacro %}
+{% block content %}
+<h1>My work</h1>
+<p class="lead">Across {{ "every project" if account.role == "admin" else "your projects" }}. Refresh to see the latest.</p>
+
+<h2>Plans waiting for my approval{% if approve %} <span class="badge warn">{{ approve | length }}</span>{% endif %}</h2>
+{% if approve %}
+<table><thead><tr><th>Project</th><th>Task</th><th>Assigned to</th><th>Planned by</th></tr></thead><tbody>
+{% for t in approve %}<tr><td>{{ t.project.name }}</td><td>{{ task_link(t) }}</td><td>{{ t.assignee_email }}</td><td><code>{{ t.claim_runner or "" }}</code></td></tr>{% endfor %}
+</tbody></table>
+{% else %}<p class="card empty">Nothing waiting for you.</p>{% endif %}
+
+<h2>Blockers I can answer{% if blockers %} <span class="badge warn">{{ blockers | length }}</span>{% endif %}</h2>
+{% if blockers %}
+<table><thead><tr><th>Project</th><th>Blocker</th><th>Item</th><th>Question</th><th>Raised</th></tr></thead><tbody>
+{% for b in blockers %}<tr><td>{{ b.project.name }}</td>
+  <td><a href="{{ url_for('blockers.blocker_page', slug=b.project.slug, blocker_id=b.blocker_id) }}">{{ b.blocker_id }}</a></td>
+  <td>{{ b.task or "" }}</td><td>{{ b.question or "(no question sent)" }}</td><td class="nowrap">{{ b.created_at }}</td></tr>{% endfor %}
+</tbody></table>
+{% else %}<p class="card empty">No blockers waiting for you.</p>{% endif %}
+
+<h2>My tasks</h2>
+{% if mine %}
+<table><thead><tr><th>Project</th><th>Task</th><th>State</th><th>Progress</th><th>Runner</th></tr></thead><tbody>
+{% for t in mine %}<tr><td>{{ t.project.name }}</td><td>{{ task_link(t) }}</td>
+  <td><span class="badge {{ 'warn' if t.status in ('plan_review', 'changes_requested') else '' }}">{{ t.describe }}</span></td>
+  <td>{{ progress_cell(t) }}</td><td>{% if t.live %}<code>{{ t.claim_runner }}</code>{% endif %}</td></tr>{% endfor %}
+</tbody></table>
+{% else %}<p class="card empty">No open tasks assigned to you. Add one on a project's Tasks page.</p>{% endif %}
+
+<h2>Being worked on now</h2>
+{% if active %}
+<table><thead><tr><th>Project</th><th>Task</th><th>For</th><th>Runner</th><th>State</th><th>Progress</th></tr></thead><tbody>
+{% for t in active %}<tr><td>{{ t.project.name }}</td><td>{{ task_link(t) }}</td><td>{{ t.assignee_email }}</td>
+  <td><code>{{ t.claim_runner }}</code></td><td>{{ t.describe }}</td><td>{{ progress_cell(t) }}</td></tr>{% endfor %}
+</tbody></table>
+{% else %}<p class="card empty">No runner is working on a task right now.</p>{% endif %}
+
+<h2>Recently done</h2>
+{% if done %}
+<table><thead><tr><th>Project</th><th>Task</th><th>For</th><th>Pull request</th><th>Finished</th></tr></thead><tbody>
+{% for t in done %}<tr><td>{{ t.project.name }}</td><td>{{ task_link(t) }}</td><td>{{ t.assignee_email }}</td>
+  <td>{% if t.pr_url %}<a href="{{ t.pr_url }}" rel="noopener noreferrer">{{ t.pr_url }}</a>{% endif %}</td><td class="nowrap">{{ t.updated_at }}</td></tr>{% endfor %}
+</tbody></table>
+{% else %}<p class="card empty">Nothing finished yet.</p>{% endif %}
+{% endblock %}

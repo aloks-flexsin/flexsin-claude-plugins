@@ -13,11 +13,12 @@
 {% endif %}
 {% if runs %}
 <table>
-  <thead><tr><th>Who</th><th>Branch</th><th>State</th><th>Items</th><th>Tests</th><th>Pull request</th><th>Started</th><th>Last event</th></tr></thead>
+  <thead><tr><th>Who</th><th>Task</th><th>Branch</th><th>State</th><th>Items</th><th>Tests</th><th>Pull request</th><th>Started</th><th>Last event</th></tr></thead>
   <tbody>
   {% for r in runs %}
     <tr>
       <td><strong>{{ r.user or "unknown" }}</strong>{% if r.account %}<br><span class="muted">{{ r.account }} account</span>{% elif not r.user %}<br><span class="muted">runner before 0.17.0</span>{% endif %}{% if r.signed_in %}<br><span class="muted" title="verified by the service from the personal token">signed in as {{ r.signed_in }}</span>{% endif %}</td>
+      <td>{% if r.task %}<a href="{{ url_for('tasks.task_page', slug=project.slug, number=r.task) }}">#{{ r.task }}</a>{% endif %}</td>
       <td><code title="{{ r.branch or '' }}">{{ r.branch_short }}</code></td>
       <td>
         {% if r.state == "running" %}<span class="badge warn">running{% if r.current %}: {{ r.current }}{% endif %}</span>

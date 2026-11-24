@@ -383,7 +383,11 @@ def _detail(number, error=None, status=200):
     row = get(db, g.project["id"], number)
     if row is None:
         abort(404)
+    from . import runs as _runs
+    task_runs = _runs.for_task(db, g.project["id"], number, moment)
     page = render_template("task.html", project=g.project, task=row, describe=DESCRIBE.get(row["status"], row["status"]),
+                           runs=task_runs, progress=_runs.task_progress(task_runs, row["items"]),
+                           stale_hours=int(_runs.STALE.total_seconds() // 3600),
                            live=claim_live(row, moment), can_decide=row["status"] == "plan_review"
                            and can_decide(db, g.project, row, g.account), is_admin=g.account["role"] == projects.ADMIN,
                            assignees=_runners(db, g.project), error=error, ttl_hours=int(CLAIM_TTL.total_seconds() // 3600))

@@ -110,3 +110,12 @@ def test_a_released_task_stops_the_run(project, central, team, env, monkeypatch,
     assert 'was released, reassigned or its claim expired' in capsys.readouterr().out
     events = [json.loads(line) for line in (project / '.auto' / 'events.jsonl').read_text().splitlines()]
     assert events[-1]['type'] == 'run_end' and events[-1]['detail']['reason'] == 'claim_lost'
+
+
+def test_run_start_and_end_name_the_task(project, central, team, env, monkeypatch):
+    n, transport = _runner_with_task(project, central, team, env, monkeypatch)
+    assert ar.run(project, max_iterations=5, claude=picking_agent(), transport=transport, allow_dirty=True) == 0
+    events = [json.loads(line) for line in (project / '.auto' / 'events.jsonl').read_text().splitlines()]
+    start, end = events[0], events[-1]
+    assert start['type'] == 'run_start' and start['detail']['task'] == n
+    assert end['type'] == 'run_end' and end['detail']['task'] == n
