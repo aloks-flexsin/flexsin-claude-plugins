@@ -73,6 +73,15 @@ one unused for 90 days stops working (sign in again).
    the hidden-prompt line init prints for the variable it names, default `AUTO_RUNNER_TOKEN_<SLUG>`.)
 4. **Restart Claude Code**, then `/auto-runner:central`.
 
+## Following progress: My work
+**My work** (first link in the top bar) is the one page to check. Across all your projects (all projects for an admin):
+- **Plans waiting for my approval** and **Blockers I can answer**: what needs you.
+- **My tasks**, with progress while they are built ("2/5 done, on E3").
+- **Being worked on now**: every task a runner is on, whose it is and how far it got.
+- **Recently done**, with pull requests.
+Open a task for its full progress: items done, the item in progress, tests, blocked items and every run. Pages do not
+refresh by themselves and nobody is notified yet: check My work.
+
 ## Tasks: what each person's runner does next
 - On a project's **Tasks** page you add a task for yourself (title, what and why); admins can add one for anyone who can
   run runners. Everyone in the project sees every task and who is working on what.

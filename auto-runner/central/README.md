@@ -112,6 +112,16 @@ may not stick over plain http. The API endpoints do not use the cookie.
   longer holds the task.
 - Table `project_task` (init-db creates it).
 
+## My work and task progress
+
+- `/my` (**My work**, first in the top bar; everyone signed in): across every project the person can see (all for an admin)
+  — plans waiting for their approval, blockers they can answer (manager and above), their open tasks with build progress,
+  every task a runner is working on now, and the last finished tasks with their pull requests (`mywork.py`). Refresh to
+  update; nothing is sent to anyone.
+- A run names the task it builds (`task` in its `run_start` and `run_end` events, plugin 0.21.0+), so the **task page**
+  shows the build live: items done out of the task's own items, the item in progress, the latest run's state and tests,
+  blocked items, and every run of the task. The runs page links each run to its task.
+
 ## Runs
 
 - `/projects/<slug>/runs` (any member): each run of the project, newest first, and a "Working now" list. Built from the

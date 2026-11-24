@@ -9,6 +9,32 @@
   {% if task.pr_url %} · <a href="{{ task.pr_url }}" rel="noopener noreferrer">pull request</a>{% endif %}</p>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 
+{% if progress %}
+<h2>Progress</h2>
+<div class="card">
+  <p><strong>{{ progress.done }} of {{ progress.total }} item{{ "s" if progress.total != 1 }} done</strong>
+    {% if progress.total %}<progress value="{{ progress.done }}" max="{{ progress.total }}">{{ progress.done }} / {{ progress.total }}</progress>{% endif %}</p>
+  <p>Latest run by <strong>{{ progress.latest.user or "unknown" }}</strong>{% if progress.latest.account %} ({{ progress.latest.account }} account){% endif %}:
+    {% if progress.latest.state == "running" %}<span class="badge warn">running{% if progress.current %}: {{ progress.current }}{% endif %}</span>
+    {% elif progress.latest.state == "finished" %}<span class="badge ok">finished</span>
+    {% elif progress.latest.state == "stopped" %}<span class="badge warn">stopped: {{ progress.latest.reason or "unknown" }}</span>
+    {% else %}<span class="badge off">silent for over {{ stale_hours }} h</span>{% endif %}
+    {% if progress.latest.tests %} · last tests: {{ progress.latest.tests }}{% endif %}
+    · last event {{ progress.latest.last_at }}</p>
+  {% if progress.blocked %}<p>Blocked: {{ progress.blocked | join(", ") }} (<a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}">blockers</a>)</p>{% endif %}
+</div>
+<table>
+  <thead><tr><th>Run started</th><th>Who</th><th>State</th><th>Items</th><th>Pull request</th></tr></thead>
+  <tbody>{% for r in runs %}
+    <tr><td class="nowrap">{{ r.started_at }}</td><td>{{ r.user or "unknown" }}</td><td>{{ r.state }}{% if r.reason and r.state == "stopped" %}: {{ r.reason }}{% endif %}</td>
+      <td>{{ r.done }} done{% if r.blocked %}, {{ r.blocked }} blocked{% endif %}</td>
+      <td>{% if r.pr_url %}<a href="{{ r.pr_url }}" rel="noopener noreferrer">{{ r.pr_label }}</a>{% endif %}</td></tr>
+  {% endfor %}</tbody>
+</table>
+{% elif task.status == "building" %}
+<p class="card empty">Approved and claimed; no run has sent progress yet. It appears here as soon as the runner starts.</p>
+{% endif %}
+
 {% if task.description %}<h2>What and why</h2><pre class="wrap">{{ task.description }}</pre>{% endif %}
 
 {% if task.plan %}

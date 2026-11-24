@@ -1090,8 +1090,11 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
     run_id = f'{stamp}-{uuid.uuid4().hex[:6]}'
     ledger = autoevents.Ledger(auto, run_id, slug, redact=lambda d: autobrowser.redact_obj(d, generated()))
     user, account = autosafe.runner_identity()
+    # the central task this run builds (decision record 0007): the task page shows the run's progress live
+    task_number = autotasks.run_task(auto, auto / 'pending' / request if request else None, new_branch)
     ledger.emit('run_start', detail={'branch': branch, 'base': base, 'max_iterations': max_iterations,
-                                     'user': user, 'account': account})
+                                     'user': user, 'account': account,
+                                     **({'task': task_number} if task_number is not None else {})})
     exit_code, reason = None, 'error'
     published = None
     last_suite = ''
@@ -1618,7 +1621,8 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             else:
                 say(f"pushed {branch} to {published['remote']}" + (f" ({published['pr_error']})" if published.get('pr_error') else ''))
     finally:
-        ledger.emit('run_end', detail={'exit': exit_code, 'reason': reason})
+        ledger.emit('run_end', detail={'exit': exit_code, 'reason': reason,
+                                       **({'task': task_number} if task_number is not None else {})})
         push()
         if pusher is not None and autotasks.current(auto) is not None:
             wq_end = wt / queue_rel
