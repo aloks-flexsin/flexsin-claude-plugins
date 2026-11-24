@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% from "_project.html" import header with context %}
+{% block title %}New task · {{ project.name }}{% endblock %}
+{% block content %}
+{{ header(project, "tasks", ("Tasks", url_for("tasks.tasks_page", slug=project.slug))) }}
+<div class="form-card">
+  <h2 class="page-title">New task</h2>
+  <p class="muted">The runner of the person it is for plans it first. The plan waits for approval before anything is built.</p>
+  {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+  <form method="post" action="{{ url_for('tasks.task_add', slug=project.slug) }}" class="stack-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="t-title">Title</label>
+    <input id="t-title" type="text" name="title" value="{{ form.title }}" maxlength="200" required autofocus placeholder="Export the orders table as CSV">
+    <label for="t-desc">What should be built, and why</label>
+    <textarea id="t-desc" name="description" rows="6" maxlength="20000" placeholder="Who needs it, what they do today, what should change.">{{ form.description }}</textarea>
+    <label for="t-done">How we know it's done <span class="optional">optional</span></label>
+    <textarea id="t-done" name="done_when" rows="3" maxlength="20000" placeholder="A person can download the file; a test checks the columns.">{{ form.done_when }}</textarea>
+    {% if is_admin %}
+    <label for="t-who">For</label>
+    <select id="t-who" name="assignee">
+      <option value="{{ g.account.id }}">Me ({{ g.account.email }})</option>
+      {% for m in assignees %}{% if m.account_id != g.account.id %}<option value="{{ m.account_id }}"{% if form.assignee == m.account_id %} selected{% endif %}>{{ m.email | display_name }} ({{ m.email }}, {{ m.role }})</option>{% endif %}{% endfor %}
+    </select>
+    {% endif %}
+    <div class="form-actions">
+      <button type="submit" class="btn primary">Add task</button>
+      <a class="btn" href="{{ url_for('tasks.tasks_page', slug=project.slug) }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

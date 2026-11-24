@@ -21,6 +21,7 @@ rejected on the task page by the assignee or a project manager, owner or admin.
 The task API takes personal tokens only (a task is someone's), with the project named as for every call.
 """
 import datetime
+import json
 import secrets
 
 from flask import Blueprint, abort, g, jsonify, redirect, render_template, request, url_for
@@ -308,10 +309,16 @@ def api_record():
 @bp.post("/api/v1/tasks/<int:number>/plan")
 @tokens.bearer_token("ingest")
 def api_plan(number):
-    _api_account()
-    body = _body()
-    return _api(lambda: jsonify(task=public(post_plan(get_db(), g.token_project, number, body.get("claim"),
-                                                       body.get("plan"), body.get("items"), auth.now()), auth.now())))
+    account, body = _api_account(), _body()
+
+    def run():
+        db, moment = get_db(), auth.now()
+        row = post_plan(db, g.token_project, number, body.get("claim"), body.get("plan"), body.get("items"), moment)
+        audit.record(db, "task.plan.post", _at(moment), account_id=account["id"], project_id=g.token_project["id"],
+                     detail={"number": number})
+        db.commit()
+        return jsonify(task=public(row, moment))
+    return _api(run)
 
 
 @bp.post("/api/v1/tasks/<int:number>/heartbeat")
@@ -325,11 +332,17 @@ def api_beat(number):
 @bp.post("/api/v1/tasks/<int:number>/report")
 @tokens.bearer_token("ingest")
 def api_report(number):
-    _api_account()
-    b = _body()
-    return _api(lambda: jsonify(task=public(report(get_db(), g.token_project, number, b.get("claim"), b.get("result"),
-                                                   b.get("branch"), b.get("pr_url"), b.get("note"), auth.now()),
-                                            auth.now())))
+    account, b = _api_account(), _body()
+
+    def run():
+        db, moment = get_db(), auth.now()
+        row = report(db, g.token_project, number, b.get("claim"), b.get("result"), b.get("branch"), b.get("pr_url"),
+                     b.get("note"), moment)
+        audit.record(db, "task.report", _at(moment), account_id=account["id"], project_id=g.token_project["id"],
+                     detail={"number": number, "result": row["status"] if row["status"] == "done" else "stopped"})
+        db.commit()
+        return jsonify(task=public(row, moment))
+    return _api(run)
 
 
 # ---------- pages ----------
@@ -339,21 +352,65 @@ def _runners(db, project):
     return [m for m in projects.members(db, project["id"]) if projects.allows(m["role"], "developer") and not m["disabled"]]
 
 
-def _list_page(error=None, status=200, form=None):
+STATES = (("approval", "Needs approval", ("plan_review",)),
+          ("progress", "In progress", ("planning", "changes_requested", "approved", "building")),
+          ("open", "Open", ("open",)),
+          ("done", "Done", ("done", "rejected")))
+
+
+def _can_add(db):
+    return _can_run(db, g.project, g.account) or g.account["role"] == projects.ADMIN
+
+
+def _list_page():
+    """The Tasks tab: state tabs with counts, "Mine only" and a title search, all plain links (`?state=`, `?mine=1`,
+    `?q=`). With no state chosen it opens on the first tab that has tasks."""
     db, moment = get_db(), auth.now()
-    rows = [dict(r, describe=DESCRIBE.get(r["status"], r["status"]), live=claim_live(r, moment))
-            for r in for_project(db, g.project["id"])]
+    mine, q = request.args.get("mine") == "1", (request.args.get("q") or "").strip()[:MAX_TITLE]
+    rows = [dict(r, live=claim_live(r, moment)) for r in for_project(db, g.project["id"])]
+    rows = [r for r in rows if (not mine or r["assignee_id"] == g.account["id"]) and (not q or q.lower() in r["title"].lower())]
+    tabs = [{"key": k, "label": label, "rows": [r for r in rows if r["status"] in statuses]} for k, label, statuses in STATES]
+    state = request.args.get("state")
+    if state not in [t["key"] for t in tabs]:
+        state = next((t["key"] for t in tabs if t["rows"]), "approval")
+    shown = next(t["rows"] for t in tabs if t["key"] == state)
+    building = [r for r in shown if r["status"] == "building" or r["live"]]
+    if building:
+        from . import runs as _runs
+        task_runs = _runs.summarise(_runs.project_events(db, g.project["id"]), moment)
+        for r in building:
+            r["progress"] = _runs.task_progress([x for x in task_runs if x["task"] == r["number"]], r["items"])
+    return render_template("tasks.html", project=g.project, tabs=tabs, state=state, tasks=shown, mine=mine, q=q,
+                           any_tasks=bool(for_project(db, g.project["id"])), can_add=_can_add(db))
+
+
+def _new_page(error=None, status=200, form=None):
+    db = get_db()
+    if error is None and not _can_add(db):
+        abort(403)
     is_admin = g.account["role"] == projects.ADMIN
-    page = render_template("tasks.html", project=g.project, tasks=rows, error=error, form=form or {},
-                           can_add=_can_run(db, g.project, g.account) or is_admin, is_admin=is_admin,
-                           assignees=_runners(db, g.project) if is_admin else [])
-    return page, status
+    return render_template("task_new.html", project=g.project, error=error, form=form or {}, is_admin=is_admin,
+                           assignees=_runners(db, g.project) if is_admin else []), status
 
 
 @bp.get("/projects/<slug>/tasks")
 @project_access("viewer")
 def tasks_page(slug):
     return _list_page()
+
+
+@bp.get("/projects/<slug>/tasks/new")
+@project_access("viewer")
+def task_new(slug):
+    return _new_page()
+
+
+def with_done_when(description, done_when):
+    """The task's text as stored: "How we know it's done" becomes a "Done when:" section of the description."""
+    description, done_when = (description or "").strip(), (done_when or "").strip()
+    if not done_when:
+        return description
+    return (description + "\n\n" if description else "") + "Done when:\n" + done_when
 
 
 @bp.post("/projects/<slug>/tasks")
@@ -366,16 +423,53 @@ def task_add(slug):
         assignee = accounts.get(db, chosen)
         if assignee is None:
             abort(404)
+    description = with_done_when(request.form.get("description"), request.form.get("done_when"))
     try:
-        row = create(db, g.project, g.account, assignee, request.form.get("title"), request.form.get("description"), moment)
+        row = create(db, g.project, g.account, assignee, request.form.get("title"), description, moment)
     except TaskError as e:
-        return _list_page(error=str(e), status=e.status,
-                          form={"title": (request.form.get("title") or "")[:MAX_TITLE],
-                                "description": (request.form.get("description") or "")[:MAX_TEXT]})
+        return _new_page(error=str(e), status=e.status,
+                         form={"title": (request.form.get("title") or "")[:MAX_TITLE],
+                               "description": (request.form.get("description") or "")[:MAX_TEXT],
+                               "done_when": (request.form.get("done_when") or "")[:MAX_TEXT], "assignee": chosen})
     audit.record(db, "task.create", _at(moment), account_id=g.account["id"], project_id=g.project["id"],
                  detail={"number": row["number"], "assignee": row["assignee_email"]})
     db.commit()
     return redirect(url_for("tasks.task_page", slug=slug, number=row["number"]))
+
+
+STEPS = (("open", "Open"), ("planned", "Planned"), ("approval", "Approval"), ("building", "Building"), ("done", "Done"))
+STEP_OF = {"open": 0, "planning": 1, "changes_requested": 1, "plan_review": 2, "approved": 3, "building": 3, "done": 4}
+
+
+def _activity(db, project, number, task_runs):
+    """The task's history, newest first: what people and runners did (audit rows) and each run's start and end."""
+    from . import shell
+    rows = db.query("SELECT a.*, acc.email, acc.name FROM audit a LEFT JOIN account acc ON acc.id = a.account_id"
+                    " WHERE a.project_id = ? AND a.action LIKE 'task.%' ORDER BY a.at DESC, a.id DESC LIMIT 400",
+                    (project["id"],))
+    out = []
+    for r in rows:
+        d = r["detail"]
+        try:
+            d = json.loads(d) if isinstance(d, str) else (d or {})
+        except ValueError:
+            d = {}
+        if d.get("number") != number:
+            continue
+        s = shell._sentence(r, project["slug"])
+        if s:
+            out.append({"text": s["text"].replace("task #%d" % number, "this task"), "at": r["at"],
+                        "comment": None})
+    for run in task_runs:
+        who = run["user"] or "a runner"
+        out.append({"text": "Run started by %s%s" % (who, " on " + run["branch_short"] if run["branch_short"] else ""),
+                    "at": run["started"], "comment": None})
+        if run["ended"]:
+            out.append({"text": "Run %s" % ui.reason_text(run["reason"]) if run["state"] == "stopped"
+                        else "Run finished (%d item%s done)" % (run["done"], "s" if run["done"] != 1 else ""),
+                        "at": run["ended"], "comment": None})
+    out.sort(key=lambda e: e["at"] or "", reverse=True)
+    return out[:30]
 
 
 def _detail(number, error=None, status=200):
@@ -385,12 +479,19 @@ def _detail(number, error=None, status=200):
         abort(404)
     from . import runs as _runs
     task_runs = _runs.for_task(db, g.project["id"], number, moment)
+    progress = _runs.task_progress(task_runs, row["items"])
+    states = (progress or {}).get("states", {})
+    items = [dict(i, state="done" if i["ticked"] and i["id"] not in states else states.get(i["id"], "queued"))
+             for i in _runs.parse_items(row["items"])]
+    live = claim_live(row, moment)
     page = render_template("task.html", project=g.project, task=row, describe=DESCRIBE.get(row["status"], row["status"]),
-                           runs=task_runs, progress=_runs.task_progress(task_runs, row["items"]),
-                           stale_hours=int(_runs.STALE.total_seconds() // 3600),
-                           live=claim_live(row, moment), can_decide=row["status"] == "plan_review"
-                           and can_decide(db, g.project, row, g.account), is_admin=g.account["role"] == projects.ADMIN,
-                           assignees=_runners(db, g.project), error=error, ttl_hours=int(CLAIM_TTL.total_seconds() // 3600))
+                           runs=task_runs, progress=progress, items=items, steps=STEPS,
+                           step=STEP_OF.get(row["status"]), stale_hours=int(_runs.STALE.total_seconds() // 3600),
+                           live=live, quiet=bool(row["claim_id"]) and not live and row["status"] in RUNNER_SIDE,
+                           can_decide=row["status"] == "plan_review" and can_decide(db, g.project, row, g.account),
+                           is_admin=g.account["role"] == projects.ADMIN, assignees=_runners(db, g.project),
+                           activity=_activity(db, g.project, number, task_runs), error=error,
+                           ttl_hours=int(CLAIM_TTL.total_seconds() // 3600))
     return page, status
 
 
@@ -419,7 +520,7 @@ def task_decide(slug, number):
     audit.record(db, "task.plan.%s" % decision, _at(moment), account_id=g.account["id"], project_id=g.project["id"],
                  detail={"number": number})
     db.commit()
-    return redirect(url_for("tasks.task_page", slug=slug, number=number))
+    return redirect(ui.safe_next(request.form.get("next")) or url_for("tasks.task_page", slug=slug, number=number))
 
 
 @bp.post("/projects/<slug>/tasks/<int:number>/release")

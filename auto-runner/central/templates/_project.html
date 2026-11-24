@@ -12,7 +12,7 @@
         <span>{{ pnav.members }} member{{ "s" if pnav.members != 1 }}</span>
       </div>
     </div>
-    {% if pnav.can_run %}<a class="btn primary" href="{{ url_for('tasks.tasks_page', slug=project.slug) }}#new-task">New task</a>{% endif %}
+    {% if pnav.can_run %}<a class="btn primary" href="{{ url_for('tasks.task_new', slug=project.slug) }}">New task</a>{% endif %}
   </div>
   <nav class="tabs" aria-label="Project">
     <a href="{{ url_for('projects.overview_page', slug=project.slug) }}"{% if active == "overview" %} aria-current="page"{% endif %}>Overview</a>

@@ -74,21 +74,25 @@ one unused for 90 days stops working (sign in again).
 4. **Restart Claude Code**, then `/auto-runner:central`.
 
 ## Following progress: My work
-**My work** (first link in the top bar) is the one page to check. Across all your projects (all projects for an admin):
-- **Plans waiting for my approval** and **Blockers I can answer**: what needs you.
-- **My tasks**, with progress while they are built ("2/5 done, on E3").
-- **Being worked on now**: every task a runner is on, whose it is and how far it got.
+**My work** (first link in the top bar) is the one page to check. Across all your projects (all projects for an admin;
+the chips at the top narrow it to one project):
+- **Waiting for you**: plans you may approve and blockers you can answer, as cards. A short plan (two items or fewer)
+  has **Approve** right on its card; a longer one says **Read plan**. Blockers open their answer page.
+- **In progress**: your tasks first ("1 of 3 items, on E2"), then every other task a runner is on, with a warning when
+  a runner has gone quiet.
 - **Recently done**, with pull requests.
-Open a task for its full progress: items done, the item in progress, tests, blocked items and every run. Pages do not
-refresh by themselves and nobody is notified yet: check My work.
+Open a task for its full story: where it is (Open → Planned → Approval → Building → Done), the plan, each item's state,
+the runs and an Activity list of who did what. Pages with work in progress reload every 30 seconds; nobody is notified
+yet: check My work.
 
 ## Tasks: what each person's runner does next
-- On a project's **Tasks** page you add a task for yourself (title, what and why); admins can add one for anyone who can
-  run runners. Everyone in the project sees every task and who is working on what.
+- On a project, **New task** (top right) adds a task for yourself (title, what and why, and optionally how we know it's
+  done); admins can add one for anyone who can run runners. The **Tasks** tab sorts them into Needs approval, In progress,
+  Open and Done, with "Mine only" and a search. Everyone in the project sees every task and who is working on what.
 - Run **`/auto-runner:auto`** with no task. Your runner takes your next task: a new one gets a plan (the same planning and
   spec check as always), which then **waits for approval** on the task's page; meanwhile the runner takes your next one.
 - On the task page you, a manager, an owner or an admin **Approve** the plan, **Request changes** (with a comment; the
-  runner revises it on its next `/auto-runner:auto`) or **Reject** it.
+  runner revises it on its next `/auto-runner:auto`) or **Reject** it (it asks first). Short plans can be approved from My work.
 - Run `/auto-runner:auto` again: an approved task is built on its own branch and pull request, and shows **done** with the
   PR when the run finishes.
 - A task you type in the terminal (`/auto-runner:auto <task>`) is approved there as before and recorded on the page too.

@@ -5,6 +5,12 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Central service, My work and tasks (UX audit PR 3): **My work** shows what waits for you as cards (short plans are
+  approved right there), one In progress list (yours first, then the team's, with quiet-runner warnings), recently done
+  with `PR #n`, and project chips. The **Tasks** tab has state tabs with counts, "Mine only" and a search; tasks are
+  added on their own **New task** page (with "How we know it's done"). The **task page** shows a step tracker, a decision
+  bar, the plan rendered, items as a checklist with their live state, a side panel, admin actions under More, and an
+  Activity history (plan posts and runner reports are now audited).
 - Central service, new frame (UX audit PR 2): sign-in lands on **My work**; a top bar with the number of decisions
   waiting for you and an account menu; one header and tab bar (Overview · Tasks · Runs · Blockers · Settings, with
   counts) on every project page; a project now opens on its **Overview** (needs attention, working now, recent activity);

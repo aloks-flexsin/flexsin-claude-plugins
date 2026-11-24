@@ -62,6 +62,8 @@ def _sentence(row, project_slug):
     texts = {
         "task.create": "%s added %s" % (who, task),
         "task.claim": "%s's runner took %s" % (who, task),
+        "task.plan.post": "%s's runner posted a plan for %s" % (who, task),
+        "task.report": ("%s's runner finished %s" if d.get("result") == "done" else "%s's runner stopped on %s") % (who, task),
         "task.plan.approve": "%s approved the plan for %s" % (who, task),
         "task.plan.changes": "%s asked for changes to %s" % (who, task),
         "task.plan.reject": "%s rejected %s" % (who, task),
