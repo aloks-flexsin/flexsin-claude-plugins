@@ -12,6 +12,10 @@ All notable changes to this project are written here (Keep a Changelog).
   database update" with the command to run, instead of crashing (the live site broke this way after the runner table).
 
 ### Added
+- Decide a waiting plan from the terminal: `autotasks.py decide N approve|changes|reject [--comment TEXT]` calls
+  `POST /api/v1/tasks/<N>/decide` (personal token; the task page's rules, recorded "through the API") and prints
+  "Task N: approved" / "changes requested" / "rejected", or "Not done: <reason>". Unverified until used against the
+  live service.
 - The runner gets a task's screenshots: `GET /api/v1/tasks/<N>` lists `attachments` (id, filename, content type,
   size) and `GET /api/v1/tasks/<N>/attachments/<id>` returns the bytes (personal token, same project rules as the task
   API). `autotasks.py next` downloads them to `.auto/run/tasks/<N>/attachments/<id>-<safe name>` (once; a name can

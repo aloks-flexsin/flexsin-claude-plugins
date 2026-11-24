@@ -139,6 +139,10 @@ may not stick over plain http. The API endpoints do not use the cookie.
   it is proposed instead: stored as `plan_review` with its plan and items, claimed by the runner, approved on the page), `POST /api/v1/tasks/<N>/plan` (`{claim, plan, items}`),
   `.../heartbeat` (`{claim, state?: queued|building, note?}`), `.../report` (`{claim, result: done|stopped, branch, pr_url, note}`). 409 = this runner no
   longer holds the task.
+  `POST /api/v1/tasks/<N>/decide` (`{decision: approve|changes|reject, comment}`) decides on a waiting plan as the
+  token's person, with the same rules as the task page (assignee or manager and above; `changes` needs a comment; 409
+  when no plan waits; 404 for an unknown task); it records `task.plan.<decision>` with `"via": "api"`, so the Activity
+  line ends "(through the API)", and returns `{task}`.
 - Table `project_task` (init-db creates it).
 
 ## Task screenshots (`attachments.py`)

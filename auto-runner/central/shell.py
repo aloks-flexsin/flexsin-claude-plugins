@@ -84,6 +84,8 @@ def _sentence(row, project_slug):
         "runner.stop": "%s stopped the runner %s" % (who, ui.runner_label(d.get("label") or "")),
     }
     text = texts.get(row["action"])
+    if text and d.get("via") == "api":
+        text += " (through the API)"
     link = None
     if n and row["action"].startswith("task."):
         link = ("tasks.task_page", {"slug": project_slug, "number": n})
