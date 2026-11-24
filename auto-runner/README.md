@@ -52,6 +52,8 @@ Check the manifest with `claude plugin validate ./auto-runner` (needs the `claud
    blockers with their page links) and walks you through what is missing, changing anything only after you agree
    (`bin/autocentral.py status` is the read-only check; tested with the real central app through Flask's test client,
    never against the live service). How teammates and admins use the page: `docs/central-guide.md`.
+   With `"enforce_runner": true`, edits in the main checkout are blocked (see the config table);
+   `/auto-runner:allow-edits` lets the current session edit there for 12 hours.
 3. `/auto-runner:status` and `/auto-runner:log` are read-only reports (counts by state, the running item, blocked questions, recorded spend; the last iterations and log tails; `--full N` prints one whole log).
 
 The runner can also be started by hand: `python bin/auto_run.py [--project DIR] [--max-iterations 8] [--max-budget-usd 5] [--enqueue SLUG] [--dry-run] [--allow-dirty]`.
@@ -143,6 +145,7 @@ Every key is optional; unknown keys and wrong types are errors that name the key
 | `base_branch` | `""` | Branch the worktree starts from. Empty = detect: `origin/HEAD`, else the current branch if it is main/master/trunk/develop, else one answer is needed. |
 | `branch_prefix` | `auto/` | **Deprecated, ignored** since 0.14.0 (still accepted so old files load): run branches are `<user>/<account>-claude-auto-runner/<type>/<brief>`. |
 | `commit_trailer` | `""` | Line added to each commit message. |
+| `enforce_runner` | `false` | Opt-in guard: the PreToolUse hook (`autohook.py guard`) blocks Edit, Write, MultiEdit and NotebookEdit on paths in the main checkout (exit 2, the message names `/auto-runner:auto`). Paths under `.auto/`, the runner's worktree, paths outside the project and every path in a linked git worktree stay allowed. Typing `/auto-runner:allow-edits` lets that one session edit for 12 hours (`.auto/run/allow-<session_id>`; delete it to end sooner). |
 
 Schema v2 sections (objects, every nested key optional, unknown nested keys and wrong types fail naming `section.key`). They are **parsed and validated only**, with one exception: `models.implementer` is passed to `claude -p` as `--model <value>` (no flag when it is unset or `inherit`). The preflight refuses any `models.<role>` value that is not `opus`, `sonnet`, `haiku`, `inherit` or a name starting with `claude-`, naming the key. A section appears in the loaded config only when the file sets it, so a config with only the keys above behaves exactly as before. `config.schema.json` describes every key.
 
@@ -281,7 +284,7 @@ such as `₹` never breaks a run on Windows.
 | `bin/autobrowser.py` | Host policy (`check_base_url`), throwaway accounts, `redact` / `scan_diff`, `browser.v1` results and the Layer 1 stage, `finding.v1` and the Layer 2 explorer. |
 | `bin/automail.py` | Stdlib SMTP sink bound to 127.0.0.1; messages stored as JSON under `.auto/run/mail/`. |
 | `bin/autochange.py` | Changelog sentence rules, Keep a Changelog entries, the runner's changelog commit, `release` (SemVer proposal). |
-| `bin/autohook.py` | Claude Code hooks, registered in `hooks/hooks.json`. `prompt` (UserPromptSubmit): in a project whose `.claude/auto.json` has `central.enabled`, prints one line reminding the session to plan new work with `/auto-runner:auto` and send it for approval with `autotasks.py propose`; nothing for other projects, for prompts starting with `/`, or when the config or the hook input cannot be read; always exits 0. Tested with temp projects and a subprocess run; never in a live Claude Code session (unverified). |
+| `bin/autohook.py` | Claude Code hooks, registered in `hooks/hooks.json`. `prompt` (UserPromptSubmit): in a project whose `.claude/auto.json` has `central.enabled`, prints one line reminding the session to plan new work with `/auto-runner:auto` and send it for approval with `autotasks.py propose`; nothing for other projects, for prompts starting with `/`, or when the config or the hook input cannot be read; always exits 0. A prompt of `/auto-runner:allow-edits` (command `commands/allow-edits.md`) instead calls `allow`. `guard` (PreToolUse, matcher `Edit\|Write\|MultiEdit\|NotebookEdit`): only with `"enforce_runner": true`, exits 2 with a message naming `/auto-runner:auto` for a path in the main checkout; allows `.auto/`, the runner's worktree, paths outside the project, any path when the project is a linked worktree, and a session with a live allow file; allows when the config or input cannot be read. `allow` writes `.auto/run/allow-<session_id>` (the time), valid for that session only, for 12 hours or until deleted. Tested with temp projects and a subprocess run; never in a live Claude Code session (unverified). |
 | `bin/autodocs.py` | Doc map, `check` (mapped docs changed, relative links resolve, new symbols documented) and the stale-doc scan (`gate`). |
 
 ## Setup and doctor (unverified: fake installer only)

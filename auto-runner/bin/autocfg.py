@@ -12,6 +12,7 @@ The project file is `.claude/auto.json`; every key is optional and a missing fil
     base_branch      branch the worktree starts from ('' = detect)
     branch_prefix    deprecated, ignored since 0.14.0 (run branches are <user>/<account>-claude-auto-runner/<type>/<brief>)
     commit_trailer   line added to each commit message ('' = none)
+    enforce_runner   true = the PreToolUse guard (autohook.py guard) blocks edits in the main checkout (default false)
 
 Schema v2 adds optional sections (objects; each nested key optional, unknown nested keys and wrong types fail naming
 `section.key`). They are parsed and validated only: a section is in the loaded dict only when the file sets it, so a
@@ -66,6 +67,7 @@ DEFAULTS = {
     'base_branch': '',
     'branch_prefix': 'auto/',
     'commit_trailer': '',
+    'enforce_runner': False,
 }
 
 # Nested key -> kind: 'text', 'flag', 'count' (whole number >= 0), 'amount' (number >= 0), 'texts' (list of text).
