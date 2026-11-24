@@ -204,3 +204,21 @@ CREATE TABLE IF NOT EXISTS project_task (
     updated_at VARCHAR(32) NOT NULL,
     UNIQUE (project_id, number)
 );
+
+-- Runner presence (decision record 0009): one row per runner label in a project, owned by the account that first sent
+-- a beat for it. `control` is what a person asked the runner to do (NULL, 'pause' or 'stop'); each beat returns it.
+CREATE TABLE IF NOT EXISTS runner (
+    id VARCHAR(64) PRIMARY KEY,
+    project_id VARCHAR(64) NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    account_id VARCHAR(64) NOT NULL REFERENCES account (id) ON DELETE CASCADE,
+    label VARCHAR(200) NOT NULL,
+    state VARCHAR(100) NOT NULL,
+    task_number INTEGER,
+    spend_usd DOUBLE PRECISION NOT NULL DEFAULT 0,
+    control VARCHAR(16),
+    control_by VARCHAR(64) REFERENCES account (id) ON DELETE SET NULL,
+    control_at VARCHAR(32),
+    beat_at VARCHAR(32) NOT NULL,
+    created_at VARCHAR(32) NOT NULL,
+    UNIQUE (project_id, label)
+);

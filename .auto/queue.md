@@ -80,7 +80,7 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Acceptance:* tests in `tests/auto_runner/test_autowatch.py` prove planning and build costs both count, the cap pauses until local midnight (fake clock across the boundary), a usage limit waits for the reset, a second watcher on the same checkout refuses to build.
   *Slice:* 4 Watch mode
   *Kind:* feature
-- [ ] **H10 Runner presence on the service.** Central: `runner` table (schema and `init_db`), `POST /api/v1/runners/beat` (personal token; label, state, task, spend; returns pause/stop), silent after 2 hours; audit. The task API does not change.
+- [x] **H10 Runner presence on the service.** Central: `runner` table (schema and `init_db`), `POST /api/v1/runners/beat` (personal token; label, state, task, spend; returns pause/stop), silent after 2 hours; audit. The task API does not change.
   *Acceptance:* `tests/central/test_runners.py`: beat creates and updates, a token cannot beat another person's runner, silent after 2 hours, pause flag returned, `init-db` adds the table to an existing database.
   *Slice:* 5 Runner presence and controls
   *Kind:* feature

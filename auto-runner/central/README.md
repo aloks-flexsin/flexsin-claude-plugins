@@ -27,6 +27,7 @@ and an owner, manager or admin answers it there.
 | `blockers.py` | Blocker list, blocker page and the answer form |
 | `deliveries.py` | Decisions and the delivery endpoints |
 | `audit.py` | The audit log |
+| `runners.py` | Runner presence: `POST /api/v1/runners/beat`, silent after 2 hours, pause/stop returned |
 | `cli.py` | `python -m central init-db` and `python -m central create-admin --email X` |
 | `api/index.py`, `vercel.json` | Vercel entry point; every route is rewritten to it |
 | `templates/`, `static/style.css` | The pages (`base.html` holds the top bar) and their one stylesheet, served by Flask at `/static/style.css` because the CSP allows only same-origin styles; no inline styles or scripts |
@@ -119,6 +120,18 @@ may not stick over plain http. The API endpoints do not use the cookie.
   `.../heartbeat` (`{claim}`), `.../report` (`{claim, result: done|stopped, branch, pr_url, note}`). 409 = this runner no
   longer holds the task.
 - Table `project_task` (init-db creates it).
+
+## Runner presence (decision record 0009; `runners.py`)
+
+- `POST /api/v1/runners/beat?project=<slug>` (personal tokens only, developer or above) with
+  `{label, state, task: N|null, spend_usd}`, sent by a watching runner each step and when idle. The first beat for a
+  label creates the runner, owned by that person; a label belongs to one person per project, so another person's token
+  gets 403. Returns `{runner, control}`, where `control` is `null`, `"pause"` (wait without claiming) or `"stop"` (end
+  cleanly).
+- A runner whose last beat is 2 hours old or more is **silent** (`silent: true`); its next beat brings it back.
+- Audit: `runner.start` (first beat of a label) and `runner.back` (a beat after silence); ordinary beats are not audited.
+- Table `runner` (init-db adds it to an existing database). Pause, Resume and Stop on the pages come in a later step;
+  until then `control` is only set in the database. The task API is unchanged. Unverified on the live service.
 
 ## Presentation (UX audit foundations)
 
