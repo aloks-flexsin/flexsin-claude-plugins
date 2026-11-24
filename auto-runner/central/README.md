@@ -116,6 +116,9 @@ may not stick over plain http. The API endpoints do not use the cookie.
   queued, like a plan waiting for approval. A heartbeat with no state, or `"state": "building"`, moves `queued` to
   `building`; `"state": "queued"` moves an approved or building task back to `queued`. `report` accepts a queued task, the
   next-task call never takes one, and an admin release moves it to `approved`.
+  A queued task's heartbeat may carry a `note` (at most 300 characters) saying why it waits, such as "waits:
+  <branch> is not merged into origin/main yet"; the task page shows it under the Queued line. The note is cleared when
+  the task moves to `building` (a heartbeat or the next-task call) or is released (unverified until seen live).
 - **Plan approval** on the task page: Approve, Request changes (a comment is required) or Reject, by the assignee or a
   project manager, owner or admin. Audited.
 - **Claims:** only the runner holding a task's claim may post its plan, beat or report. A claim lives while its runner
@@ -128,7 +131,7 @@ may not stick over plain http. The API endpoints do not use the cookie.
   next task: approved, building, changes requested, planning, then open; returns the task, the claim and `action`
   plan|build), `POST /api/v1/tasks` (record a terminal task as `queued`; with `"approval": "page"`
   it is proposed instead: stored as `plan_review` with its plan and items, claimed by the runner, approved on the page), `POST /api/v1/tasks/<N>/plan` (`{claim, plan, items}`),
-  `.../heartbeat` (`{claim, state?: queued|building}`), `.../report` (`{claim, result: done|stopped, branch, pr_url, note}`). 409 = this runner no
+  `.../heartbeat` (`{claim, state?: queued|building, note?}`), `.../report` (`{claim, result: done|stopped, branch, pr_url, note}`). 409 = this runner no
   longer holds the task.
 - Table `project_task` (init-db creates it).
 
