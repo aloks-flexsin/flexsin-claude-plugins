@@ -105,8 +105,15 @@ def test_the_runner_beats_the_claim_and_reports_done(project, central, team, env
 def test_a_released_task_stops_the_run(project, central, team, env, monkeypatch, capsys):
     n, transport = _runner_with_task(project, central, team, env, monkeypatch)
     from central import tasks
-    tasks.release(central.conn, central.project, server_task(central, n), None, team['now'])
-    assert ar.run(project, max_iterations=5, claude=picking_agent(), transport=transport, allow_dirty=True) == 1
+    inner, released = picking_agent(), []
+
+    def claude(cmd, cwd):                                   # released while the first item is being worked
+        if not released:
+            released.append(True)
+            tasks.release(central.conn, central.project, server_task(central, n), None, team['now'])
+        return inner(cmd, cwd)
+
+    assert ar.run(project, max_iterations=5, claude=claude, transport=transport, allow_dirty=True) == 1
     assert 'was released, reassigned or its claim expired' in capsys.readouterr().out
     events = [json.loads(line) for line in (project / '.auto' / 'events.jsonl').read_text().splitlines()]
     assert events[-1]['type'] == 'run_end' and events[-1]['detail']['reason'] == 'claim_lost'

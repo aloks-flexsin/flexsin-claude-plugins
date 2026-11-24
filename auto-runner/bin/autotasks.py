@@ -102,6 +102,15 @@ def take_next(project, env=None, send=None):
     return reply
 
 
+def reopen_build(project, number, env=None, send=None):
+    """A build that failed before its run began: put the queued task back to building so `next` offers it again."""
+    try:
+        _call(transport(project, env, send), 'POST', f'/api/v1/tasks/{int(number)}/heartbeat',
+              {'claim': _claim(project, number), 'state': 'building'})
+    except Exception:
+        pass                                            # best effort: the claim expires and the task is taken again
+
+
 SAFE_CHARS = re.compile(r'[^A-Za-z0-9._-]')
 
 
