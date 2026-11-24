@@ -5,6 +5,9 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Central pages: a dark mode toggle in the top bar ("Dark mode" / "Light mode", signed in and signed out). It posts to
+  `POST /theme`, which takes `light` or `dark` (anything else is 400), keeps the choice in the `theme` cookie for a
+  year and returns to the page it came from (same-site paths only, else `/my`). Light stays the default.
 - Propose a terminal plan for approval on the page: `POST /api/v1/tasks` accepts `"approval": "page"` and stores the
   task as `plan_review` (plan and items kept, claim held by the runner) instead of `building`; the default is unchanged.
   `autotasks.py propose --title T --plan FILE --items FILE` uses it, and `autotasks.py list` shows such a task as

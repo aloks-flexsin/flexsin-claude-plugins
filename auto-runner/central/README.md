@@ -160,6 +160,13 @@ may not stick over plain http. The API endpoints do not use the cookie.
   else. Without `confirm=1` the route answers with a page saying what will happen and posts the same form again; with
   JavaScript a dialog asks instead (`data-confirm` on the form).
 - `account.name` (nullable) is added by `init-db`.
+- **Theme: light by default.** Pages render `<html data-theme="light">` whatever the system setting; dark colours apply
+  only under `:root[data-theme="dark"]` in `static/style.css`. `ui.theme()` reads the `theme` cookie (`dark` switches,
+  anything else is light) and a context processor hands it to `base.html`.
+- **Dark mode toggle.** The top bar (signed in and signed out) has one button, "Dark mode" when light and "Light mode"
+  when dark. It posts `theme` and `next` (the current path) to `POST /theme` (`auth.py`, CSRF checked like every form),
+  which accepts only `light` or `dark` (anything else is 400 and sets nothing), sets the `theme` cookie for one year
+  (`Secure; HttpOnly; SameSite=Lax; Path=/`) and redirects to `next` through `ui.safe_next` (default `/my`).
 
 ## The frame (UX audit, PR 2; `shell.py`)
 

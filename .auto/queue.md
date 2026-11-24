@@ -97,6 +97,15 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Slice:* 6 Start it from setup, documented
   *Kind:* internal
 
+- [x] **L1 Light by default.** In `static/style.css`, replace both `@media (prefers-color-scheme:dark)` blocks with `:root[data-theme="dark"]` rules holding the same token values; in `templates/base.html` render `<html lang="en" data-theme="{{ theme }}">` with `theme` from a context processor (`ui.theme()`: the `theme` cookie when it is `dark`, else `light`). No other page changes.
+  *Acceptance:* new tests in `tests/central/test_theme.py`: every page (sign-in and My work) renders `data-theme="light"` without a cookie and with an unknown cookie value; `style.css` contains no `prefers-color-scheme` and has `:root[data-theme="dark"]` with the old dark `--bg` value `#10141b`.
+  *Slice:* 1 Light by default
+  *Kind:* feature
+- [x] **L2 Dark mode toggle.** Add `POST /theme` (in `auth.py` or `ui.py`; CSRF as usual): takes `theme` (`light` or `dark`; anything else is 400) and `next` (through `ui.safe_next`, default `/my`), sets the `theme` cookie for one year (`Secure`, `SameSite=Lax`, path `/`) and redirects. In `base.html` add a small form in the top bar (signed in and signed out) with one button: "Dark mode" when light, "Light mode" when dark, posting the other value and the current path. Styles in `static/style.css` only; update `auto-runner/central/README.md` and the root `CHANGELOG.md` (Unreleased).
+  *Acceptance:* tests in `tests/central/test_theme.py`: posting `dark` sets the cookie and the next page renders `data-theme="dark"` with a "Light mode" button; posting `light` switches back; a bad value gets 400 and no cookie; `next=//evil.example` redirects to `/my`; the form carries `csrf_token` and a POST without it gets 400; `test_pages_style.py` still passes.
+  *Slice:* 2 Choose dark mode
+  *Kind:* feature
+
 ## Needs a person (the runner never does these)
 - Push, merge, deploy, or anything outside this repository.
 - Decisions about what the product should do.
