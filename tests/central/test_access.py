@@ -44,7 +44,7 @@ def token(client, path):
 
 
 def post(client, path, **data):
-    data['csrf_token'] = token(client, '/signin') if client.get_cookie('__Host-session') is None else token(client, '/')
+    data['csrf_token'] = token(client, '/signin') if client.get_cookie('__Host-session') is None else token(client, '/my')
     return client.post(path, data=data)
 
 
@@ -101,7 +101,7 @@ def test_unknown_project_and_unknown_role(world):
 @pytest.mark.parametrize('who', WHO)
 def test_members_page_and_management_by_role(world, conn, who):
     c = world['clients'][who]
-    page = c.get('/projects/alpha')
+    page = c.get('/projects/alpha/settings/members')
     if who in ('stranger', 'anonymous'):
         assert page.status_code == 404
     else:
@@ -139,9 +139,9 @@ def test_a_stranger_gets_404_on_every_page_of_another_project(world):
         if 'POST' in rule.methods:
             assert post(stranger, path, email='stranger@example.com', role='owner').status_code == 404, path
     # The same answer as for a project that does not exist: nothing reveals that 'alpha' is there.
-    assert stranger.get('/projects/alpha').get_data() == stranger.get('/projects/no-such').get_data()
+    assert stranger.get('/projects/alpha/settings/members').get_data() == stranger.get('/projects/no-such').get_data()
     # Their own project is fine.
-    assert stranger.get('/projects/beta').status_code == 200
+    assert stranger.get('/projects/beta/settings/members').status_code == 200
 
 
 def test_project_list_shows_members_their_projects_and_admins_all(world):
@@ -151,20 +151,20 @@ def test_project_list_shows_members_their_projects_and_admins_all(world):
     viewer_list = clients['viewer'].get('/projects').get_data(as_text=True)
     assert 'alpha' in viewer_list and 'beta' not in viewer_list and 'Create project' not in viewer_list
     stranger_list = clients['stranger'].get('/projects').get_data(as_text=True)
-    assert 'beta' in stranger_list and '/projects/alpha' not in stranger_list
+    assert 'beta' in stranger_list and '/projects/alpha/settings/members' not in stranger_list
     resp = clients['anonymous'].get('/projects')
     assert resp.status_code == 302 and resp.headers['Location'].endswith('/signin')
 
 
 def test_admin_sees_a_project_it_is_not_a_member_of(world, conn):
     assert projects.member_role(conn, world['beta']['id'], world['accounts']['admin']['id']) is None
-    assert world['clients']['admin'].get('/projects/beta').status_code == 200
+    assert world['clients']['admin'].get('/projects/beta/settings/members').status_code == 200
 
 
 def test_disabled_admin_and_member_lose_access(world, conn):
     accounts.set_disabled(conn, world['accounts']['owner']['id'], True)
     assert projects.effective_role(conn, world['alpha'], accounts.get(conn, world['accounts']['owner']['id'])) is None
-    assert world['clients']['owner'].get('/projects/alpha').status_code == 404
+    assert world['clients']['owner'].get('/projects/alpha/settings/members').status_code == 404
 
 
 def test_only_admins_create_projects(world, conn):
@@ -238,11 +238,11 @@ def test_last_owner_cannot_be_removed_or_demoted(world, conn):
     assert post(admin, '/projects/alpha/members/%s/role' % world['accounts']['manager']['id'],
                 role='owner').status_code == 302
     assert post(world['clients']['owner'], '/projects/alpha/members/%s/remove' % owner_id, confirm='1').status_code == 302
-    assert world['clients']['owner'].get('/projects/alpha').status_code == 404
+    assert world['clients']['owner'].get('/projects/alpha/settings/members').status_code == 404
 
 
 def test_membership_forms_carry_csrf_and_refuse_without_it(world, conn):
-    page = world['clients']['owner'].get('/projects/alpha').get_data(as_text=True)
+    page = world['clients']['owner'].get('/projects/alpha/settings/members').get_data(as_text=True)
     assert page.count('<form') == page.count('name="csrf_token"') >= 9
     viewer_id = world['accounts']['viewer']['id']
     resp = world['clients']['owner'].post('/projects/alpha/members/%s/remove' % viewer_id)
@@ -251,4 +251,4 @@ def test_membership_forms_carry_csrf_and_refuse_without_it(world, conn):
 
 
 def test_home_links_to_projects(world):
-    assert '/projects' in world['clients']['viewer'].get('/').get_data(as_text=True)
+    assert '/projects' in world['clients']['viewer'].get('/my').get_data(as_text=True)

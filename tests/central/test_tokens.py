@@ -38,13 +38,13 @@ def new_client(app):
     return c
 
 
-def csrf(client, path='/'):
+def csrf(client, path='/my'):
     page = client.get(path).get_data(as_text=True)
     return re.search(r'name="csrf_token" value="([^"]+)"', page).group(1)
 
 
 def post(client, path, **data):
-    data['csrf_token'] = csrf(client, '/signin' if client.get_cookie('__Host-session') is None else '/')
+    data['csrf_token'] = csrf(client, '/signin' if client.get_cookie('__Host-session') is None else '/my')
     return client.post(path, data=data)
 
 
@@ -73,7 +73,7 @@ def world(api_app, conn):
 
 
 def create_token(client, slug='alpha', scopes=('ingest',)):
-    resp = post(client, '/projects/%s/tokens' % slug, scope=list(scopes))
+    resp = post(client, '/projects/%s/settings/tokens' % slug, scope=list(scopes))
     assert resp.status_code == 201, resp.get_data(as_text=True)
     return TOKEN_RE.search(resp.get_data(as_text=True)).group(1), resp
 
@@ -129,7 +129,7 @@ def test_the_token_is_shown_once(world):
     client = world['clients']['manager']
     raw, resp = create_token(client)
     assert resp.headers['Cache-Control'] == 'no-store'
-    later = client.get('/projects/alpha/tokens')
+    later = client.get('/projects/alpha/settings/tokens')
     assert later.status_code == 200
     page = later.get_data(as_text=True)
     assert raw not in page
@@ -143,16 +143,16 @@ def test_the_token_is_shown_once(world):
 def test_only_managers_owners_and_admins_manage_tokens(world, conn, who):
     client = world['clients'][who]
     allowed = who in ('manager', 'owner', 'admin')
-    page = client.get('/projects/alpha/tokens')
+    page = client.get('/projects/alpha/settings/tokens')
     assert page.status_code == (200 if allowed else 404)
-    resp = post(client, '/projects/alpha/tokens', scope='ingest')
+    resp = post(client, '/projects/alpha/settings/tokens', scope='ingest')
     assert resp.status_code == (201 if allowed else 404)
     assert conn.query_one('SELECT COUNT(*) AS n FROM token')['n'] == (1 if allowed else 0)
 
 
 def test_members_page_links_tokens_only_for_managers(world):
-    assert 'API tokens' in world['clients']['manager'].get('/projects/alpha').get_data(as_text=True)
-    assert 'API tokens' not in world['clients']['developer'].get('/projects/alpha').get_data(as_text=True)
+    assert 'Machine tokens' in world['clients']['manager'].get('/projects/alpha/settings/members').get_data(as_text=True)
+    assert 'Machine tokens' not in world['clients']['developer'].get('/projects/alpha/settings/members').get_data(as_text=True)
 
 
 def test_a_token_of_another_project_is_404(world, conn):
@@ -165,7 +165,7 @@ def test_a_token_of_another_project_is_404(world, conn):
 
 
 def test_no_scope_is_refused_and_audited(world, conn):
-    resp = post(world['clients']['owner'], '/projects/alpha/tokens')
+    resp = post(world['clients']['owner'], '/projects/alpha/settings/tokens')
     assert resp.status_code == 400
     assert conn.query_one('SELECT COUNT(*) AS n FROM token')['n'] == 0
     assert audit.rows(conn, 'token.create.refused')

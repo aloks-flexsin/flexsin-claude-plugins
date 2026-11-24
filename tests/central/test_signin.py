@@ -66,7 +66,7 @@ def test_signin_sets_a_secure_httponly_lax_cookie_holding_only_a_hashed_id(clien
     assert len(rows) == 1
     assert rows[0]['id_hash'] == hashlib.sha256(raw.encode()).hexdigest()
     assert raw not in str(rows[0])
-    home = client.get('/')
+    home = client.get('/my')
     assert home.status_code == 200 and 'ada@example.com' in home.get_data(as_text=True)
 
 
@@ -78,7 +78,7 @@ def test_csrf_cookie_has_the_same_flags(client):
 
 
 def test_home_needs_a_session(client):
-    resp = client.get('/')
+    resp = client.get('/my')
     assert resp.status_code == 302 and resp.headers['Location'].endswith('/signin')
 
 
@@ -87,14 +87,14 @@ def test_a_new_session_id_at_every_signin(client, conn, ada, clock):
     first = client.get_cookie(auth.SESSION_COOKIE).value
     # Signing in again while signed in (the form token is now the session's).
     resp = client.post('/signin', data={'email': 'ada@example.com', 'password': GOOD,
-                                        'csrf_token': _csrf(client, '/')})
+                                        'csrf_token': _csrf(client, '/my')})
     assert resp.status_code == 302
     second = client.get_cookie(auth.SESSION_COOKIE).value
     assert first != second
     hashes = [r['id_hash'] for r in conn.query('SELECT id_hash FROM session')]
     assert hashes == [sessions.hash_id(second)]  # the old session ended
     client.set_cookie(auth.SESSION_COOKIE, first, secure=True)
-    assert client.get('/').status_code == 302  # the old id no longer signs anyone in
+    assert client.get('/my').status_code == 302  # the old id no longer signs anyone in
 
 
 def test_a_session_id_planted_before_signin_is_not_kept(client, conn, ada, clock):
@@ -106,11 +106,11 @@ def test_a_session_id_planted_before_signin_is_not_kept(client, conn, ada, clock
 def test_idle_expiry_after_two_hours(client, conn, ada, clock):
     signin(client)
     clock.advance(hours=1, minutes=59)
-    assert client.get('/').status_code == 200  # activity moves the idle window
+    assert client.get('/my').status_code == 200  # activity moves the idle window
     clock.advance(hours=1, minutes=59)
-    assert client.get('/').status_code == 200
+    assert client.get('/my').status_code == 200
     clock.advance(hours=2)
-    assert client.get('/').status_code == 302
+    assert client.get('/my').status_code == 302
     assert conn.query('SELECT * FROM session') == []
 
 
@@ -118,11 +118,11 @@ def test_absolute_expiry_after_twelve_hours_even_when_active(client, conn, ada, 
     signin(client)
     for _ in range(11):
         clock.advance(hours=1)
-        assert client.get('/').status_code == 200
+        assert client.get('/my').status_code == 200
     clock.advance(minutes=59)
-    assert client.get('/').status_code == 200
+    assert client.get('/my').status_code == 200
     clock.advance(minutes=1)
-    resp = client.get('/')
+    resp = client.get('/my')
     assert resp.status_code == 302
     assert conn.query('SELECT * FROM session') == []
     assert client.get_cookie(auth.SESSION_COOKIE) is None
@@ -131,18 +131,18 @@ def test_absolute_expiry_after_twelve_hours_even_when_active(client, conn, ada, 
 def test_signout_ends_the_session(client, conn, ada, clock):
     signin(client)
     raw = client.get_cookie(auth.SESSION_COOKIE).value
-    resp = client.post('/signout', data={'csrf_token': _csrf(client, '/')})
+    resp = client.post('/signout', data={'csrf_token': _csrf(client, '/my')})
     assert resp.status_code == 302 and resp.headers['Location'].endswith('/signin')
     assert conn.query('SELECT * FROM session') == []
     client.set_cookie(auth.SESSION_COOKIE, raw, secure=True)
-    assert client.get('/').status_code == 302
+    assert client.get('/my').status_code == 302
     assert [r['detail']['email'] for r in audit.rows(conn, 'signout')] == ['ada@example.com']
 
 
 def test_disabled_account_loses_its_session_and_cannot_sign_in(client, conn, ada, clock):
     signin(client)
     accounts.set_disabled(conn, ada['id'], True)
-    assert client.get('/').status_code == 302
+    assert client.get('/my').status_code == 302
     assert signin(client).status_code == 401
     assert audit.rows(conn, 'signin.failure')[-1]['detail']['reason'] == 'disabled'
 
@@ -182,7 +182,7 @@ def test_a_success_resets_the_failure_count(client, conn, ada, clock):
         signin(client, password=WRONG)
     assert signin(client).status_code == 302
     assert accounts.get(conn, ada['id'])['failed_count'] == 0
-    client.post('/signout', data={'csrf_token': _csrf(client, '/')})
+    client.post('/signout', data={'csrf_token': _csrf(client, '/my')})
     for _ in range(4):
         signin(client, password=WRONG)
     assert accounts.get(conn, ada['id'])['locked_until'] is None
@@ -227,7 +227,7 @@ def test_signed_in_posts_need_the_session_token(client, conn, ada, clock):
     assert client.post('/signout', data={'csrf_token': anon_token}).status_code == 400
     assert len(conn.query('SELECT * FROM session')) == 1
     session_token = conn.query_one('SELECT csrf_token FROM session')['csrf_token']
-    assert _csrf(client, '/') == session_token
+    assert _csrf(client, '/my') == session_token
     assert client.post('/signout', data={'csrf_token': session_token}).status_code == 302
 
 

@@ -202,4 +202,5 @@ def signout():
 @bp.get("/")
 @login_required
 def home():
-    return render_template("home.html", account=g.account)
+    """Signed in, the first page is My work: what waits for you across projects."""
+    return redirect(url_for("mywork.my_page"))

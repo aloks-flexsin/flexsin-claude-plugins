@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% from "_project.html" import header with context %}
+{% block title %}{{ project.name }}{% endblock %}
+{% block body_attrs %} data-refresh="30"{% endblock %}
+{% block content %}
+{{ header(project, "overview") }}
+
+<section class="block">
+  <div class="block-head"><h2>Needs attention</h2><span class="muted" data-updated>Updated just now</span></div>
+  {% if attention %}
+  <div class="cards">
+    {% for a in attention %}
+    {% if a.kind == "plan" %}
+    <div class="action-card attention">
+      {{ ui.status("task", "plan_review") }}
+      <div class="action-title"><a href="{{ url_for('tasks.task_page', slug=project.slug, number=a.task.number) }}">#{{ a.task.number }} {{ a.task.title }}</a></div>
+      <div class="muted">For {{ a.task.assignee_email | display_name }}{% if a.task.claim_runner %} · planned by {{ ui.runner(a.task.claim_runner) }}{% endif %} · {{ ui.when(a.task.updated_at) }}</div>
+      <a class="btn{{ ' primary' if a.can_act }}" href="{{ url_for('tasks.task_page', slug=project.slug, number=a.task.number) }}">{{ "Review plan" if a.can_act else "View plan" }}</a>
+    </div>
+    {% elif a.kind == "blocker" %}
+    <div class="action-card bad">
+      {{ ui.status("blocker", a.blocker.status, "item " ~ (a.blocker.task or "?")) }}
+      <div class="action-title"><a href="{{ url_for('blockers.blocker_page', slug=project.slug, blocker_id=a.blocker.blocker_id) }}">{{ a.blocker.question or "A runner is waiting for an answer" }}</a></div>
+      <div class="muted">Raised {{ ui.when(a.blocker.created_at) }}{% if not a.can_act %} · a manager, owner or admin answers it{% endif %}</div>
+      <a class="btn{{ ' primary' if a.can_act }}" href="{{ url_for('blockers.blocker_page', slug=project.slug, blocker_id=a.blocker.blocker_id) }}">{{ "Answer" if a.can_act else "View" }}</a>
+    </div>
+    {% else %}
+    <div class="action-card bad">
+      {{ ui.status("run", "silent") }}
+      <div class="action-title"><a href="{{ url_for('tasks.task_page', slug=project.slug, number=a.task.number) }}">#{{ a.task.number }} {{ a.task.title }}</a></div>
+      <div class="muted">{{ ui.runner(a.task.claim_runner) }} has been quiet since {{ ui.when(a.task.heartbeat_at) }}; the task can be taken again.</div>
+      <a class="btn" href="{{ url_for('tasks.task_page', slug=project.slug, number=a.task.number) }}">Open task</a>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% else %}
+  {{ ui.empty("Nothing needs anyone right now.") }}
+  {% endif %}
+</section>
+
+<section class="block">
+  <div class="block-head"><h2>Working now</h2></div>
+  {% if working %}
+  <div class="list">
+    {% for w in working %}
+    <div class="list-row">
+      {% if w.task %}
+      {{ ui.person(w.task.assignee_email, None, (w.task.claim_runner | runner_label) ~ (" · on " ~ w.progress.current if w.progress and w.progress.current else "")) }}
+      <div class="grow"><a href="{{ url_for('tasks.task_page', slug=project.slug, number=w.task.number) }}">#{{ w.task.number }} {{ w.task.title }}</a> {{ ui.status("task", w.task.status) }}</div>
+      {% if w.progress %}{{ ui.progress(w.progress.done, w.progress.total, (w.progress.latest.last | ago)) }}{% endif %}
+      {% else %}
+      {{ ui.person(w.run.user or "", None, w.run.account and (w.run.account ~ " account")) }}
+      <div class="grow">Run on <code>{{ w.run.branch_short or w.run.branch or "" }}</code> {{ ui.status("run", "running", w.run.current or "") }}</div>
+      <span class="muted">{{ ui.when(w.run.last) }}</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  {{ ui.empty("No runner is working on this project right now.") }}
+  {% endif %}
+</section>
+
+<section class="block">
+  <div class="block-head"><h2>Recent activity</h2></div>
+  {% if activity %}
+  <ul class="feed">
+    {% for e in activity %}
+    <li><span>{% if e.link %}<a href="{{ url_for(e.link[0], **e.link[1]) }}">{{ e.text }}</a>{% else %}{{ e.text }}{% endif %}</span>{{ ui.when(e.at) }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  {% if pnav.open_tasks or done %}{{ ui.empty("No activity recorded yet.") }}
+  {% else %}{{ ui.empty("Nothing has happened here yet.", url_for('tasks.tasks_page', slug=project.slug) ~ "#new-task" if pnav.can_run else None, "Add the first task") }}{% endif %}
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% from "_project.html" import header, settings_nav with context %}
+{% block title %}{{ project.name }} repository{% endblock %}
+{% block content %}
+{{ header(project, "settings") }}
+{{ settings_nav(project, "repository") }}
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+<section class="card">
+  <h2>Repository</h2>
+  <p>{% if project.repo_url %}<code>{{ project.repo_url }}</code>{% else %}Not set yet: the plugin's init and join need it.{% endif %}</p>
+  <p class="muted">One project per repository. The plugin reads it to check a checkout belongs to this project and to clone it.</p>
+  {% if can_manage %}
+  <details{% if error %} open{% endif %}>
+    <summary class="btn">Change repository URL</summary>
+    <form method="post" action="{{ url_for('projects.repo_url_set', slug=project.slug) }}" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Repository URL <input type="text" name="repo_url" value="{{ project.repo_url or '' }}" maxlength="500" required class="wide"></label>
+      <button type="submit" class="btn primary">Save repository URL</button>
+    </form>
+  </details>
+  {% endif %}
+</section>
+{% endblock %}

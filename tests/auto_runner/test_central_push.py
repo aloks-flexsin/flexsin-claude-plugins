@@ -64,7 +64,7 @@ class Central:
                                        c.get(path).get_data(as_text=True)).group(1)
         assert c.post('/signin', data={'email': 'owner@example.com', 'password': PW,
                                        'csrf_token': token('/signin')}).status_code == 302
-        c.csrf = token('/')
+        c.csrf = token('/my')
         return c
 
 

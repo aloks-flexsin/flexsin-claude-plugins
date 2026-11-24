@@ -1,8 +1,8 @@
 {% extends "base.html" %}
+{% from "_project.html" import header, settings_nav with context %}
 {% block title %}{{ project.name }} tasks{% endblock %}
 {% block content %}
-<h1>{{ project.name }} <small>({{ project.slug }})</small> tasks</h1>
-<p class="crumbs"><a href="{{ url_for('projects.projects_page') }}">Projects</a> / <a href="{{ url_for('projects.members_page', slug=project.slug) }}">{{ project.name }}</a> / Tasks · <a href="{{ url_for('runs.runs_page', slug=project.slug) }}">Runs</a> · <a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}">Blockers</a></p>
+{{ header(project, "tasks") }}
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 {% if tasks %}
 <table>
@@ -25,7 +25,7 @@
 <p class="card empty">No tasks yet. Add one below; a runner takes it when its person runs <code>/auto-runner:auto</code> with no task.</p>
 {% endif %}
 {% if can_add %}
-<h2>Add a task</h2>
+<h2 id="new-task">Add a task</h2>
 <p class="muted">The runner of the person it is assigned to plans it first; the plan waits here for approval before anything is built.</p>
 <form method="post" action="{{ url_for('tasks.task_add', slug=project.slug) }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

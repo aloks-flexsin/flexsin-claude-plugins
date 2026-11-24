@@ -74,7 +74,7 @@ def w(app, conn):
 def answer(w, who, blocker='B-colour', **data):
     c = w['clients'][who]
     if 'csrf_token' not in data:              # a valid token for this client: the home page form carries the session's
-        data['csrf_token'] = csrf(c, '/signin' if who == 'anonymous' else '/')
+        data['csrf_token'] = csrf(c, '/signin' if who == 'anonymous' else '/my')
     return c.post('/projects/alpha/blockers/%s/answer' % blocker, data=data)
 
 
@@ -191,4 +191,4 @@ def test_secrets_in_the_content_are_redacted_before_they_are_shown(w):
 
 
 def test_the_project_page_links_to_its_blockers(w):
-    assert '/projects/alpha/blockers' in w['clients']['viewer'].get('/projects/alpha').get_data(as_text=True)
+    assert '/projects/alpha/blockers' in w['clients']['viewer'].get('/projects/alpha/settings/members').get_data(as_text=True)

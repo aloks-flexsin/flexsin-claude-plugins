@@ -1,8 +1,9 @@
 {% extends "base.html" %}
+{% from "_project.html" import header, settings_nav with context %}
 {% block title %}{{ project.name }} API tokens{% endblock %}
 {% block content %}
-<h1>{{ project.name }} <small>({{ project.slug }})</small> API tokens</h1>
-<p class="crumbs"><a href="{{ url_for('projects.members_page', slug=project.slug) }}">Members</a> / API tokens</p>
+{{ header(project, "settings") }}
+{{ settings_nav(project, "tokens") }}
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 {% if new_token %}
 <section role="status">

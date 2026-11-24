@@ -1,0 +1,33 @@
+{#- The header and tabs every project page shares (UX audit, PR 2). Needs `pnav` (shell.init_app) and `project`.
+    {% from "_project.html" import header with context %}  {{ header(project, "tasks") }} -#}
+{% macro header(project, active, crumb=None) -%}
+<div class="project-head">
+  <div class="project-title">
+    <div>
+      {% if crumb %}<div class="crumb"><a href="{{ crumb[1] }}">{{ crumb[0] }}</a> /</div>{% endif %}
+      <h1>{{ project.name }}{% if pnav.show_slug %} <small>{{ project.slug }}</small>{% endif %}</h1>
+      <div class="project-meta">
+        {% if project.repo_url %}<span>{{ project.repo_url | replace("https://", "") | replace(".git", "") }}</span><span aria-hidden="true">·</span>{% endif %}
+        <span>You are <strong>{{ pnav.role }}</strong></span><span aria-hidden="true">·</span>
+        <span>{{ pnav.members }} member{{ "s" if pnav.members != 1 }}</span>
+      </div>
+    </div>
+    {% if pnav.can_run %}<a class="btn primary" href="{{ url_for('tasks.tasks_page', slug=project.slug) }}#new-task">New task</a>{% endif %}
+  </div>
+  <nav class="tabs" aria-label="Project">
+    <a href="{{ url_for('projects.overview_page', slug=project.slug) }}"{% if active == "overview" %} aria-current="page"{% endif %}>Overview</a>
+    <a href="{{ url_for('tasks.tasks_page', slug=project.slug) }}"{% if active == "tasks" %} aria-current="page"{% endif %}>Tasks <span class="count">{{ pnav.open_tasks }}</span>{% if pnav.approval %} <span class="pill attention" title="plans waiting for approval">{{ pnav.approval }}</span>{% endif %}</a>
+    <a href="{{ url_for('runs.runs_page', slug=project.slug) }}"{% if active == "runs" %} aria-current="page"{% endif %}>Runs{% if pnav.live_runs %} <span class="pill info">{{ pnav.live_runs }} live</span>{% endif %}</a>
+    <a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}"{% if active == "blockers" %} aria-current="page"{% endif %}>Blockers{% if pnav.blockers %} <span class="pill bad">{{ pnav.blockers }}</span>{% endif %}</a>
+    <a href="{{ url_for('projects.members_page', slug=project.slug) }}"{% if active == "settings" %} aria-current="page"{% endif %}>Settings</a>
+  </nav>
+</div>
+{%- endmacro %}
+
+{% macro settings_nav(project, active) -%}
+<nav class="subnav" aria-label="Settings">
+  <a href="{{ url_for('projects.members_page', slug=project.slug) }}"{% if active == "members" %} aria-current="page"{% endif %}>Members</a>
+  <a href="{{ url_for('projects.repository_page', slug=project.slug) }}"{% if active == "repository" %} aria-current="page"{% endif %}>Repository</a>
+  {% if pnav.can_tokens %}<a href="{{ url_for('projects.tokens_page', slug=project.slug) }}"{% if active == "tokens" %} aria-current="page"{% endif %}>Machine tokens</a>{% endif %}
+</nav>
+{%- endmacro %}

@@ -68,5 +68,5 @@ def test_the_confirm_page_reposts_the_original_fields(world, conn):
 
 
 def test_destructive_forms_carry_the_dialog_text(world, conn):
-    page = world['clients']['owner'].get('/projects/alpha').get_data(as_text=True)
+    page = world['clients']['owner'].get('/projects/alpha/settings/members').get_data(as_text=True)
     assert 'data-confirm="Remove' in page and 'data-confirm-action="Remove"' in page

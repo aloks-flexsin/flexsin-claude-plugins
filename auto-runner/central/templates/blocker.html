@@ -1,8 +1,9 @@
 {% extends "base.html" %}
+{% from "_project.html" import header, settings_nav with context %}
 {% block title %}{{ blocker.blocker_id }}{% endblock %}
 {% block content %}
-<h1>{{ blocker.blocker_id }}</h1>
-<p class="crumbs"><a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}">All blockers of {{ project.name }}</a></p>
+{{ header(project, "blockers") }}
+<h2 class="page-title">{{ blocker.blocker_id }}</h2>
 <p class="lead">Item {{ blocker.task or "?" }} · State: <span class="badge warn">{{ describe }}</span> · Raised {{ blocker.created_at }}</p>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 

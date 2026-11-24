@@ -29,14 +29,14 @@ one-time link. Someone who is not a member of a project gets "not found" on its 
    `https://github.com/org/acme-web`). Leave slug and name empty: they are filled in from the repository (`acme-web`; or
    `org-acme-web` when that is taken). **One project per repository:** a second project for the same repository, in any
    URL form, is refused and names the existing one.
-2. On `<service>/projects/<slug>/members`, **invite** each teammate: their email and a role (see the table). Someone who
+2. On the project's **Settings › Members** (`<service>/projects/<slug>/settings/members`), **invite** each teammate: their email and a role (see the table). Someone who
    already has an account is added at once. Someone new gets an account and you get a **one-time link**, shown only then:
    send it to them (chat or email). It works once and expires after 72 hours; they open it, set their own password and
    are signed in. The member shows as *invited* until then; **New invite link** makes a fresh one (the old one stops).
    Owners can invite to their own project; admins to any. Forgotten password: an admin presses **Send reset link** on
    Accounts and sends that link the same way.
 3. **No tokens to hand out.** Each teammate signs their own computer in from Claude (below) and gets a personal token
-   that works only while they are a developer or above in the project. Project tokens (on `<service>/projects/<slug>/tokens`,
+   that works only while they are a developer or above in the project. Project tokens (on **Settings › Machine tokens**, `<service>/projects/<slug>/settings/tokens`,
    **ingest** and **pull** scopes, shown once) are only for machines nobody signs in on, such as a build server. Someone
    leaving: remove them from the project, or on Accounts press **Revoke tokens** or disable the account.
 4. Tell teammates the service address (and, for `/auto-runner:join`, the slug). That replaces sharing clone commands: `/auto-runner:join <slug>`
