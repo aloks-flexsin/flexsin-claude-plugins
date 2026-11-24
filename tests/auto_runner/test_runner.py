@@ -744,3 +744,48 @@ def test_one_docs_event_per_gate(project):
     assert ar.run(project, max_iterations=2, claude=code_agent(revalidate=True)) == 0
     gates = [e for e in events(project) if e['type'] == 'docs']
     assert [(g['item'], g['detail']['result']) for g in gates] == [('A1', 'pass'), ('A2', 'pass')]
+
+
+REFUSED = '\n'.join([
+    json.dumps({'type': 'assistant', 'message': {'content': [
+        {'type': 'tool_use', 'id': 't1', 'name': 'Bash', 'input': {'command': 'pnpm install'}}]}}),
+    json.dumps({'type': 'user', 'message': {'content': [
+        {'type': 'tool_result', 'tool_use_id': 't1', 'is_error': True,
+         'content': "Claude requested permissions to use Bash, but you haven't granted it yet."}]}})])
+
+
+def asked_item(cmd):
+    return cmd[2].split('Do ONLY item ', 1)[1].split()[0]
+
+
+def test_early_exit_with_refusals_is_retried_not_blocked(project):
+    calls = []
+    good = picking_agent(calls)
+
+    def claude(cmd, cwd):
+        if not calls:
+            calls.append('early ' + asked_item(cmd))
+            return 1, REFUSED
+        return good(cmd, cwd)
+    assert ar.run(project, max_iterations=1, claude=claude) == 0
+    assert project_statuses(project)['A1'] == ('queued', 'agent exited with 1; retried next iteration')
+    assert ar.run(project, max_iterations=1, claude=claude, allow_dirty=True) == 0
+    assert calls == ['early A1', 'A1'] and project_statuses(project)['A1'][0] == 'done'
+
+
+def test_clean_exit_with_refusals_still_needs_permission(project):
+    assert ar.run(project, max_iterations=1, claude=lambda cmd, cwd: (0, REFUSED)) == 0
+    state, detail = project_statuses(project)['A1']
+    assert state == 'blocked' and detail.startswith('needs permission for Bash: pnpm install')
+
+
+def test_two_early_exits_in_a_row_stop_by_the_no_progress_rule(project):
+    seen = []
+
+    def claude(cmd, cwd):
+        seen.append(asked_item(cmd))
+        return 1, REFUSED
+    assert ar.run(project, max_iterations=6, claude=claude) == 1
+    assert seen == ['A1', 'A1']
+    assert [r['result'] for r in runs(project)] == ['no_progress', 'no_progress']
+    assert project_statuses(project)['A1'] == ('queued', 'agent exited with 1; retried next iteration')

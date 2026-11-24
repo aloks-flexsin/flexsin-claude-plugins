@@ -1535,6 +1535,8 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 set_state(item, 'blocked', 'changelog: ' + '; '.join(change['errors']))
             elif entry['result'] == 'blocked':
                 set_state(item, 'blocked', blocked_detail(raised))
+            elif denied and code != 0:                 # an early exit, not a refusal the agent stopped on: retry
+                set_state(item, 'queued', f'agent exited with {code}; retried next iteration')
             elif denied:
                 set_state(item, 'blocked', f'needs permission for {"; ".join(denied[:3])}: allow it in .claude/settings.json, '
                                            f'or put the tool on PATH with "path_prepend"')

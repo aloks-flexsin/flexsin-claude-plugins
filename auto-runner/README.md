@@ -260,7 +260,10 @@ continue from it; only the agent's files come back (never the queue, `.auto/` or
 patch and new files one by one, and a stash that does not apply cleanly is kept for a person.
 When the agent stops because a tool call was refused for lack of permission (read from the result's `permission_denials`,
 or from refused tool results in the transcript), the item's status names the call, for example "needs permission for Bash:
-corepack pnpm install: allow it in .claude/settings.json, or put the tool on PATH with path_prepend", and the log lists them.
+corepack pnpm install: allow it in .claude/settings.json, or put the tool on PATH with path_prepend", and the log lists them. That holds only when the agent exited 0: when it exited non-zero (it was cut
+off early, so the refusals may not be why it stopped) and nothing else explains the stop, the item goes back to queued with
+"agent exited with <code>; retried next iteration" and the next iteration runs it again; two such exits in a row still
+stop the run by the no-progress rule.
 It also stops on a browser-acceptance failure, a STOP file, uncommitted leftovers, or two iterations without progress. Cost per iteration is recorded in `.auto/runs.jsonl` only when the CLI reports it; otherwise it is `null`.
 Every run also appends to `.auto/events.jsonl` (schema `event.v1`, `bin/autoevents.py`), under a run id that is unique across people
 and machines (`<YYYYMMDD-HHMM>-<6 hex>`; 0.17.0): run start (with branch, base, and who ran it: `user` and `account` from

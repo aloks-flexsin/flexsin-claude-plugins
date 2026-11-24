@@ -153,7 +153,7 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Acceptance:* tests in `tests/auto_runner/test_central_tasks.py` with `fake_central.py`: after `next` gives a new claim, `beat` uses the new claim and gets `ok`; with matching claims nothing changes; with no `current-task.json`, `current` returns None.
   *Slice:* 1 A resumed run keeps its task
   *Kind:* fix
-- [ ] **F2 An item whose agent exited early is retried, not blocked.** In `auto-runner/bin/auto_run.py`, when the agent exited non-zero and the only explanation would be refused tool calls, set the item back to queued with the detail `agent exited with <code>; retried next iteration` instead of `blocked: needs permission ...`; keep "needs permission" for an agent that exited 0. The no-progress rule (stop when nothing changed twice) still applies. Update `auto-runner/README.md`.
+- [x] **F2 An item whose agent exited early is retried, not blocked.** In `auto-runner/bin/auto_run.py`, when the agent exited non-zero and the only explanation would be refused tool calls, set the item back to queued with the detail `agent exited with <code>; retried next iteration` instead of `blocked: needs permission ...`; keep "needs permission" for an agent that exited 0. The no-progress rule (stop when nothing changed twice) still applies. Update `auto-runner/README.md`.
   *Acceptance:* tests in `tests/auto_runner/test_runner.py` with a fake claude: exit 1 with refusals leaves the item queued with that detail and the next iteration runs it; exit 0 with refusals still blocks with "needs permission"; two such early exits in a row stop the run by the no-progress rule.
   *Slice:* 2 An interrupted item is retried
   *Kind:* fix
