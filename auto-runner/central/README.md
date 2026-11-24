@@ -189,6 +189,18 @@ With them, the section carries the public key, the CSRF token and both URLs as `
 browsers the account has it on, and holds the Turn on / Turn off buttons, hidden until the browser script (N4) finds
 push support. Sending pushes (`pywebpush`, in `requirements.txt`) is N5.
 
+**Service worker and the browser side.** `GET /sw.js` serves `static/sw.js` from the site root as `text/javascript`
+with `Service-Worker-Allowed: /` and `Cache-Control: no-cache`, so it can control scope `/`. On `push` it shows a
+notification from the JSON payload `{"title", "body", "link"}` (title defaults to "auto-runner"); on
+`notificationclick` it focuses a tab already showing the link or opens one. Links are same-origin only: any other
+link opens `/notifications`. In `static/app.js`, when the Account page has the push section and the browser supports
+service workers, `PushManager` and `Notification`, the script registers `/sw.js`, shows Turn on or Turn off for this
+browser's state, and: Turn on asks permission, subscribes with the VAPID public key from `data-vapid-public-key`
+(`userVisibleOnly`) and posts the subscription to the subscribe URL with `X-CSRF-Token`; Turn off unsubscribes the
+browser and posts its endpoint to the unsubscribe URL. Requests go only to same-origin URLs; no inline script, so it
+works under the CSP (`default-src 'self'` covers the worker and `fetch`). Not yet tried in a real browser
+(**unverified**); the tests check the headers and that the handlers exist.
+
 ## Presentation (UX audit foundations)
 
 - The CSP allows styles and scripts only from the app's own files, so no template has an inline `style=` or inline

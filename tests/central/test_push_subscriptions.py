@@ -1,5 +1,6 @@
 """Central service: browser push subscriptions and the Account page's push section (queue item N3)."""
 import json
+import pathlib
 import re
 
 import pytest
@@ -181,3 +182,45 @@ def test_init_db_adds_the_push_subscription_table_to_an_existing_database(tmp_pa
         assert conn.query_one("SELECT slug FROM project WHERE id = 'p1'")['slug'] == 'old'
     finally:
         conn.close()
+
+
+# --- queue item N4: the service worker and the browser side ---------------------------------------------------------
+
+STATIC = pathlib.Path(__file__).resolve().parents[2] / 'auto-runner' / 'central' / 'static'
+
+
+def test_service_worker_is_served_from_the_root_with_its_headers(client):
+    resp = client.get('/sw.js')
+    assert resp.status_code == 200
+    assert resp.headers['Content-Type'].split(';')[0].strip() == 'text/javascript'
+    assert resp.headers['Service-Worker-Allowed'] == '/'
+    assert "script-src 'self'" in resp.headers['Content-Security-Policy']
+    assert resp.get_data(as_text=True) == (STATIC / 'sw.js').read_text(encoding='utf-8')
+
+
+def test_service_worker_handles_push_and_notificationclick_with_same_origin_links():
+    sw = (STATIC / 'sw.js').read_text(encoding='utf-8')
+    assert 'addEventListener("push"' in sw and 'showNotification(' in sw
+    assert 'addEventListener("notificationclick"' in sw and 'openWindow(' in sw and '.focus()' in sw
+    for field in ('data.title', 'data.body', 'data.link'):
+        assert field in sw
+    assert 'self.location.origin' in sw          # links elsewhere open /notifications instead
+    assert 'importScripts' not in sw and 'http://' not in sw and 'https://' not in sw
+
+
+def test_app_js_subscribes_and_unsubscribes_with_the_pages_data_attributes():
+    js = (STATIC / 'app.js').read_text(encoding='utf-8')
+    for needle in ('serviceWorker.register("/sw.js", {scope: "/"})', 'Notification.requestPermission()',
+                   'pushManager.subscribe(', 'applicationServerKey', 'userVisibleOnly: true',
+                   'data-vapid-public-key', 'data-subscribe-url', 'data-unsubscribe-url', '"X-CSRF-Token"',
+                   '.unsubscribe()', 'data-push-on', 'data-push-off', 'credentials: "same-origin"'):
+        assert needle in js, needle
+    assert 'http://' not in js and 'https://' not in js    # only the page's own same-origin URLs
+
+
+def test_account_page_gives_the_script_what_it_needs(world, keys):
+    page = world['clients']['owner'].get('/account').get_data(as_text=True)
+    assert 'data-vapid-public-key="%s"' % KEYS['CENTRAL_VAPID_PUBLIC_KEY'] in page
+    assert 'data-subscribe-url="/push/subscribe"' in page and 'data-unsubscribe-url="/push/unsubscribe"' in page
+    assert re.search(r'data-csrf-token="[^"]+"', page)
+    assert 'src="/static/app.js"' in page

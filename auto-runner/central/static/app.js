@@ -113,6 +113,73 @@
     step();
   });
 
+  /* Push on this browser: the Account page's <div data-push data-vapid-public-key ...>. The buttons stay hidden unless
+     this browser supports push; Turn on asks permission, registers /sw.js, subscribes and posts the subscription to
+     the same-origin subscribe URL; Turn off unsubscribes here and tells the service. */
+  var pushBox = document.querySelector("[data-push]");
+  if (pushBox && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window) {
+    var onBtn = pushBox.querySelector("[data-push-on]"), offBtn = pushBox.querySelector("[data-push-off]");
+    var actions = pushBox.querySelector("[data-push-actions]"), status = pushBox.querySelector("[data-push-status]");
+    var say = function (text) { if (status) status.textContent = text; };
+    var keyBytes = function (b64) {
+      var s = (b64 + "===".slice((b64.length + 3) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+      var raw = window.atob(s), out = new Uint8Array(raw.length);
+      for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+      return out;
+    };
+    var sameOrigin = function (url) { return new URL(url, window.location.href).origin === window.location.origin; };
+    var post = function (url, body) {
+      if (!sameOrigin(url)) return Promise.reject(new Error("not same-origin"));
+      return fetch(url, {
+        method: "POST", credentials: "same-origin",
+        headers: {"Content-Type": "application/json", "X-CSRF-Token": pushBox.getAttribute("data-csrf-token") || ""},
+        body: JSON.stringify(body)
+      }).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r; });
+    };
+    var show = function (subscribed) {
+      onBtn.hidden = subscribed; offBtn.hidden = !subscribed; actions.hidden = false;
+    };
+    var registration = navigator.serviceWorker.register("/sw.js", {scope: "/"});
+    registration.then(function (reg) { return reg.pushManager.getSubscription(); })
+      .then(function (s) { show(!!s); if (s) say("Turned on in this browser."); })
+      .catch(function () { /* no service worker here: the buttons stay hidden */ });
+
+    onBtn.addEventListener("click", function () {
+      onBtn.disabled = true;
+      Notification.requestPermission().then(function (permission) {
+        if (permission !== "granted") throw new Error("permission");
+        return registration;
+      }).then(function (reg) {
+        return reg.pushManager.getSubscription().then(function (s) {
+          return s || reg.pushManager.subscribe({
+            userVisibleOnly: true, applicationServerKey: keyBytes(pushBox.getAttribute("data-vapid-public-key") || "")
+          });
+        });
+      }).then(function (s) {
+        return post(pushBox.getAttribute("data-subscribe-url"), s.toJSON());
+      }).then(function () {
+        show(true); say("Turned on in this browser.");
+      }).catch(function (err) {
+        say(err && err.message === "permission"
+          ? "This browser blocked notifications for this site. Allow them in the browser's site settings, then try again."
+          : "Could not turn on notifications in this browser. Reload the page and try again.");
+      }).then(function () { onBtn.disabled = false; });
+    });
+
+    offBtn.addEventListener("click", function () {
+      offBtn.disabled = true;
+      registration.then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (s) {
+        if (!s) return null;
+        var endpoint = s.endpoint;
+        return s.unsubscribe().then(function () { return post(pushBox.getAttribute("data-unsubscribe-url"), {endpoint: endpoint}); });
+      }).then(function () {
+        show(false); say("Turned off in this browser.");
+      }).catch(function () {
+        say("Could not turn off notifications in this browser. Reload the page and try again.");
+      }).then(function () { offBtn.disabled = false; });
+    });
+  }
+
   /* Auto-refresh: <body data-refresh="30"> reloads while the tab is visible and nobody is typing or deciding. */
   var every = parseInt(document.body.getAttribute("data-refresh") || "0", 10);
   if (every > 0) {

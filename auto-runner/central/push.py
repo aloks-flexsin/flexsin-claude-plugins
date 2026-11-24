@@ -10,11 +10,13 @@
   answer is the same, so it does not reveal whether it exists.
 - Push is "set up" when all three VAPID settings are present (`config.push_configured`); without them the Account page
   says "push is not set up on this service" and subscribe answers 409. Sending is queue item N5.
+- `GET /sw.js` serves `static/sw.js` (queue item N4) as `text/javascript` with `Service-Worker-Allowed: /`; the
+  Account page's script (`static/app.js`) registers it, subscribes and posts the subscription here.
 """
 import re
 import secrets
 
-from flask import Blueprint, current_app, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request, send_from_directory
 
 from . import auth, sessions
 from . import config as _config
@@ -103,6 +105,15 @@ def _error(message, status):
 def _body():
     body = request.get_json(silent=True)
     return body if body is not None else {}
+
+
+@bp.get("/sw.js")
+def service_worker():
+    """The push service worker (queue item N4), served from the site root so its scope can be `/`."""
+    response = send_from_directory(current_app.static_folder, "sw.js", mimetype="text/javascript", max_age=0)
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 @bp.post("/push/subscribe")
