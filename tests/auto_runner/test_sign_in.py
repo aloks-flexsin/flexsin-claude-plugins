@@ -1,6 +1,7 @@
 """auto-runner plugin: sign in from Claude (decision record 0008). `autocentral.py login start` shows a code, the person
 approves it on the real central app (Flask test client, no socket), `login wait` stores the personal token without
 printing it, and status, init and the runner then use it."""
+import json
 import os
 import re
 import stat
@@ -115,6 +116,37 @@ def test_nobody_approves_in_time(tmp_path, central, env):
     with pytest.raises(ac.LoginError, match='10 minutes'):
         ac.login_wait(p, env=env, send=central.send, sleep=clock.sleep, now=lambda: clock.t + 601,
                       store=lambda *a: pytest.fail('stored'))
+
+
+def start_body(tmp_path, central, env):
+    """The JSON body `login start` sends to /api/v1/device/start."""
+    bodies = []
+
+    def send(method, url, headers, body, timeout):
+        if url.endswith('/api/v1/device/start'):
+            bodies.append(json.loads(body.decode('utf-8')))
+        return central.send(method, url, headers, body, timeout)
+
+    ac.login_start(connected_repo(tmp_path), env=env, send=send)
+    assert len(bodies) == 1
+    return bodies[0]
+
+
+def test_start_sends_the_username_and_claude_account(tmp_path, central, env):
+    body = start_body(tmp_path, central, env)
+    assert body['user'] == 'alok' and body['claude_account'] == 'bhawish'
+    assert body['client_name'] and body['repo']
+
+
+def test_start_sends_neither_without_an_account(tmp_path, central, env):
+    body = start_body(tmp_path, central, {k: v for k, v in env.items() if k != 'AUTO_RUNNER_ACCOUNT'})
+    assert 'user' not in body and 'claude_account' not in body
+    assert body['client_name'] and 'repo' in body
+
+
+def test_start_sends_neither_for_an_invalid_name(tmp_path, central, env):
+    body = start_body(tmp_path, central, {**env, 'AUTO_RUNNER_USER': 'Alok Sharma'})
+    assert 'user' not in body and 'claude_account' not in body
 
 
 def test_wait_without_start(tmp_path, env):

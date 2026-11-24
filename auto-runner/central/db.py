@@ -10,7 +10,7 @@ SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema.s
 TABLES = (
     "account", "session", "project", "member", "token", "event", "task",
     "plan", "blocker", "decision", "delivery", "issue", "audit", "invite", "device_login", "personal_token",
-    "project_task", "runner", "notification", "push_subscription",
+    "project_task", "claude_identity", "runner", "notification", "push_subscription",
 )
 
 # Columns added to a table after it first shipped: (table, column, type). init_db adds each one that is missing
@@ -20,6 +20,10 @@ COLUMNS_ADDED = (
     ("project", "repo_key", "VARCHAR(500)"),
     ("event", "account_id", "VARCHAR(64)"),
     ("account", "name", "VARCHAR(100)"),
+    ("device_login", "runner_user", "VARCHAR(64)"),
+    ("device_login", "claude_account", "VARCHAR(64)"),
+    ("personal_token", "runner_user", "VARCHAR(64)"),
+    ("personal_token", "claude_account", "VARCHAR(64)"),
 )
 REPO_KEY_INDEX = "CREATE UNIQUE INDEX IF NOT EXISTS project_repo_key ON project (repo_key)"
 
@@ -111,6 +115,20 @@ class Database:
 
     def close(self):
         self.conn.close()
+
+
+MISSING_SQLSTATES = ("42P01", "42703")       # Postgres: undefined table, undefined column
+
+
+def schema_missing(exc):
+    """True when `exc` says a table or column the code uses is not in the database, which means the code was deployed
+    before `python -m central init-db` brought the database up to date."""
+    if getattr(exc, "sqlstate", None) in MISSING_SQLSTATES:
+        return True
+    if isinstance(exc, sqlite3.OperationalError):
+        text = str(exc).lower()
+        return text.startswith(("no such table", "no such column")) or "has no column named" in text
+    return False
 
 
 def connect(url):

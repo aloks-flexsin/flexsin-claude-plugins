@@ -4,6 +4,10 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+### Fixed
+- Central service: a page that needs a table or column `init-db` has not added yet answers 503 "This page needs a
+  database update" with the command to run, instead of crashing (the live site broke this way after the runner table).
+
 ### Added
 - Central notifications: each notification on `/notifications` says how it was delivered ("in-app", "push sent",
   "push failed: <reason>", "push off"), and admins get a **Notification log** (`GET /admin/notifications`, linked from

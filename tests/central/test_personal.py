@@ -211,3 +211,61 @@ def test_my_projects_lists_only_mine_with_roles(app, world, conn, signed_in_toke
     assert c.get('/api/v1/projects').status_code == 401
     raw, _ = tokens.create(conn, world['alpha']['id'], ['pull'], None, AT)
     assert c.get('/api/v1/projects', headers={'Authorization': 'Bearer ' + raw}).status_code == 401   # people only
+
+
+# ---------- the username and Claude account the runner reports ----------
+
+def start_as(app, **who):
+    body = {'client_name': 'ALOK-LAPTOP', 'repo': 'github.com/example/alpha'}
+    body.update(who)
+    return api(app, 'POST', '/api/v1/device/start', body=body).get_json()
+
+
+def test_the_reported_identity_shows_on_device_my_tokens_and_account(app, world, conn, clock):
+    s = start_as(app, user='alok', claude_account='bhawish')
+    client = world['clients']['manager']
+    page = post(client, '/device', user_code=s['user_code']).get_data(as_text=True)
+    assert 'signs in for' in page and 'alok' in page and 'Claude account' in page and 'bhawish' in page
+    assert post(client, '/device/decide', user_code=s['user_code'], decision='approve').status_code == 200
+    assert poll(app, clock, s['device_code']).status_code == 200
+    [row] = conn.query('SELECT * FROM personal_token')
+    assert (row['runner_user'], row['claude_account']) == ('alok', 'bhawish')
+    tokens_page = client.get('/account/tokens').get_data(as_text=True)
+    assert 'with Claude account bhawish' in tokens_page and 'not reported' not in tokens_page
+    account_page = client.get('/account').get_data(as_text=True)
+    assert 'bhawish' in account_page and 'alok' in account_page
+    assert len(audit.rows(conn, 'identity_seen')) == 1
+
+
+def test_a_start_without_an_identity_says_not_reported(app, world, conn, clock):
+    s = start_as(app)
+    client = world['clients']['manager']
+    assert 'not reported' in post(client, '/device', user_code=s['user_code']).get_data(as_text=True)
+    post(client, '/device/decide', user_code=s['user_code'], decision='approve')
+    assert poll(app, clock, s['device_code']).status_code == 200
+    assert 'identity not reported' in client.get('/account/tokens').get_data(as_text=True)
+    assert len(conn.query('SELECT * FROM claude_identity')) == 0
+
+
+def test_invalid_reported_names_are_dropped(app, world, conn, clock):
+    s = start_as(app, user='Not Valid!', claude_account='../x')
+    [row] = conn.query('SELECT * FROM device_login')
+    assert row['runner_user'] is None and row['claude_account'] is None
+    post(world['clients']['manager'], '/device/decide', user_code=s['user_code'], decision='approve')
+    assert poll(app, clock, s['device_code']).status_code == 200
+    assert len(conn.query('SELECT * FROM claude_identity')) == 0
+
+
+def test_init_db_adds_the_identity_columns_to_an_older_database(tmp_path):
+    from central import db
+    url = 'sqlite:///' + str(tmp_path / 'old.db').replace('\\', '/')
+    old = db.connect(url)
+    old.execute("CREATE TABLE device_login (id VARCHAR(64) PRIMARY KEY, client_name VARCHAR(100))")
+    old.execute("CREATE TABLE personal_token (id VARCHAR(64) PRIMARY KEY, name VARCHAR(100))")
+    old.commit()
+    old.close()
+    added = db.init_db(url)
+    for name in ('device_login.runner_user', 'device_login.claude_account',
+                 'personal_token.runner_user', 'personal_token.claude_account'):
+        assert name in added
+    assert db.init_db(url) == []

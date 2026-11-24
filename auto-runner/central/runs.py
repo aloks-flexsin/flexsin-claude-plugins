@@ -13,6 +13,7 @@ import re
 
 from flask import Blueprint, g, render_template, request
 
+from . import identities
 from .access import project_access
 from .db import get_db
 
@@ -59,8 +60,9 @@ def summarise(events, now):
             "run": run_id, "user": None, "account": None, "branch": None, "base": None, "started": e.get("time"),
             "last": e.get("time"), "ended": None, "exit": None, "reason": None, "items": {}, "current": None,
             "tests": None, "pushed": None, "pr_url": None, "publish_error": None, "blockers": 0, "signed_in": None,
-            "task": None})
+            "signed_in_name": None, "task": None})
         r["signed_in"] = r["signed_in"] or e.get("_signed_in")
+        r["signed_in_name"] = r["signed_in_name"] or e.get("_signed_in_name")
         r["last"] = e.get("time") or r["last"]
         if kind in ("run_start", "run_end") and isinstance(detail.get("task"), int) and not isinstance(detail["task"], bool):
             r["task"] = detail["task"]                    # the central task this run builds (plugin 0.21.0+)
@@ -155,7 +157,7 @@ def for_task(db, project_id, number, now):
 
 
 def project_events(db, project_id, limit=MAX_EVENTS):
-    rows = db.query("SELECT e.body, a.email FROM event e LEFT JOIN account a ON a.id = e.account_id"
+    rows = db.query("SELECT e.body, a.email, a.name FROM event e LEFT JOIN account a ON a.id = e.account_id"
                     " WHERE e.project_id = ? AND e.type IN (%s) ORDER BY e.ts DESC LIMIT %d"
                     % (", ".join("?" * len(SHOWN_TYPES)), int(limit)), (project_id,) + SHOWN_TYPES)
     events = []
@@ -165,7 +167,7 @@ def project_events(db, project_id, limit=MAX_EVENTS):
         except (TypeError, ValueError):
             continue
         if isinstance(body, dict):
-            events.append(dict(body, _signed_in=row["email"]))    # the account the service verified (personal token)
+            events.append(dict(body, _signed_in=row["email"], _signed_in_name=row["name"]))    # the account the service verified (personal token)
     return events
 
 
@@ -183,12 +185,15 @@ def runs_page(slug):
     outcome = request.args.get("outcome")
     if outcome not in [k for k, _ in OUTCOMES]:
         outcome = None
-    counts = {k: sum(1 for r in runs if r["state"] == k) for k, _ in OUTCOMES}
-    history = [r for r in runs if r["state"] != "running" and (outcome is None or r["state"] == outcome)]
+    claude = request.args.get("claude") or None
+    claude_accounts = identities.team_view(get_db(), g.project["id"])["claude_accounts"]
+    scoped = [r for r in runs if claude is None or r["account"] == claude]    # unknown value: no runs, no error
+    counts = {k: sum(1 for r in scoped if r["state"] == k) for k, _ in OUTCOMES}
+    history = [r for r in scoped if r["state"] != "running" and (outcome is None or r["state"] == outcome)]
     if outcome == "running":
         history = []
     return render_template("runs.html", project=g.project, runs=runs, history=history, outcomes=OUTCOMES,
-                           outcome=outcome, counts=counts, now=sessions_iso(now),
+                           outcome=outcome, counts=counts, claude=claude, claude_accounts=claude_accounts, now=sessions_iso(now),
                            runners=runners.views(get_db(), g.project, g.account, now),
                            active=[r for r in runs if r["state"] == "running"], stale_hours=int(STALE.total_seconds() // 3600))
 

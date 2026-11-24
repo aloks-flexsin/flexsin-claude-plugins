@@ -410,8 +410,10 @@ def login_start(project, central_url=None, env=None, send=None, now=None):
         raise LoginError('no central service address: connect the project first (/auto-runner:central), or pass '
                          '--central-url')
     import socket
-    status, data = _post(central_url + '/api/v1/device/start',
-                         {'client_name': socket.gethostname()[:100], 'repo': repo_key(remote_url(project) or '') or ''}, send)
+    body = {'client_name': socket.gethostname()[:100], 'repo': repo_key(remote_url(project) or '') or ''}
+    if autosafe.runner_name(env):
+        body['user'], body['claude_account'] = autosafe.runner_identity(env)
+    status, data = _post(central_url + '/api/v1/device/start', body, send)
     if status != 200 or not all(isinstance(data.get(k), str) for k in ('device_code', 'user_code', 'verification_uri')):
         raise LoginError(f'the central service at {central_url} did not start a sign-in ({status} {data.get("error", "")})')
     expires = (now or time.time)() + int(data.get('expires_in') or 600)

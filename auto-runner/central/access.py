@@ -17,7 +17,7 @@ import functools
 
 from flask import Blueprint, abort, g, jsonify, make_response, redirect, render_template, request, url_for
 
-from . import accounts, audit, auth, invites, projects, sessions, tokens, ui
+from . import accounts, audit, auth, identities, invites, projects, sessions, tokens, ui
 from .db import get_db
 
 bp = Blueprint("projects", __name__)
@@ -92,6 +92,7 @@ def _members_page(error=None, status=200, form_email="", invite=None):
                            pending=[m for m in rows if m["pending"]],
                            can_manage=projects.allows(g.project_role, "owner"), roles=projects.MEMBER_ROLES,
                            can_tokens=projects.allows(g.project_role, "manager"), invite=invite,
+                           team=identities.team_view(db, g.project["id"]),
                            my_role=g.project_role, error=error, form_email=form_email,
                            lifetime_hours=int(invites.LIFETIME.total_seconds() // 3600))
     return page, status
