@@ -76,7 +76,7 @@ def test_a_project_token_cannot_take_tasks(project, central, team):
 def test_record_a_terminal_task(project, central, team, env):
     connect(project)
     n = at.record(project, 'csv-export', 'CSV export', 'plan', ITEMS, env, central.send)
-    assert server_task(central, n)['status'] == 'building'
+    assert server_task(central, n)['status'] == 'queued'     # waits for its run to start (Q1)
     assert json.loads((project / '.auto' / 'pending' / 'csv-export' / 'task.json').read_text())['number'] == n
     assert [t['title'] for t in at.listing(project, env, central.send)] == ['CSV export']
 
@@ -260,8 +260,9 @@ def test_a_resumed_run_beats_with_the_newest_claim(project, central, team, env, 
     auto = project / '.auto'
     at.adopt(auto, auto / 'pending' / 'csv-export')
     old = at.current(auto)['claim']
+    assert at.beat(transport, auto) == 'ok'                                 # the run started: queued -> building
     reply = at.take_next(project, env, central.send)
-    assert reply['task']['number'] == n and reply['claim'] != old          # the server issued a new claim
+    assert reply['task']['number'] == n and reply['claim'] != old         # the server issued a new claim
     assert at.current(auto)['claim'] == reply['claim']
     assert json.loads((auto / 'run' / 'current-task.json').read_text())['claim'] == reply['claim']
     assert at.beat(transport, auto) == 'ok'

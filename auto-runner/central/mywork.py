@@ -56,7 +56,7 @@ def collect(db, account, moment, only=None):
     out["waiting"] = sorted([{"kind": "plan", "task": t, "at": t["updated_at"]} for t in out["approve"]]
                             + [{"kind": "blocker", "blocker": b, "at": b["created_at"]} for b in out["blockers"]],
                             key=lambda w: w["at"] or "")
-    order = {"building": 0, "planning": 1, "changes_requested": 2, "approved": 3, "open": 4}
+    order = {"building": 0, "planning": 1, "changes_requested": 2, "approved": 3, "queued": 3, "open": 4}
     out["progress"] = sorted(out["mine"], key=lambda t: (order.get(t["status"], 9), -t["number"])) + out["team"]
     out["done"] = sorted(out["done"], key=lambda t: t["updated_at"], reverse=True)[:RECENT]
     return out

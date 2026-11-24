@@ -2,7 +2,7 @@
 {% import "_ui.html" as ui %}
 {% from "_project.html" import header with context %}
 {% block title %}#{{ task.number }} {{ task.title }}{% endblock %}
-{% block body_attrs %}{% if task.status in ("planning", "building", "changes_requested", "approved") %} data-refresh="30"{% endif %}{% endblock %}
+{% block body_attrs %}{% if task.status in ("planning", "queued", "building", "changes_requested", "approved") %} data-refresh="30"{% endif %}{% endblock %}
 {% block content %}
 {{ header(project, "tasks", ("Tasks", url_for("tasks.tasks_page", slug=project.slug))) }}
 
@@ -61,6 +61,8 @@
     · last event {{ ui.when(progress.latest.last) }}
     {% if progress.blocked %}· <a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}">blocked: {{ progress.blocked | join(", ") }}</a>{% endif %}</div>
 </div>
+{% elif task.status == "queued" %}
+<div class="decision-bar quiet"><div class="muted">Queued: it waits for its run to start. It becomes Building when the run takes it.</div></div>
 {% elif task.status == "building" %}
 <div class="decision-bar quiet"><div class="muted">Approved and claimed; no run has sent progress yet. It appears here as soon as the runner starts.</div></div>
 {% endif %}

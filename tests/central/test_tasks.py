@@ -160,13 +160,69 @@ def test_an_admin_releases_and_reassigns(app, team, conn):
     assert len(audit.rows(conn, 'task.reassign')) == 1
 
 
-def test_a_terminal_task_is_recorded_as_building(app, team, conn):
+def record(app, team, runner='laptop'):
     resp = api(app, 'POST', '/api/v1/tasks', team['token']['dev'],
-               {'runner': 'laptop', 'title': 'Fix login', 'plan': 'p', 'items': '- [ ] **F1 Fix.**'})
-    body = resp.get_json()
-    assert resp.status_code == 200 and body['task']['status'] == 'building' and body['claim']
-    assert api(app, 'POST', '/api/v1/tasks/%d/heartbeat' % body['task']['number'], team['token']['dev'],
-               {'claim': body['claim']}).status_code == 200
+               {'runner': runner, 'title': 'Fix login', 'plan': 'p', 'items': '- [ ] **F1 Fix.**'})
+    assert resp.status_code == 200
+    return resp.get_json()
+
+
+def beat(app, team, number, claim, **extra):
+    return api(app, 'POST', '/api/v1/tasks/%d/heartbeat' % number, team['token']['dev'], dict(claim=claim, **extra))
+
+
+def test_a_terminal_task_is_recorded_as_queued_and_its_first_heartbeat_starts_it(app, team, conn):
+    body = record(app, team)
+    n = body['task']['number']
+    assert body['task']['status'] == 'queued' and body['claim']
+    resp = beat(app, team, n, body['claim'])
+    assert resp.status_code == 200 and resp.get_json()['task']['status'] == 'building'
+
+
+def test_a_queued_claim_outlives_the_ttl_but_a_building_one_expires(app, team, conn, clock):
+    body = record(app, team)
+    n = body['task']['number']
+    clock.now += datetime.timedelta(hours=3)
+    assert tasks.claim_live(tasks.get(conn, team['alpha']['id'], n), clock.now)
+    assert beat(app, team, n, body['claim'], state='queued').status_code == 200      # still held
+    assert beat(app, team, n, body['claim'], state='building').get_json()['task']['status'] == 'building'
+    clock.now += datetime.timedelta(hours=3)
+    assert beat(app, team, n, body['claim']).status_code == 409
+
+
+def test_state_queued_moves_an_approved_task_back_and_other_runners_skip_it(app, team, conn):
+    n = add(team)
+    claim = take(app, team, runner='laptop')['claim']
+    plan(app, team, n, claim)
+    decide(team, n, 'approve')
+    claim = take(app, team, runner='laptop')['claim']                     # approved -> building
+    assert tasks.get(conn, team['alpha']['id'], n)['status'] == 'building'
+    assert beat(app, team, n, claim, state='queued').get_json()['task']['status'] == 'queued'
+    assert beat(app, team, n, claim, state='nonsense').status_code == 400
+    assert take(app, team, runner='desktop')['task'] is None
+
+
+def test_report_on_a_queued_task_ends_it_as_done(app, team, conn):
+    body = record(app, team)
+    resp = api(app, 'POST', '/api/v1/tasks/%d/report' % body['task']['number'], team['token']['dev'],
+               {'claim': body['claim'], 'result': 'done'})
+    assert resp.status_code == 200 and resp.get_json()['task']['status'] == 'done'
+
+
+def test_admin_release_moves_a_queued_task_to_approved_and_next_returns_it(app, team, conn):
+    body = record(app, team)
+    n = body['task']['number']
+    assert post(team['clients']['admin'], '/projects/alpha/tasks/%d/release' % n, confirm='1').status_code == 302
+    row = tasks.get(conn, team['alpha']['id'], n)
+    assert row['status'] == 'approved' and row['claim_id'] is None
+    assert take(app, team)['task']['number'] == n
+
+
+def test_the_tasks_page_lists_a_queued_task_under_in_progress(app, team, conn):
+    n = record(app, team)['task']['number']
+    page = team['clients']['dev'].get('/projects/alpha/tasks?state=progress').get_data(as_text=True)
+    assert 'Fix login' in page and 'Queued' in page
+    assert 'Queued' in team['clients']['dev'].get('/projects/alpha/tasks/%d' % n).get_data(as_text=True)
 
 
 def test_task_claims_record_the_claude_identity(app, team, conn):

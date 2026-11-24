@@ -93,6 +93,7 @@ STATUS = {
     ("task", "plan_review"): ("Needs approval", "attention", "dot"),
     ("task", "changes_requested"): ("Changes requested", "attention", "dot"),
     ("task", "approved"): ("Approved", "info", "ring"),
+    ("task", "queued"): ("Queued", "info", "ring"),
     ("task", "building"): ("Building", "info", "dot"),
     ("task", "done"): ("Done", "ok", "dot"),
     ("task", "rejected"): ("Rejected", "neutral", "dot"),

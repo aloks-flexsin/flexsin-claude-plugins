@@ -7,7 +7,7 @@ Life of a task (`status`):
   open --claim--> planning --plan posted--> plan_review --approve--> approved --claim--> building --report done--> done
                       ^                        | request changes                                 \\--report stopped: stays building
                       +---- changes_requested <+         reject --> rejected
-A task typed in the terminal (`/auto-runner:auto <task>`, plan approved there) is recorded straight as `building`;
+A task typed in the terminal (`/auto-runner:auto <task>`, plan approved there) is recorded straight as `queued` (its run has not started; the first heartbeat without a state makes it `building`);
 a plan proposed from the terminal (`"approval": "page"`) is recorded as `plan_review`, claimed, and approved on the page.
 
 **Claims.** A runner takes its person's next task with `POST /api/v1/tasks/next` and gets a claim id; only that claim
@@ -34,13 +34,14 @@ from .db import get_db
 bp = Blueprint("tasks", __name__)
 
 CLAIM_TTL = datetime.timedelta(hours=2)
-STATUSES = ("open", "planning", "plan_review", "changes_requested", "approved", "building", "done", "rejected")
+STATUSES = ("open", "planning", "plan_review", "changes_requested", "approved", "queued", "building", "done", "rejected")
 RUNNER_SIDE = ("planning", "changes_requested", "approved", "building")   # a silent claim on these expires
 TAKE_ORDER = ("approved", "building", "changes_requested", "planning", "open")
 APPROVER_ROLE = "manager"            # besides the assignee: managers, owners and admins approve plans
 MAX_TITLE, MAX_TEXT, MAX_PLAN = 200, 20000, 200000
 DESCRIBE = {"open": "open", "planning": "planning", "plan_review": "plan waiting for approval",
-            "changes_requested": "changes requested", "approved": "approved, waiting to be built", "building": "building",
+            "changes_requested": "changes requested", "approved": "approved, waiting to be built", "queued": "queued: waits for its run to start",
+            "building": "building",
             "done": "done", "rejected": "rejected"}
 
 
@@ -67,8 +68,8 @@ def claim_live(row, moment):
     """True while the task's claim holds: a plan waiting for a person, or a heartbeat within CLAIM_TTL."""
     if not row["claim_id"]:
         return False
-    if row["status"] == "plan_review":
-        return True
+    if row["status"] in ("plan_review", "queued"):
+        return True                                        # waiting for a person or for its run to start
     beat = sessions.parse_iso(row["heartbeat_at"]) if row["heartbeat_at"] else None
     return beat is not None and moment - beat < CLAIM_TTL
 
@@ -146,9 +147,19 @@ def _held(db, project, number, claim, moment):
     return row
 
 
-def beat(db, project, number, claim, moment):
+def beat(db, project, number, claim, moment, state=None):
+    """Keep the claim alive. `state` "queued" moves an approved or building task to queued; "building" (or no state on
+    a queued task) moves queued to building."""
     row = _held(db, project, number, claim, moment)
-    db.execute("UPDATE project_task SET heartbeat_at = ? WHERE id = ?", (_at(moment), row["id"]))
+    if state not in (None, "queued", "building"):
+        raise TaskError('state is "queued" or "building"')
+    status = row["status"]
+    if state == "queued" and status in ("approved", "building"):
+        status = "queued"
+    elif status == "queued" and state in (None, "building"):
+        status = "building"
+    db.execute("UPDATE project_task SET heartbeat_at = ?, status = ?, updated_at = ? WHERE id = ?",
+               (_at(moment), status, _at(moment) if status != row["status"] else row["updated_at"], row["id"]))
     db.commit()
     return get(db, project["id"], number)
 
@@ -184,7 +195,7 @@ def notify_assigned(db, project, row, moment):
 
 def report(db, project, number, claim, result, branch, pr_url, note, moment):
     row = _held(db, project, number, claim, moment)
-    if row["status"] != "building":
+    if row["status"] not in ("building", "queued"):
         raise TaskError("task %d is %s; only a task being built is reported" % (number, row["status"]), 409)
     if result not in ("done", "stopped"):
         raise TaskError("result must be done or stopped")
@@ -230,7 +241,7 @@ def release(db, project, row, assignee, moment):
     """An admin ends the claim (and, with `assignee`, gives the task to someone else). Work in progress goes back to
     the step it was at: planning -> open, building -> approved."""
     at = _at(moment)
-    status = {"planning": "open", "building": "approved"}.get(row["status"], row["status"])
+    status = {"planning": "open", "building": "approved", "queued": "approved"}.get(row["status"], row["status"])
     if assignee is not None and status in ("plan_review", "changes_requested"):
         status = "open"                                     # a new person plans it afresh
     db.execute("UPDATE project_task SET claim_id = NULL, claim_runner = NULL, heartbeat_at = NULL, status = ?,"
@@ -347,7 +358,7 @@ def api_record():
         plan = _text(body.get("plan"), MAX_PLAN, "the plan", required=on_page)
         items = _text(body.get("items"), MAX_PLAN, "the items", required=on_page)
         row = create(db, g.token_project, account, account, body.get("title"), body.get("description"), moment,
-                     status="plan_review" if on_page else "building", plan=plan, items=items, runner=runner)
+                     status="plan_review" if on_page else "queued", plan=plan, items=items, runner=runner)
         _note_identity(db, account, runner, moment)
         audit.record(db, "task.create", _at(moment), account_id=account["id"], project_id=g.token_project["id"],
                      detail={"number": row["number"], "via": "terminal", "approval": approval})
@@ -378,8 +389,9 @@ def api_plan(number):
 @tokens.bearer_token("ingest")
 def api_beat(number):
     _api_account()
-    return _api(lambda: jsonify(task=public(beat(get_db(), g.token_project, number, _body().get("claim"), auth.now()),
-                                            auth.now())))
+    body = _body()
+    return _api(lambda: jsonify(task=public(beat(get_db(), g.token_project, number, body.get("claim"), auth.now(),
+                                                 body.get("state")), auth.now())))
 
 
 @bp.post("/api/v1/tasks/<int:number>/report")
@@ -406,7 +418,7 @@ def _runners(db, project):
 
 
 STATES = (("approval", "Needs approval", ("plan_review",)),
-          ("progress", "In progress", ("planning", "changes_requested", "approved", "building")),
+          ("progress", "In progress", ("planning", "changes_requested", "approved", "queued", "building")),
           ("open", "Open", ("open",)),
           ("done", "Done", ("done", "rejected")))
 
@@ -505,7 +517,7 @@ def task_add(slug):
 
 
 STEPS = (("open", "Open"), ("planned", "Planned"), ("approval", "Approval"), ("building", "Building"), ("done", "Done"))
-STEP_OF = {"open": 0, "planning": 1, "changes_requested": 1, "plan_review": 2, "approved": 3, "building": 3, "done": 4}
+STEP_OF = {"open": 0, "planning": 1, "changes_requested": 1, "plan_review": 2, "approved": 3, "queued": 3, "building": 3, "done": 4}
 
 
 def _activity(db, project, number, task_runs):
