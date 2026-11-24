@@ -195,7 +195,7 @@ def test_service_worker_is_served_from_the_root_with_its_headers(client):
     assert resp.headers['Content-Type'].split(';')[0].strip() == 'text/javascript'
     assert resp.headers['Service-Worker-Allowed'] == '/'
     assert "script-src 'self'" in resp.headers['Content-Security-Policy']
-    assert resp.get_data(as_text=True) == (STATIC / 'sw.js').read_text(encoding='utf-8')
+    assert resp.get_data(as_text=True) == (STATIC / 'sw.js').read_bytes().decode('utf-8')   # bytes as served: a Windows checkout has CRLF
 
 
 def test_service_worker_handles_push_and_notificationclick_with_same_origin_links():
