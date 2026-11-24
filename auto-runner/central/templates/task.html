@@ -107,12 +107,12 @@
       <p class="muted">No screenshots yet.</p>
       {% endif %}
       {% if can_upload %}
-      <form method="post" action="{{ url_for('attachments.attachment_upload', slug=project.slug, number=task.number) }}" enctype="multipart/form-data" class="shot-upload">
+      <form method="post" action="{{ url_for('attachments.attachment_upload', slug=project.slug, number=task.number) }}" enctype="multipart/form-data" class="shot-upload" data-paste-images data-max-bytes="{{ shot_limits.bytes }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label for="shot-file">Add screenshots</label>
         <input id="shot-file" type="file" name="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple required>
         <button type="submit" class="btn">Upload</button>
-        <p class="muted small">PNG, JPEG, GIF or WebP; at most {{ shot_limits.size }} per upload (all files together) and {{ shot_limits.count }} screenshots per task.</p>
+        <p class="muted small">PNG, JPEG, GIF or WebP; at most {{ shot_limits.size }} per upload (all files together) and {{ shot_limits.count }} screenshots per task. You can also paste or drop images here.</p>
       </form>
       {% endif %}
     </section>

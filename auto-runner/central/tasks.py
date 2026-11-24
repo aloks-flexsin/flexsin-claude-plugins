@@ -438,8 +438,11 @@ def _new_page(error=None, status=200, form=None):
     if error is None and not _can_add(db):
         abort(403)
     is_admin = g.account["role"] == projects.ADMIN
+    from . import attachments as _att
     return render_template("task_new.html", project=g.project, error=error, form=form or {}, is_admin=is_admin,
-                           assignees=_runners(db, g.project) if is_admin else []), status
+                           assignees=_runners(db, g.project) if is_admin else [],
+                           can_upload=projects.allows(g.project_role, _att.UPLOAD_ROLE),
+                           shot_limits={"size": _att.LIMIT_TEXT, "count": _att.MAX_PER_TASK, "bytes": _att.MAX_SIZE}), status
 
 
 @bp.get("/projects/<slug>/tasks")
@@ -485,7 +488,16 @@ def task_add(slug):
     if row["assignee_id"] != g.account["id"]:
         notify_assigned(db, g.project, row, moment)
     db.commit()
-    return redirect(url_for("tasks.task_page", slug=slug, number=row["number"]))
+    # Screenshots chosen on the form are stored after the task exists, so a refused file never loses the task; the
+    # task page names each refused file and why.
+    from . import attachments as _att
+    files, refused = _att.uploaded_files(), []
+    if files and not projects.allows(g.project_role, _att.UPLOAD_ROLE):
+        refused = ["%s (viewers do not add screenshots)" % _att.clean_name(f.filename) for f in files]
+    elif files:
+        refused = _att.store_files(db, g.project, row["number"], g.account, files, moment)
+    args = {"refused": _att.sign_refused(g.project["id"], row["number"], refused)} if refused else {}
+    return redirect(url_for("tasks.task_page", slug=slug, number=row["number"], **args))
 
 
 STEPS = (("open", "Open"), ("planned", "Planned"), ("approval", "Approval"), ("building", "Building"), ("done", "Done"))
@@ -546,14 +558,15 @@ def _detail(number, error=None, status=200):
                            activity=_activity(db, g.project, number, task_runs), error=error,
                            ttl_hours=int(CLAIM_TTL.total_seconds() // 3600), shots=shots,
                            can_upload=projects.allows(g.project_role, _att.UPLOAD_ROLE),
-                           shot_limits={"size": _att.LIMIT_TEXT, "count": _att.MAX_PER_TASK})
+                           shot_limits={"size": _att.LIMIT_TEXT, "count": _att.MAX_PER_TASK, "bytes": _att.MAX_SIZE})
     return page, status
 
 
 @bp.get("/projects/<slug>/tasks/<int:number>")
 @project_access("viewer")
 def task_page(slug, number):
-    return _detail(number)
+    from . import attachments as _att
+    return _detail(number, error=_att.read_refused(g.project["id"], number, request.args.get("refused")))
 
 
 @bp.post("/projects/<slug>/tasks/<int:number>/decide")

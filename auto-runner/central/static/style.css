@@ -287,6 +287,10 @@ details.pop>summary::-webkit-details-marker,details.more>summary::-webkit-detail
 .shot-upload label{margin:0;width:100%}
 .shot-upload input[type=file]{flex:1 1 220px;min-width:0}
 .shot-upload .small{width:100%}
+.picked-files{list-style:none;padding:0;margin:4px 0;width:100%;font-size:13px;color:var(--muted)}
+.picked-files li{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.picked-files .picked-warn{color:var(--danger);white-space:normal}
+form.drop-over{outline:2px dashed var(--brand);outline-offset:4px;border-radius:var(--radius)}
 .md h1,.md h2,.md h3,.md h4{font-size:15px;text-transform:none;letter-spacing:0;color:var(--text);margin:14px 0 6px}
 .md>:first-child{margin-top:0}
 .md p:last-child,.md ul:last-child{margin-bottom:0}

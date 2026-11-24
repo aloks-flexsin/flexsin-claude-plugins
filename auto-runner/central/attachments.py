@@ -10,7 +10,7 @@ or an admin deletes one (after a confirm step, audited). Served images carry the
 """
 import secrets
 
-from flask import Blueprint, Response, abort, g, jsonify, redirect, request, url_for
+from flask import Blueprint, Response, abort, current_app, g, jsonify, redirect, request, url_for
 
 from . import audit, auth, projects, sessions, tasks, ui
 from .access import project_access
@@ -147,6 +147,63 @@ def init_app(app):
     app.register_error_handler(413, too_large)
 
 
+def uploaded_files():
+    """The request's multipart `file` parts that carry a file (an empty file input sends one with no name)."""
+    return [f for f in request.files.getlist("file") if f and f.filename]
+
+
+def store_files(db, project, number, account, files, moment):
+    """Store each uploaded file on task `number` (audited, committed one by one) -> the reasons for the refused ones.
+    A refused file never stops the others."""
+    refused = []
+    for f in files:
+        try:
+            row = add(db, project, number, account, f.filename, f.read(MAX_SIZE + 1), moment)
+        except AttachmentError as e:
+            refused.append(str(e))
+            continue
+        audit.record(db, "task.attachment.add", sessions.iso(moment), account_id=account["id"],
+                     project_id=project["id"],
+                     detail={"number": number, "attachment": row["id"], "filename": row["filename"]})
+        db.commit()
+    return refused
+
+
+def refused_text(refused):
+    return "Not added: " + "; ".join(refused) + "."
+
+
+# ---------- the refusals after "Add task" ----------
+# The New task form posts, the task is created, then the browser is sent to the task page (so a reload never adds the
+# task twice). The refusals travel in `?refused=`, signed with SECRET_KEY, so a crafted link cannot put words on the page.
+
+REFUSED_SALT = "task-attachments-refused"
+
+
+def _signer():
+    from itsdangerous import URLSafeSerializer          # ships with Flask
+    return URLSafeSerializer(current_app.config["SECRET_KEY"], salt=REFUSED_SALT)
+
+
+def sign_refused(project_id, number, refused):
+    return _signer().dumps({"p": project_id, "n": number, "r": refused})
+
+
+def read_refused(project_id, number, value):
+    """The refusals signed for this very task -> the text for the page, or None (missing, tampered or another task's)."""
+    if not value:
+        return None
+    from itsdangerous import BadData
+    try:
+        data = _signer().loads(value)
+    except BadData:
+        return None
+    if not isinstance(data, dict) or data.get("p") != project_id or data.get("n") != number:
+        return None
+    refused = [str(r)[:400] for r in (data.get("r") or [])[:MAX_PER_TASK * 2]]
+    return refused_text(refused) if refused else None
+
+
 # ---------- pages ----------
 
 def _task_or_404(db, number):
@@ -168,22 +225,12 @@ def attachment_upload(slug, number):
     _task_or_404(db, number)
     if not projects.allows(g.project_role, UPLOAD_ROLE):
         abort(403)
-    files = [f for f in request.files.getlist("file") if f and f.filename]
+    files = uploaded_files()
     if not files:
         return tasks._detail(number, error="Choose an image to upload.", status=400)
-    moment, refused = auth.now(), []
-    for f in files:
-        try:
-            row = add(db, g.project, number, g.account, f.filename, f.read(MAX_SIZE + 1), moment)
-        except AttachmentError as e:
-            refused.append(str(e))
-            continue
-        audit.record(db, "task.attachment.add", sessions.iso(moment), account_id=g.account["id"],
-                     project_id=g.project["id"],
-                     detail={"number": number, "attachment": row["id"], "filename": row["filename"]})
-        db.commit()
+    refused = store_files(db, g.project, number, g.account, files, auth.now())
     if refused:
-        return tasks._detail(number, error="Not added: " + "; ".join(refused) + ".", status=400)
+        return tasks._detail(number, error=refused_text(refused), status=400)
     return _back(slug, number)
 
 

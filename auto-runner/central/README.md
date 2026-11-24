@@ -147,6 +147,17 @@ may not stick over plain http. The API endpoints do not use the cookie.
   uploader and admins (confirm step). Members except viewers get an upload form (`multipart/form-data`, `multiple`,
   `accept` limited to the four types) with the limits in words; viewers see the screenshots but no form. A refused file
   shows the reason above the page, which stays usable.
+- **While adding a task**: the New task form (`multipart/form-data`) has the same file input for members except viewers.
+  `tasks.task_add` creates the task first, then stores the files (`attachments.store_files`, audited as above), so a
+  refused file never loses the task. The browser is sent on to the task page with the refusals in `?refused=`, signed
+  with `SECRET_KEY` and bound to that task (itsdangerous, which ships with Flask), and the page names each refused file
+  and why; a tampered value or one from another task shows nothing. The 4 MB request cap covers the whole form.
+- **Paste and drag-and-drop** (`static/app.js`): forms with `data-paste-images` (the New task form and the task page's
+  upload form) take pasted or dropped PNG/JPEG/GIF/WebP images into their file input through `DataTransfer` (pasted
+  images are named `pasted-<n>.<ext>`), list the chosen files with their sizes, and warn when together they are over
+  `data-max-bytes`. Text pastes are left alone; on a page with one such form a paste anywhere goes to it. Without
+  JavaScript the plain file input still works. The browser behaviour is unverified until tried live (tests check the
+  HTML and that the handlers exist).
 - Postgres storage is unverified until used live (tests run on SQLite).
 
 ## Runner presence (decision record 0009; `runners.py`)

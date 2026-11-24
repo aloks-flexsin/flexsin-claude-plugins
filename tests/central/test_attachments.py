@@ -228,3 +228,79 @@ def test_init_db_adds_the_table_to_an_existing_database(db_url):
         assert conn.query_one("SELECT email FROM account WHERE id = 'a1'")['email'] == 'k@example.com'
     finally:
         conn.close()
+
+
+# ---------- S3: attach while adding a task; paste and drag-and-drop ----------
+
+def add_with_files(client, *files, title='Broken layout'):
+    """POST the New task form with screenshots, as the browser sends it (multipart)."""
+    data = {'csrf_token': token(client, '/my'), 'title': title, 'description': 'See the screenshots.',
+            'file': [(io.BytesIO(b), name) for b, name in files]}
+    return client.post('/projects/alpha/tasks', data=data, content_type='multipart/form-data')
+
+
+def number_of(resp):
+    assert resp.status_code == 302, resp.get_data(as_text=True)
+    return int(resp.headers['Location'].split('?', 1)[0].rsplit('/', 1)[1])
+
+
+def test_adding_a_task_with_two_pngs_stores_both(team, conn):
+    client = team['clients']['dev']
+    resp = add_with_files(client, (PNG, 'one.png'), (PNG, 'two.png'))
+    n = number_of(resp)
+    assert 'refused' not in resp.headers['Location']
+    assert [(r['filename'], r['size']) for r in stored(conn, team, n)] == [('one.png', len(PNG)), ('two.png', len(PNG))]
+    page = client.get(resp.headers['Location']).get_data(as_text=True)
+    assert 'one.png' in page and 'two.png' in page and 'role="alert"' not in page
+    adds = conn.query_one("SELECT COUNT(*) AS n FROM audit WHERE action = 'task.attachment.add'")['n']
+    assert adds == 2
+
+
+def test_a_bad_file_with_a_good_one_keeps_the_task_and_the_good_file_and_names_the_bad_one(team, conn):
+    client = team['clients']['dev']
+    resp = add_with_files(client, (b'not an image', 'notes.png'), (PNG, 'good.png'), title='Keep me')
+    n = number_of(resp)
+    assert 'refused=' in resp.headers['Location']                       # sent on to the task page, not re-rendered
+    page = client.get(resp.headers['Location']).get_data(as_text=True)
+    assert 'Keep me' in page
+    assert [r['filename'] for r in stored(conn, team, n)] == ['good.png']
+    assert 'role="alert"' in page and 'notes.png is not a PNG, JPEG, GIF or WebP image' in page
+    assert 'good.png' in page and 'class="shot-upload"' in page
+
+
+def test_the_refusal_note_cannot_be_forged_or_moved_to_another_task(team, conn):
+    client = team['clients']['dev']
+    location = add_with_files(client, (b'nope', 'bad.png')).headers['Location']
+    n, signed = int(location.split('?')[0].rsplit('/', 1)[1]), location.split('refused=', 1)[1]
+    other = add(team)
+    forged = client.get('/projects/alpha/tasks/%d?refused=%s' % (n, signed[:-3] + 'abc')).get_data(as_text=True)
+    moved = client.get('/projects/alpha/tasks/%d?refused=%s' % (other, signed)).get_data(as_text=True)
+    assert 'bad.png' not in forged and 'role="alert"' not in forged
+    assert 'bad.png' not in moved and 'role="alert"' not in moved
+
+
+def test_adding_a_task_without_files_still_works(team, conn):
+    n = number_of(add_with_files(team['clients']['dev']))
+    assert stored(conn, team, n) == []
+
+
+def test_new_task_page_and_task_page_carry_multipart_and_paste(team, conn):
+    client = team['clients']['dev']
+    new_page = client.get('/projects/alpha/tasks/new').get_data(as_text=True)
+    task = task_page(client, add(team))
+    for page in (new_page, task):
+        assert 'enctype="multipart/form-data"' in page and 'data-paste-images' in page
+        assert 'data-max-bytes="%d"' % MB4 in page
+    form = new_page.split('data-paste-images', 1)[1].split('</form>', 1)[0]
+    assert 'type="file" name="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple' in form
+    assert 'at most 4 MB' in form and '10 screenshots per task' in form
+
+
+def test_app_js_has_the_paste_and_drop_handlers(app):
+    import os
+    with open(os.path.join(app.static_folder, 'app.js'), encoding='utf-8') as f:
+        js = f.read()
+    assert 'form[data-paste-images]' in js and 'DataTransfer' in js
+    for event in ('"paste"', '"drop"', '"dragover"', '"change"'):
+        assert 'addEventListener(%s' % event in js
+    assert 'picked-files' in js                                          # the chosen files are listed
