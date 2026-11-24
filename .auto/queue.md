@@ -97,7 +97,7 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Slice:* 6 Start it from setup, documented
   *Kind:* internal
 
-- [ ] **L1 Light by default.** In `static/style.css`, replace both `@media (prefers-color-scheme:dark)` blocks with `:root[data-theme="dark"]` rules holding the same token values; in `templates/base.html` render `<html lang="en" data-theme="{{ theme }}">` with `theme` from a context processor (`ui.theme()`: the `theme` cookie when it is `dark`, else `light`). No other page changes.
+- [x] **L1 Light by default.** In `static/style.css`, replace both `@media (prefers-color-scheme:dark)` blocks with `:root[data-theme="dark"]` rules holding the same token values; in `templates/base.html` render `<html lang="en" data-theme="{{ theme }}">` with `theme` from a context processor (`ui.theme()`: the `theme` cookie when it is `dark`, else `light`). No other page changes.
   *Acceptance:* new tests in `tests/central/test_theme.py`: every page (sign-in and My work) renders `data-theme="light"` without a cookie and with an unknown cookie value; `style.css` contains no `prefers-color-scheme` and has `:root[data-theme="dark"]` with the old dark `--bg` value `#10141b`.
   *Slice:* 1 Light by default
   *Kind:* feature

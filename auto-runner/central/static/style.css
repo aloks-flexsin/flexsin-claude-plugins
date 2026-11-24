@@ -4,13 +4,12 @@
   --danger:#c92a2a;--danger-soft:#fff0f0;--ok:#2b8a3e;--ok-soft:#ebfbee;--warn:#b35c00;--warn-soft:#fff4e0;
   --radius:10px;--shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
 }
-@media (prefers-color-scheme:dark){
-  :root{
-    --bg:#10141b;--surface:#181e28;--text:#e6e9ef;--muted:#98a2b3;--line:#2a3342;
-    --brand:#748ffc;--brand-ink:#10141b;--brand-soft:#1d2540;
-    --danger:#ff8787;--danger-soft:#3a1e22;--ok:#69db7c;--ok-soft:#173222;--warn:#ffc078;--warn-soft:#3a2a14;
-    --shadow:none;
-  }
+/* Light is the default; dark only when the page says so (data-theme="dark" on <html>, from the theme cookie). */
+:root[data-theme="dark"]{
+  --bg:#10141b;--surface:#181e28;--text:#e6e9ef;--muted:#98a2b3;--line:#2a3342;
+  --brand:#748ffc;--brand-ink:#10141b;--brand-soft:#1d2540;
+  --danger:#ff8787;--danger-soft:#3a1e22;--ok:#69db7c;--ok-soft:#173222;--warn:#ffc078;--warn-soft:#3a2a14;
+  --shadow:none;
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -98,8 +97,8 @@ pre.wrap{white-space:pre-wrap;word-break:break-word;background:var(--bg);border:
 /* ---------- UX foundations (audit PR 1): tones, chips, people, progress, copy, confirm, buttons ---------- */
 :root{--info:#2f5bea;--info-soft:#e7edfd;--attn:#8a5300;--attn-soft:#fff0d1;--attn-mark:#c27a00;--bad:#9b2316;--bad-soft:#fde7e4;
   --bad-mark:#c8382a;--okc:#146c3a;--ok-mark:#1f8a4c;--neutral:#3a4150;--neutral-soft:#eef0f3}
-@media (prefers-color-scheme:dark){:root{--info:#9db0ff;--info-soft:#1d2540;--attn:#ffc078;--attn-soft:#3a2a14;--attn-mark:#ffc078;
-  --bad:#ff8787;--bad-soft:#3a1e22;--bad-mark:#ff8787;--okc:#69db7c;--ok-mark:#69db7c;--neutral:#c8cdd6;--neutral-soft:#232a36}}
+:root[data-theme="dark"]{--info:#9db0ff;--info-soft:#1d2540;--attn:#ffc078;--attn-soft:#3a2a14;--attn-mark:#ffc078;
+  --bad:#ff8787;--bad-soft:#3a1e22;--bad-mark:#ff8787;--okc:#69db7c;--ok-mark:#69db7c;--neutral:#c8cdd6;--neutral-soft:#232a36}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;line-height:1;padding:6px 10px;border-radius:999px;white-space:nowrap}
 .chip .mark{width:8px;height:8px;border-radius:50%;flex:none;background:currentColor}
