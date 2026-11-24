@@ -117,6 +117,20 @@ class Database:
         self.conn.close()
 
 
+MISSING_SQLSTATES = ("42P01", "42703")       # Postgres: undefined table, undefined column
+
+
+def schema_missing(exc):
+    """True when `exc` says a table or column the code uses is not in the database, which means the code was deployed
+    before `python -m central init-db` brought the database up to date."""
+    if getattr(exc, "sqlstate", None) in MISSING_SQLSTATES:
+        return True
+    if isinstance(exc, sqlite3.OperationalError):
+        text = str(exc).lower()
+        return text.startswith(("no such table", "no such column")) or "has no column named" in text
+    return False
+
+
 def connect(url):
     kind, target = parse_url(url)
     if kind == "sqlite":
