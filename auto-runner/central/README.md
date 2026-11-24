@@ -142,7 +142,11 @@ may not stick over plain http. The API endpoints do not use the cookie.
 - `POST .../attachments/<id>/delete`: the uploader or an admin, after a confirm step; audited (`task.attachment.delete`).
 - **Every request is capped at 4 MB** (`MAX_CONTENT_LENGTH`): a larger one gets 413 with a page (JSON under `/api/`)
   that names the limit. So one upload request carries at most 4 MB of files in total.
-- The task page does not show screenshots yet (queue item S2); the routes above work on their own.
+- The task page has a **Screenshots** section: a thumbnail of each image (the image itself, sized by CSS in
+  `static/style.css`) linking to the full image, its filename, uploader and time, and a delete button under "⋯" for the
+  uploader and admins (confirm step). Members except viewers get an upload form (`multipart/form-data`, `multiple`,
+  `accept` limited to the four types) with the limits in words; viewers see the screenshots but no form. A refused file
+  shows the reason above the page, which stays usable.
 - Postgres storage is unverified until used live (tests run on SQLite).
 
 ## Runner presence (decision record 0009; `runners.py`)

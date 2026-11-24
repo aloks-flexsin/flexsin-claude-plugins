@@ -535,6 +535,8 @@ def _detail(number, error=None, status=200):
     items = [dict(i, state="done" if i["ticked"] and i["id"] not in states else states.get(i["id"], "queued"))
              for i in _runs.parse_items(row["items"])]
     live = claim_live(row, moment)
+    from . import attachments as _att
+    shots = [dict(a, can_delete=_att.can_delete(a, g.account)) for a in _att.for_task(db, g.project["id"], number)]
     page = render_template("task.html", project=g.project, task=row, describe=DESCRIBE.get(row["status"], row["status"]),
                            runs=task_runs, progress=progress, items=items, steps=STEPS,
                            step=STEP_OF.get(row["status"]), stale_hours=int(_runs.STALE.total_seconds() // 3600),
@@ -542,7 +544,9 @@ def _detail(number, error=None, status=200):
                            can_decide=row["status"] == "plan_review" and can_decide(db, g.project, row, g.account),
                            is_admin=g.account["role"] == projects.ADMIN, assignees=_runners(db, g.project),
                            activity=_activity(db, g.project, number, task_runs), error=error,
-                           ttl_hours=int(CLAIM_TTL.total_seconds() // 3600))
+                           ttl_hours=int(CLAIM_TTL.total_seconds() // 3600), shots=shots,
+                           can_upload=projects.allows(g.project_role, _att.UPLOAD_ROLE),
+                           shot_limits={"size": _att.LIMIT_TEXT, "count": _att.MAX_PER_TASK})
     return page, status
 
 

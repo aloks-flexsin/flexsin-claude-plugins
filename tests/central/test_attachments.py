@@ -163,6 +163,55 @@ def test_the_task_activity_names_screenshots(team, conn):
     assert 'added a screenshot to this task' in page
 
 
+def task_page(client, number):
+    return client.get('/projects/alpha/tasks/%d' % number).get_data(as_text=True)
+
+
+def test_the_task_page_shows_thumbnails_linking_to_the_full_image(team, conn):
+    n = add(team)
+    assert 'No screenshots yet.' in task_page(team['clients']['dev'], n)
+    row = attachments.add(conn, team['alpha'], n, team['accounts']['dev'], 'login <bug>.png', PNG, START)
+    src = '/projects/alpha/tasks/%d/attachments/%s' % (n, row['id'])
+    for who in ('dev', 'viewer', 'admin'):
+        page = task_page(team['clients'][who], n)
+        assert '<h3>Screenshots' in page
+        assert '<img src="%s" alt="login &lt;bug&gt;.png"' % src in page        # the thumbnail is the image, escaped
+        assert '<a href="%s" class="shot-link"' % src in page                  # linking to the full image
+        assert 'login &lt;bug&gt;.png' in page and '<bug>' not in page
+        assert 'class="shot-name"' in page and 'Dev · ' in page.split('class="shot-name"', 1)[1][:400]
+
+
+def test_viewers_see_no_upload_form_and_members_see_the_limits(team, conn):
+    n = add(team)
+    page = task_page(team['clients']['dev'], n)
+    form = page.split('class="shot-upload"', 1)[0].rsplit('<form', 1)[1] + page.split('class="shot-upload"', 1)[1]
+    assert 'enctype="multipart/form-data"' in form
+    assert 'accept="image/png,image/jpeg,image/gif,image/webp"' in form and ' multiple' in form
+    assert 'at most 4 MB per upload' in page and '10 screenshots per task' in page
+    viewer = task_page(team['clients']['viewer'], n)
+    assert 'shot-upload' not in viewer and 'name="file"' not in viewer
+
+
+def test_the_delete_button_is_for_the_uploader_and_admins_only(team, conn):
+    n = add(team)
+    row = attachments.add(conn, team['alpha'], n, team['accounts']['dev'], 'one.png', PNG, START)
+    action = '/projects/alpha/tasks/%d/attachments/%s/delete' % (n, row['id'])
+    for who, sees in (('dev', True), ('admin', True), ('manager', False), ('viewer', False)):
+        page = task_page(team['clients'][who], n)
+        assert (action in page) is sees, who
+        assert ('aria-label="More for one.png">⋯' in page) is sees, who
+    assert 'data-confirm="Delete the screenshot one.png?"' in task_page(team['clients']['dev'], n)
+
+
+def test_a_refused_upload_names_the_reason_and_the_page_still_works(team, conn):
+    n = add(team)
+    attachments.add(conn, team['alpha'], n, team['accounts']['dev'], 'kept.png', PNG, START)
+    resp = upload(team['clients']['dev'], n, (b'nope', 'notes.png'))
+    page = resp.get_data(as_text=True)
+    assert resp.status_code == 400 and 'role="alert"' in page and 'notes.png is not a PNG' in page
+    assert 'kept.png' in page and 'class="shot-upload"' in page          # the section and the form are still there
+
+
 def test_init_db_adds_the_table_to_an_existing_database(db_url):
     db.init_db(db_url)
     conn = db.connect(db_url)
