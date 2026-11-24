@@ -169,3 +169,17 @@ def test_report_commands_call_the_report_script_only():
         text = (PLUGIN / 'commands' / name).read_text(encoding='utf-8')
         assert f'auto_report.py" {sub}' in text
         assert 'auto_run.py' not in text and '--apply' not in text
+
+
+def test_status_prints_plan_usage_in_local_time(tmp_path):
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    usage = {'five_hour': {'utilization': 0.16, 'resets_at': 1795530600}, 'seven_day': {'utilization': 0.03, 'resets_at': 1796086800}}
+    p = make_project(tmp_path, runs=[dict(RUNS[0], plan_usage=usage)])
+    out = rep.status(p, now=datetime(2026, 11, 24, 9, 0, tzinfo=timezone.utc), tz=ZoneInfo('Asia/Kolkata'))
+    assert 'Plan usage (last iteration): 5-hour 16% (resets 20:00), 7-day 3% (resets 1 Dec 06:30)' in out
+
+
+def test_status_says_plan_usage_not_reported(tmp_path):
+    assert 'Plan usage: not reported' in rep.status(make_project(tmp_path, runs=RUNS))
+    assert 'Plan usage: not reported' in rep.status(make_project(tmp_path / 'p', runs=[dict(RUNS[0], plan_usage={})]))

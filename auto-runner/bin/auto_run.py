@@ -568,6 +568,41 @@ def parse_cost(output):
     return None
 
 
+WINDOW_LABELS = {'five_hour': '5-hour', 'seven_day': '7-day'}   # the one table for status, the stop message and the check
+
+
+def window_label(key):
+    return WINDOW_LABELS.get(key) or str(key).replace('_', ' ')
+
+
+def _number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def plan_usage(output):
+    """{window: {"utilization": 0-1, "resets_at": epoch}} from the last `rate_limit_event` line, else {}. Numeric values only."""
+    for line in reversed(output.splitlines()):
+        line = line.strip()
+        if not line.startswith('{') or 'rate_limit_event' not in line:
+            continue
+        try:
+            data = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(data, dict) or data.get('type') != 'rate_limit_event':
+            continue
+        info = data.get('rate_limit_info')
+        windows = info.get('unifiedWindows') if isinstance(info, dict) else None
+        if not isinstance(windows, dict):
+            return {}
+        usage = {}
+        for key, w in windows.items():
+            if isinstance(w, dict) and _number(w.get('utilization')) and _number(w.get('resetsAt')):
+                usage[str(key)] = {'utilization': float(w['utilization']), 'resets_at': int(w['resetsAt'])}
+        return usage
+    return {}
+
+
 BLOCKER_PARAGRAPH = (
     f"You may instead raise a blocker: write one JSON object per question to {AUTO_DIR}/blockers/new/<name>.json with the fields "
     "question, why_needed, prevents, impact_if_delayed, impact_if_wrong, owner_role, class (B1 to B5), options (a list of "
@@ -1417,7 +1452,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                    '--max-budget-usd', str(max_budget_usd), *model]
             code, out = claude(cmd, wt)
             entry = {'time': datetime.now().isoformat(timespec='seconds'), 'item': item, 'result': None, 'commit': None,
-                     'duration_s': None, 'cost_usd': parse_cost(out)}
+                     'duration_s': None, 'cost_usd': parse_cost(out), 'plan_usage': plan_usage(out)}
             log_text = out + ('' if code == 0 else f'\n--- claude exited with {code} ---\n')
             hit = usage_limit(out)
             if hit is None and git(wt, 'rev-parse', 'HEAD') == head:

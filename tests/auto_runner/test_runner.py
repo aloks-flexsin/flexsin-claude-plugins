@@ -308,7 +308,7 @@ def test_runs_jsonl_keeps_its_old_shape_with_the_ledger(project):
     ar.run(project, max_iterations=5, claude=fake_agent(), tests=scripted_tests(0, 1))
     r = runs(project)
     assert [x['item'] for x in r] == ['A1', 'A2'] and [x['result'] for x in r] == ['done', 'red']
-    assert all(set(x) == {'time', 'item', 'result', 'commit', 'duration_s', 'cost_usd'} for x in r)
+    assert all(set(x) == {'time', 'item', 'result', 'commit', 'duration_s', 'cost_usd', 'plan_usage'} for x in r)
     assert not any('schema' in x or 'evidence_class' in x for x in r)
 
 
@@ -789,3 +789,35 @@ def test_two_early_exits_in_a_row_stop_by_the_no_progress_rule(project):
     assert seen == ['A1', 'A1']
     assert [r['result'] for r in runs(project)] == ['no_progress', 'no_progress']
     assert project_statuses(project)['A1'] == ('queued', 'agent exited with 1; retried next iteration')
+
+
+MEASURED = ('{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":1795530600,"rateLimitType":"five_hour",'
+            '"overageStatus":"rejected","overageDisabledReason":"org_level_disabled","isUsingOverage":false,"unifiedWindows":'
+            '{"five_hour":{"utilization":0.16,"resetsAt":1795530600},"seven_day":{"utilization":0.03,"resetsAt":1796086800}}},'
+            '"uuid":"8123a927-d088-4980-a417-1927fefdcf23","session_id":"929ab07b-4492-4c23-9c3c-da3e9fbd1dfd"}')
+
+
+def test_plan_usage_reads_the_measured_line():
+    assert ar.plan_usage('noise\n' + MEASURED + '\n{"type":"result"}') == {
+        'five_hour': {'utilization': 0.16, 'resets_at': 1795530600},
+        'seven_day': {'utilization': 0.03, 'resets_at': 1796086800}}
+
+
+def test_plan_usage_last_event_wins_and_none_gives_empty():
+    later = MEASURED.replace('0.16', '0.5')
+    assert ar.plan_usage(MEASURED + '\n' + later)['five_hour']['utilization'] == 0.5
+    assert ar.plan_usage('just text\n{"type":"result","total_cost_usd":1}') == {}
+    assert ar.plan_usage('') == {}
+
+
+def test_plan_usage_skips_malformed_lines_and_non_numeric_values():
+    bad = ('{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"utilization":"high","resetsAt":5},'
+           '"seven_day":{"utilization":true,"resetsAt":5},"other_window":{"utilization":0.2,"resetsAt":7}}}}')
+    assert ar.plan_usage(MEASURED + '\n{"type":"rate_limit_event", broken\n{"type":"rate_limit_event"') == ar.plan_usage(MEASURED)
+    assert ar.plan_usage(bad) == {'other_window': {'utilization': 0.2, 'resets_at': 7}}
+    assert ar.window_label('five_hour') == '5-hour' and ar.window_label('other_window') == 'other window'
+
+
+def test_iteration_entry_carries_plan_usage(project):
+    ar.run(project, max_iterations=1, claude=fake_agent(output=MEASURED), allow_dirty=True)
+    assert runs(project)[0]['plan_usage']['five_hour'] == {'utilization': 0.16, 'resets_at': 1795530600}

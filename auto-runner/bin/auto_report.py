@@ -14,6 +14,7 @@ import importlib.util
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -32,6 +33,25 @@ def _load(name, file):
 
 autocfg = _load('autoreport_cfg', 'autocfg.py')
 queue = _load('autoreport_queue', 'queue.py')
+auto_run = _load('autoreport_run', 'auto_run.py')      # WINDOW_LABELS lives there
+
+
+def _reset_text(epoch, now, tz):
+    t = datetime.fromtimestamp(epoch, tz)
+    if t.date() == now.astimezone(tz).date():
+        return t.strftime('%H:%M')
+    return f'{t.day} {t.strftime("%b %H:%M")}'
+
+
+def _usage_line(runs, now=None, tz=None):
+    usage = runs[-1].get('plan_usage') if runs else None
+    if not isinstance(usage, dict) or not usage:
+        return 'Plan usage: not reported'
+    now = now or datetime.now(timezone.utc)
+    parts = [f'{auto_run.window_label(k)} {round(w["utilization"] * 100)}% (resets {_reset_text(w["resets_at"], now, tz)})'
+             for k, w in usage.items() if isinstance(w, dict)
+             and isinstance(w.get('utilization'), (int, float)) and isinstance(w.get('resets_at'), (int, float))]
+    return 'Plan usage (last iteration): ' + ', '.join(parts) if parts else 'Plan usage: not reported'
 
 
 def read_runs(project):
@@ -69,7 +89,8 @@ def _git_hint(project, cfg):
     return f'git -C "{wt}" log {base}..HEAD --oneline    (and: git -C "{wt}" diff {base}...HEAD)'
 
 
-def status(project):
+def status(project, now=None, tz=None):
+    """`now` and `tz` (a tzinfo; default the computer's local zone) exist for tests."""
     project = Path(project)
     cfg = autocfg.load(project)
     qpath = project / cfg['queue_file']
@@ -98,6 +119,7 @@ def status(project):
     missing = len(runs) - len(reported)
     lines.append(f'Recorded spend: ${sum(reported):.2f} over {len(reported)} iteration(s)'
                  + (f'; {missing} iteration(s) did not report a cost' if missing else ''))
+    lines.append(_usage_line(runs, now, tz))
     if cfg['check_only'] or not cfg['test_command']:
         lines.append('unverified: no tests (this project has no test command)')
     lines.append('See the same work in git: ' + _git_hint(project, cfg))

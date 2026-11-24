@@ -252,7 +252,11 @@ at the stated reset or after 25 minutes, whichever comes first (a stated reset c
 when another run on the same Claude account gets an attempt through (each attempt that is not stopped by the limit writes
 its time to `auto-runner/usage.json` in Claude's config folder, which every lane reads). It checks the STOP file every 30
 seconds; the interrupted try does not use up an iteration, and the run stops as above once the waiting would pass
-`max_wait_minutes`. An attempt that ends because its `--max-budget-usd` ran out is a handover, not a failure: its
+`max_wait_minutes`. Plan usage: the CLI's `rate_limit_event` line in each iteration's output gives the utilization (0 to 1) and reset time of each
+window (`five_hour` shown as "5-hour", `seven_day` as "7-day"; any other key by its name). It is stored as `plan_usage` on the
+iteration's `.auto/runs.jsonl` entry and `auto_report.py status` prints "Plan usage (last iteration): 5-hour 16% (resets 20:00), ..."
+in the computer's local time, or "Plan usage: not reported". It only reports; it does not change how the run stops.
+An attempt that ends because its `--max-budget-usd` ran out is a handover, not a failure: its
 uncommitted changes are stashed and the same item runs again from them (at most twice; then the usual stop), and every
 prompt tells the agent its budget and to commit before about nine tenths of it. A lock whose process is no longer running
 (a run that crashed or was killed) is cleared with a message; a live run's lock, or one that cannot be read, still refuses.
