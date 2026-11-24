@@ -122,7 +122,7 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Acceptance:* `tests/central/test_push_subscriptions.py` checks `/sw.js` is served with `Content-Type: text/javascript` and `Service-Worker-Allowed: /`, and that `sw.js` and `app.js` contain the push, notificationclick and subscribe handlers; `test_pages_style.py` passes.
   *Slice:* 2 Browser push
   *Kind:* feature
-- [ ] **N5 Sending pushes.** `notifications.notify` sends a Web Push for each new notification to the recipient's subscriptions through `push_sender(subscription, payload, vapid)` (pywebpush in production, a fake in tests), with a 5-second timeout; records `push_state` (`off` without keys or subscriptions, `sent`, `failed` with the reason in `push_detail`); deletes a subscription on 404/410; never raises into the caller. Update `auto-runner/central/README.md` for what this item adds.
+- [x] **N5 Sending pushes.** `notifications.notify` sends a Web Push for each new notification to the recipient's subscriptions through `push_sender(subscription, payload, vapid)` (pywebpush in production, a fake in tests), with a 5-second timeout; records `push_state` (`off` without keys or subscriptions, `sent`, `failed` with the reason in `push_detail`); deletes a subscription on 404/410; never raises into the caller. Update `auto-runner/central/README.md` for what this item adds.
   *Acceptance:* tests in `tests/central/test_notifications.py` with a fake sender: a subscribed person gets one push per notification with the text and link, no keys means `off`, a 410 deletes the subscription, a sender error marks `failed` and the request still succeeds.
   *Slice:* 2 Browser push
   *Kind:* feature

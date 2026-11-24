@@ -9,14 +9,19 @@
 - Unsubscribe deletes the endpoint only when it is the caller's own; someone else's endpoint is left alone and the
   answer is the same, so it does not reveal whether it exists.
 - Push is "set up" when all three VAPID settings are present (`config.push_configured`); without them the Account page
-  says "push is not set up on this service" and subscribe answers 409. Sending is queue item N5.
+  says "push is not set up on this service" and subscribe answers 409.
+- Sending (queue item N5): `send_to_account` pushes one payload to each of a person's subscriptions through the
+  sender (`app.config["PUSH_SENDER"]` when set, a fake in tests; else `push_sender`, which uses pywebpush) with a
+  `PUSH_TIMEOUT` of 5 seconds. A 404 or 410 from the push service deletes the subscription; any other failure counts in
+  `failures`; success sets `last_ok_at`. It never raises: it answers (state, detail) for the notification row.
 - `GET /sw.js` serves `static/sw.js` (queue item N4) as `text/javascript` with `Service-Worker-Allowed: /`; the
   Account page's script (`static/app.js`) registers it, subscribes and posts the subscription here.
 """
+import json
 import re
 import secrets
 
-from flask import Blueprint, current_app, g, jsonify, request, send_from_directory
+from flask import Blueprint, current_app, g, has_app_context, jsonify, request, send_from_directory
 
 from . import auth, sessions
 from . import config as _config
@@ -96,6 +101,79 @@ def unsubscribe(db, account_id, endpoint):
     """Delete `endpoint` only if it is `account_id`'s. Returns the number of rows removed (0 or 1). Does not commit."""
     cur = db.execute("DELETE FROM push_subscription WHERE endpoint = ? AND account_id = ?", (endpoint, account_id))
     return cur.rowcount or 0
+
+
+# ---------- sending (queue item N5) ----------
+
+PUSH_TIMEOUT = 5          # seconds for each request to a push service
+GONE = (404, 410)         # the push service says the subscription no longer exists
+MAX_DETAIL = 300
+
+
+class PushFailed(Exception):
+    """A push service refused a push; `status` is its HTTP status when there was one."""
+
+    def __init__(self, reason, status=None):
+        super().__init__(reason)
+        self.status = status
+
+
+def push_sender(subscription, payload, vapid, timeout=PUSH_TIMEOUT):
+    """Send one Web Push with pywebpush. `subscription` is {"endpoint", "keys": {"p256dh", "auth"}}, `payload` a str,
+    `vapid` {"private_key", "subject"}. Raises PushFailed (with the status) when the push service refuses."""
+    try:
+        from pywebpush import WebPushException, webpush
+    except ImportError as exc:                    # listed in requirements.txt; missing only in a broken install
+        raise PushFailed("pywebpush is not installed") from exc
+    try:
+        webpush(subscription_info=subscription, data=payload, vapid_private_key=vapid["private_key"],
+                vapid_claims={"sub": vapid["subject"]}, timeout=timeout)
+    except WebPushException as exc:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        raise PushFailed(("HTTP %s" % status) if status else str(exc), status) from exc
+
+
+def payload_for(title, text, link, tag=None):
+    """The JSON the service worker (static/sw.js) reads: title, body, link, and a tag so a repeat replaces the last."""
+    return json.dumps({"title": title, "body": text, "link": link, "tag": tag}, separators=(",", ":"))
+
+
+def send_to_account(db, account_id, payload, now, cfg=None):
+    """Push `payload` to every subscription of the account. Never raises. Does not commit.
+    -> ("off", reason) without VAPID keys or subscriptions, ("sent", None) when at least one push went out,
+    else ("failed", reason)."""
+    try:
+        if cfg is None:
+            cfg = current_app.config if has_app_context() else {}
+        if not _config.push_configured(cfg):
+            return "off", "push is not set up on this service"
+        subs = subscriptions_of(db, account_id)
+        if not subs:
+            return "off", "no browser has push turned on"
+        vapid = {"private_key": cfg["CENTRAL_VAPID_PRIVATE_KEY"].strip(), "subject": cfg["CENTRAL_VAPID_SUBJECT"].strip()}
+        send = cfg.get("PUSH_SENDER") or push_sender
+        at = now if isinstance(now, str) else sessions.iso(now)
+        sent, reasons = 0, []
+        for sub in subs:
+            info = {"endpoint": sub["endpoint"], "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]}}
+            try:
+                send(info, payload, vapid, timeout=PUSH_TIMEOUT)
+            except Exception as exc:              # noqa: BLE001 - a push must never break the caller's request
+                status = getattr(exc, "status", None)
+                if status in GONE:
+                    db.execute("DELETE FROM push_subscription WHERE id = ?", (sub["id"],))
+                    reasons.append("subscription gone (HTTP %s), removed" % status)
+                else:
+                    db.execute("UPDATE push_subscription SET failures = failures + 1 WHERE id = ?", (sub["id"],))
+                    reasons.append(str(exc) or exc.__class__.__name__)
+                continue
+            db.execute("UPDATE push_subscription SET last_ok_at = ?, failures = 0 WHERE id = ?", (at, sub["id"]))
+            sent += 1
+        if sent:
+            return "sent", None
+        return "failed", "; ".join(dict.fromkeys(reasons))[:MAX_DETAIL]
+    except Exception as exc:                      # noqa: BLE001 - e.g. a database error while recording
+        return "failed", ("push error: %s" % (str(exc) or exc.__class__.__name__))[:MAX_DETAIL]
 
 
 def _error(message, status):

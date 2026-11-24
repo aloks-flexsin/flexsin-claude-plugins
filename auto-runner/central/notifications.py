@@ -10,6 +10,11 @@ Pages (queue item N2): the top bar's bell carries `unread_count` (from `shell`'s
 `GET /notifications` lists the person's own, waiting ones first, then resolved ones marked "Done";
 `POST /notifications/<id>/open` marks one read and goes to its link (same-site only); `POST /notifications/read-all`.
 
+Push (queue item N5): `notify` also pushes each new notification to the person's browsers (`push.send_to_account`)
+and records `push_state` (`off` without VAPID keys or subscriptions, `sent`, or `failed` with the reason in
+`push_detail`). Pushing never raises into the caller. The push goes out before the caller commits, so if the caller
+then rolls back, the person may have been pushed about a notification that is not stored.
+
 Neither function commits: the caller commits with the change that caused the notification, so both land together.
 
 Keys used by the service:
@@ -22,7 +27,7 @@ import secrets
 
 from flask import Blueprint, abort, g, redirect, render_template, url_for
 
-from . import auth, projects, sessions, ui
+from . import auth, projects, push, sessions, ui
 from .db import get_db
 
 bp = Blueprint("notifications", __name__)
@@ -78,12 +83,27 @@ def notify(db, account_ids, project, kind, text, link, dedupe, now):
         if db.query_one("SELECT id FROM notification WHERE account_id = ? AND dedupe = ? AND resolved_at IS NULL",
                         (account_id, dedupe)):
             continue
+        notification_id, body, target = secrets.token_hex(16), (text or "")[:MAX_TEXT], (link or "")[:MAX_LINK]
         db.execute("INSERT INTO notification (id, account_id, project_id, kind, text, link, dedupe, created_at)"
                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                   (secrets.token_hex(16), account_id, project["id"], kind, (text or "")[:MAX_TEXT],
-                    (link or "")[:MAX_LINK], dedupe, at))
+                   (notification_id, account_id, project["id"], kind, body, target, dedupe, at))
+        _push(db, notification_id, account_id, project, body, target, dedupe, at)
         done.append(account_id)
     return done
+
+
+def _push(db, notification_id, account_id, project, text, link, dedupe, at):
+    """Push one new notification to the person's browsers and record how it went; never raises."""
+    try:
+        title = project["name"] or "auto-runner"
+    except (KeyError, IndexError, TypeError):
+        title = "auto-runner"
+    state, detail = push.send_to_account(db, account_id, push.payload_for(title, text, link, dedupe), at)
+    try:
+        db.execute("UPDATE notification SET push_state = ?, push_detail = ? WHERE id = ?",
+                   (state, detail, notification_id))
+    except Exception:                             # noqa: BLE001 - recording must not break the caller either
+        pass
 
 
 def resolve(db, dedupe, now):

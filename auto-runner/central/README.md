@@ -155,7 +155,8 @@ may not stick over plain http. The API endpoints do not use the cookie.
 A `notification` row is kept per person for each thing that waits on them. Only enabled **members** of the project
 get one: a site admin who is not a member gets none (they still see everything on My work). While a person has an
 unresolved notification with the same key, the same event again adds nothing; once the thing no longer waits, every
-notification with its key is marked resolved. There is no push yet (`push_state`/`push_detail` stay empty until N5).
+notification with its key is marked resolved. Each new notification is also pushed to the person's browsers (see
+"Sending pushes" below).
 
 | Kind | When | Who | Text and link | Resolved when |
 |------|------|-----|---------------|---------------|
@@ -187,7 +188,7 @@ Unsubscribe deletes the endpoint only when it is your own. Without all three `CE
 answers 409 and the Account page's "Notifications on this browser" section says push is not set up on this service.
 With them, the section carries the public key, the CSRF token and both URLs as `data-` attributes, says in how many
 browsers the account has it on, and holds the Turn on / Turn off buttons, hidden until the browser script (N4) finds
-push support. Sending pushes (`pywebpush`, in `requirements.txt`) is N5.
+push support.
 
 **Service worker and the browser side.** `GET /sw.js` serves `static/sw.js` from the site root as `text/javascript`
 with `Service-Worker-Allowed: /` and `Cache-Control: no-cache`, so it can control scope `/`. On `push` it shows a
@@ -200,6 +201,20 @@ browser's state, and: Turn on asks permission, subscribes with the VAPID public 
 browser and posts its endpoint to the unsubscribe URL. Requests go only to same-origin URLs; no inline script, so it
 works under the CSP (`default-src 'self'` covers the worker and `fetch`). Not yet tried in a real browser
 (**unverified**); the tests check the headers and that the handlers exist.
+
+**Sending pushes.** `notifications.notify` pushes each notification it adds to every subscription of its recipient
+(`push.send_to_account`), with the payload `{"title": project name, "body": text, "link": link, "tag": key}`, through
+`push_sender(subscription, payload, vapid, timeout=5)`: in production `push.push_sender`, which uses `pywebpush` (in
+`requirements.txt`) with the VAPID private key and `CENTRAL_VAPID_SUBJECT` as the `sub` claim; tests set
+`app.config["PUSH_SENDER"]` to a fake. The notification row records `push_state`: `off` (with the reason in
+`push_detail`) when the VAPID settings are missing or the person has no subscription, `sent` when at least one browser
+took it, or `failed` with the reason in `push_detail`. A 404 or 410 from the push service deletes that subscription
+(the browser dropped it); any other failure adds one to its `failures`, and a success sets `last_ok_at` and resets
+`failures`. Pushing never raises into the caller: the request that caused the notification still succeeds. A repeated
+event that adds no notification sends no push. The push goes out before the caller commits, so if the caller's
+change is then rolled back, the person may already have been pushed about it. Each request waits at most 5 seconds,
+in the request that caused the notification. Not yet tried against a real push service (**unverified**); the tests use
+a fake sender.
 
 ## Presentation (UX audit foundations)
 

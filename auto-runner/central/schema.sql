@@ -225,7 +225,7 @@ CREATE TABLE IF NOT EXISTS runner (
 
 -- In-app notifications (notifications.py): one row per person for something that waits on them. `dedupe` identifies
 -- the thing (one unresolved row per person and key); `resolved_at` is set once it no longer waits. `push_state` and
--- `push_detail` record a browser push for it (NULL until push is set up).
+-- `push_detail` record a browser push for it (`off`, `sent` or `failed`; queue item N5).
 CREATE TABLE IF NOT EXISTS notification (
     id VARCHAR(64) PRIMARY KEY,
     account_id VARCHAR(64) NOT NULL REFERENCES account (id) ON DELETE CASCADE,

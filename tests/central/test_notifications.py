@@ -190,3 +190,143 @@ def test_init_db_adds_the_notification_table_to_an_existing_database(tmp_path):
     finally:
         conn.close()
     db.init_db(db_url)
+
+
+# ---------- push (queue item N5) ----------
+
+from central import push  # noqa: E402
+
+from .test_push_subscriptions import ENDPOINT, KEYS, csrf_of, send, sub  # noqa: E402
+
+
+class FakeSender:
+    """Records each push; `fail` maps an endpoint to the exception to raise for it."""
+
+    def __init__(self):
+        self.sent, self.fail = [], {}
+
+    def __call__(self, subscription, payload, vapid, timeout=None):
+        if subscription['endpoint'] in self.fail:
+            raise self.fail[subscription['endpoint']]
+        self.sent.append({'subscription': subscription, 'payload': json.loads(payload), 'vapid': vapid,
+                          'timeout': timeout})
+
+
+@pytest.fixture
+def sender(app):
+    fake = FakeSender()
+    app.config['PUSH_SENDER'] = fake
+    return fake
+
+
+def subscribe(team, who, endpoint=ENDPOINT):
+    c = team['clients'][who]
+    assert send(c, '/push/subscribe', sub(endpoint), csrf=csrf_of(c)).status_code == 200
+
+
+def subs_of(conn, team, who):
+    return conn.query('SELECT * FROM push_subscription WHERE account_id = ?', (team['accounts'][who]['id'],))
+
+
+def test_a_subscribed_person_gets_one_push_per_notification_with_the_text_and_link(app, team, conn, sender):
+    app.config.update(KEYS)
+    subscribe(team, 'manager')
+    n = add(team)
+    assert plan(app, team, n, take(app, team)['claim']).status_code == 200
+    assert len(sender.sent) == 1                                      # only the manager has a browser subscribed
+    sent = sender.sent[0]
+    assert sent['subscription']['endpoint'] == ENDPOINT and sent['subscription']['keys']['auth']
+    assert sent['payload']['body'] == 'Plan waiting: #%d CSV export' % n
+    assert sent['payload']['link'] == '/projects/alpha/tasks/%d' % n
+    assert sent['payload']['title'] == 'Alpha'
+    assert sent['vapid'] == {'private_key': KEYS['CENTRAL_VAPID_PRIVATE_KEY'], 'subject': KEYS['CENTRAL_VAPID_SUBJECT']}
+    assert sent['timeout'] == push.PUSH_TIMEOUT == 5
+    row = rows(conn, team, 'manager', 'plan')[0]
+    assert (row['push_state'], row['push_detail']) == ('sent', None)
+    assert subs_of(conn, team, 'manager')[0]['last_ok_at']
+    assert rows(conn, team, 'owner', 'plan')[0]['push_state'] == 'off'     # no browser subscribed
+    with app.app_context():                                               # the same event again: no second push
+        notifications.notify(conn, [team['accounts']['manager']['id']], team['alpha'], 'plan', 'x', '/x',
+                             notifications.task_key(team['alpha'], n, 'plan'), START)
+    assert len(sender.sent) == 1
+
+
+def test_no_keys_means_off_and_nothing_is_sent(app, team, conn, sender):
+    app.config.update(KEYS)
+    subscribe(team, 'manager')
+    for name in KEYS:
+        app.config[name] = None
+    n = add(team)
+    assert plan(app, team, n, take(app, team)['claim']).status_code == 200
+    assert sender.sent == []
+    row = rows(conn, team, 'manager', 'plan')[0]
+    assert row['push_state'] == 'off' and 'not set up' in row['push_detail']
+
+
+def test_a_410_or_404_deletes_the_subscription(app, team, conn, sender):
+    app.config.update(KEYS)
+    other = 'https://push.example.com/send/other'
+    subscribe(team, 'manager')
+    subscribe(team, 'owner', other)
+    sender.fail[ENDPOINT] = push.PushFailed('HTTP 410', 410)
+    sender.fail[other] = push.PushFailed('HTTP 404', 404)
+    n = add(team)
+    assert plan(app, team, n, take(app, team)['claim']).status_code == 200
+    assert subs_of(conn, team, 'manager') == [] and subs_of(conn, team, 'owner') == []
+    row = rows(conn, team, 'manager', 'plan')[0]
+    assert row['push_state'] == 'failed' and '410' in row['push_detail']
+
+
+def test_a_sender_error_marks_failed_and_the_request_still_succeeds(app, team, conn, sender):
+    app.config.update(KEYS)
+    subscribe(team, 'manager')
+    sender.fail[ENDPOINT] = RuntimeError('connection timed out')
+    n = add(team)
+    assert plan(app, team, n, take(app, team)['claim']).status_code == 200
+    row = rows(conn, team, 'manager', 'plan')[0]
+    assert (row['push_state'], row['push_detail']) == ('failed', 'connection timed out')
+    left = subs_of(conn, team, 'manager')
+    assert len(left) == 1 and left[0]['failures'] == 1                 # kept: not a 404/410
+    del sender.fail[ENDPOINT]                                          # a later success resets the count
+    with app.app_context():
+        notifications.notify(conn, [team['accounts']['manager']['id']], team['alpha'], 'assigned', 'Assigned', '/y',
+                             'k-later', START)
+    assert subs_of(conn, team, 'manager')[0]['failures'] == 0 and len(sender.sent) == 1
+
+
+def test_a_failing_blocker_push_does_not_break_ingest(app, team, conn, sender):
+    app.config.update(KEYS)
+    subscribe(team, 'owner')
+    sender.fail[ENDPOINT] = ValueError('bad key')
+    raise_blocker(app, team, conn)                                     # asserts a 200 itself
+    row = rows(conn, team, 'owner', 'blocker')[0]
+    assert (row['push_state'], row['push_detail']) == ('failed', 'bad key')
+
+
+def test_notify_outside_an_app_context_records_off(team, conn):
+    ids = [team['accounts']['owner']['id']]
+    assert notifications.notify(conn, ids, team['alpha'], 'assigned', 't', '/x', 'k-off', START) == ids
+    assert rows(conn, team, 'owner')[0]['push_state'] == 'off'
+
+
+def test_the_real_sender_passes_the_timeout_and_maps_a_webpush_error_to_its_status(monkeypatch):
+    import sys
+    import types
+
+    class WebPushException(Exception):
+        def __init__(self, message, response=None):
+            super().__init__(message)
+            self.response = response
+
+    calls = []
+
+    def webpush(**kw):
+        calls.append(kw)
+        raise WebPushException('Push failed: 410 Gone', response=types.SimpleNamespace(status_code=410))
+
+    monkeypatch.setitem(sys.modules, 'pywebpush', types.SimpleNamespace(WebPushException=WebPushException,
+                                                                         webpush=webpush))
+    with pytest.raises(push.PushFailed) as err:
+        push.push_sender({'endpoint': ENDPOINT, 'keys': {}}, '{}', {'private_key': 'k', 'subject': 'mailto:a@b.c'})
+    assert err.value.status == 410
+    assert calls[0]['timeout'] == 5 and calls[0]['vapid_claims'] == {'sub': 'mailto:a@b.c'}
