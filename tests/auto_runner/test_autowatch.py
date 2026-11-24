@@ -160,3 +160,113 @@ def test_an_unreachable_service_is_reported_and_retried(watched, central, team, 
     assert watch(watched, central, env, clock, max_steps=2) == 0
     assert capsys.readouterr().out.count('claim: failed, could not claim a task') == 2
     assert watch_file(watched)['state'] == 'waiting_after_failure' and sum(clock.slept) == 2 * POLL
+
+
+# --- H9 guardrails: daily spend, usage limit, checkout lock -------------------------------------------------------------
+
+def spend(p, now):
+    return json.loads(aw.spend_path(p, now).read_text(encoding='utf-8'))
+
+
+class CostlyClaude(FakeClaude):
+    """FakeClaude whose builds report a cost too (0.7 USD per build attempt)."""
+
+    def __call__(self, cmd, cwd):
+        code, out = super().__call__(cmd, cwd)
+        if self.roles[-1] == 'build':
+            out += '\n' + json.dumps({'type': 'result', 'result': 'done', 'total_cost_usd': 0.7})
+        return code, out
+
+
+def test_planning_and_build_costs_both_count_in_the_days_spend_file(watched, central, team, env):
+    n = add_task(central, team)['number']
+    claude, clock = CostlyClaude(), Clock()
+    assert watch(watched, central, env, clock, claude, max_steps=1) == 0          # plans it: planner and spec check
+    day = spend(watched, clock.now)
+    assert day['date'] == aw.local_day(clock.now) and day['spent_usd'] == pytest.approx(0.15)
+    assert [(c['task'], c['action'], c['cost_usd']) for c in day['calls']] == [(n, 'plan', 0.1), (n, 'plan', 0.05)]
+    approve(central, team, n)
+    assert watch(watched, central, env, clock, claude, max_steps=1) == 0          # builds it
+    day = spend(watched, clock.now)
+    builds = [c for c in day['calls'] if c['action'] == 'build']
+    assert builds and all(c['task'] == n and c['cost_usd'] == 0.7 for c in builds)
+    assert day['spent_usd'] == pytest.approx(0.15 + 0.7 * len(builds))
+    assert aw.spent_today(watched, clock.now) == pytest.approx(day['spent_usd'])
+    assert server_task(central, n)['status'] == 'done'
+
+
+def test_the_daily_cap_pauses_until_local_midnight(watched, central, team, env, capsys):
+    n = add_task(central, team)['number']
+    clock = Clock()
+    midnight = aw.next_midnight(clock.now)
+    clock.now = midnight - 600                                     # ten minutes before local midnight
+    aw.add_spend(watched, clock.now, 20.0, 99, 'build')            # the default cap (20 USD) is reached today
+    seen = []
+    clock.on_sleep = lambda: seen.append((watch_file(watched)['state'], list(central.calls)))
+    claude = FakeClaude()
+    assert watch(watched, central, env, clock, claude, max_steps=1) == 0
+    assert clock.now >= midnight and sum(clock.slept) == pytest.approx(600)
+    assert seen and all(state == 'paused_daily_budget' and calls == [] for state, calls in seen)  # nothing claimed
+    assert 'daily budget reached (20.00 of 20 USD today): paused until local midnight' in capsys.readouterr().out
+    assert claude.roles == ['plan', 'spec'] and server_task(central, n)['status'] == 'plan_review'
+    assert aw.local_day(clock.now) != aw.local_day(midnight - 600)
+    assert spend(watched, clock.now)['spent_usd'] == pytest.approx(0.15)          # a new day starts a new file
+
+
+def test_spend_below_the_cap_does_not_pause(watched, central, env):
+    clock = Clock()
+    aw.add_spend(watched, clock.now, 19.99)
+    assert watch(watched, central, env, clock, max_steps=1) == 0
+    assert watch_file(watched)['state'] == 'idle' and sum(clock.slept) == POLL
+
+
+def test_a_usage_limit_waits_for_the_reset(watched, central, team, env, capsys):
+    add_task(central, team)
+    clock = Clock()
+    reset = int(clock.now) + 600
+
+    def limited(cmd, cwd):
+        return 1, json.dumps({'type': 'result', 'is_error': True, 'total_cost_usd': 0.02,
+                              'result': f'Claude AI usage limit reached|{reset}'})
+
+    assert watch(watched, central, env, clock, limited, max_steps=1) == 0
+    assert sum(clock.slept) == pytest.approx(660)                                  # the reset plus a minute
+    beat = watch_file(watched)
+    assert beat['state'] == 'waiting_usage_limit' and beat['reset'] == aw._iso(reset)
+    assert 'usage limit reached' in capsys.readouterr().out
+    assert spend(watched, clock.now)['spent_usd'] == pytest.approx(0.02)
+
+
+def test_a_build_stopped_by_the_usage_limit_waits_before_the_next_claim(watched, central, team, env):
+    n = add_task(central, team)['number']
+    ar.autotasks.take_next(watched, env, central.send)
+    ar.autotasks.post_plan(watched, n, PLAN, ITEMS, env, central.send)
+    approve(central, team, n)
+    clock = Clock()
+    usage_exit = aw._runner().USAGE_LIMIT_EXIT
+    assert watch(watched, central, env, clock, build=lambda *a: usage_exit, max_steps=1) == 0
+    assert sum(clock.slept) == aw._runner().LIMIT_POLL_MINUTES * 60               # unknown reset: the longest wait
+    assert watch_file(watched)['state'] == 'waiting_usage_limit'
+
+
+def test_a_second_watcher_on_the_same_checkout_refuses_to_build(watched, central, team, env, capsys):
+    add_task(central, team)
+    first = aw._runner().Lock(watched / aw.LOCK_FILE)
+    first.acquire()                                                # a live watcher (this process) holds the checkout
+    try:
+        built = []
+        code = watch(watched, central, env, Clock(), build=lambda *a: built.append(a) or 0, max_steps=3)
+        assert code == 2 and built == [] and central.calls == []
+        assert 'Not started: another watcher holds' in capsys.readouterr().out
+    finally:
+        first.release()
+    assert watch(watched, central, env, Clock(), max_steps=1) == 0               # free again once the first one ends
+    assert not (watched / aw.LOCK_FILE).exists()
+
+
+def test_a_stale_watch_lock_is_cleared(watched, central, env):
+    lock = watched / aw.LOCK_FILE
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text('999999999', encoding='utf-8')                 # a watcher that died
+    assert watch(watched, central, env, Clock(), max_steps=1) == 0
+    assert watch_file(watched)['state'] == 'idle'

@@ -5,6 +5,10 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Auto-runner watch mode guardrails and command: `/auto-runner:auto watch` starts the watcher (`bin/autowatch.py`). Every
+  `claude -p` it starts (plans, spec checks, builds) adds its reported cost to `.auto/run/spend-<local date>.json`; at
+  `watch.daily_budget_usd` (default 20 USD) it pauses until local midnight. At Claude's usage limit it waits for the
+  reset; only one watcher (so one build) runs per checkout (`.auto/run/watch.lock`). Unverified against the live CLI.
 - Central service, sign-in and account (UX audit PR 6): a focused **sign-in** with Show and a lockout explanation that
   never reveals whether an email exists; **invite** links ask for your name and show a live password checklist; the
   **device** page shows the code large with a countdown; **Account** (was Password) sets your name and password, and

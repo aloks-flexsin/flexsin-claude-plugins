@@ -76,7 +76,7 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Acceptance:* `tests/auto_runner/test_autowatch.py` with a fake claude, fake service and fake clock: plans a new task, builds an approved one, writes the idle heartbeat file, stops on STOP, continues after a failed build.
   *Slice:* 4 Watch mode
   *Kind:* feature
-- [ ] **H9 Watch guardrails and command.** Daily spend: every `claude -p` the watcher starts (planner, spec check and builds) adds its `total_cost_usd` to `.auto/run/spend-<local date of this computer>.json`; at `watch.daily_budget_usd` it pauses until local midnight; usage-limit waiting reused from `auto_run`; the checkout lock so only one build runs per checkout; `/auto-runner:auto watch` in `commands/auto.md`; README and CHANGELOG.
+- [x] **H9 Watch guardrails and command.** Daily spend: every `claude -p` the watcher starts (planner, spec check and builds) adds its `total_cost_usd` to `.auto/run/spend-<local date of this computer>.json`; at `watch.daily_budget_usd` it pauses until local midnight; usage-limit waiting reused from `auto_run`; the checkout lock so only one build runs per checkout; `/auto-runner:auto watch` in `commands/auto.md`; README and CHANGELOG.
   *Acceptance:* tests in `tests/auto_runner/test_autowatch.py` prove planning and build costs both count, the cap pauses until local midnight (fake clock across the boundary), a usage limit waits for the reset, a second watcher on the same checkout refuses to build.
   *Slice:* 4 Watch mode
   *Kind:* feature
