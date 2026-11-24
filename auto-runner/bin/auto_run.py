@@ -1137,6 +1137,8 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         for d in pending_requests(project):
             say(f"request '{d.name}' waits: {branch} is not merged into {start} yet (one request per branch; "
                 'it starts on a new branch in the first run after the merge)')
+            if pusher is not None:
+                autotasks.wait_note(pusher, d, f'waits: {branch} is not merged into {start} yet')
 
     prompt = build_prompt(cfg, queue_rel, principles=principles_text(project, cfg))
     allowed = (list(BASE_ALLOWED) + ([f'Bash({cfg["test_command"]}:*)'] if cfg['test_command'] else [])

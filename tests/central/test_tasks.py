@@ -263,3 +263,32 @@ def test_everyone_sees_what_the_others_are_doing_through_the_api(app, team, conn
     take(app, team, runner='alok/bhawish-claude-auto-runner')
     [t] = api(app, 'GET', '/api/v1/tasks', team['token']['manager']).get_json()['tasks']
     assert t['runner'] == 'alok/bhawish-claude-auto-runner' and t['assignee'] == 'dev@example.com' and 'claim' not in t
+
+
+def test_a_queued_task_keeps_a_waiting_note_until_it_starts_building(app, team, conn):
+    body = record(app, team)
+    n, note = body['task']['number'], 'waits: alok/x-claude-auto-runner/feat/a is not merged into origin/main yet'
+    assert beat(app, team, n, body['claim'], state='queued', note=note).get_json()['task']['status'] == 'queued'
+    assert tasks.get(conn, team['alpha']['id'], n)['note'] == note
+    page = team['clients']['dev'].get('/projects/alpha/tasks/%d' % n).get_data(as_text=True)
+    assert 'waits' in page and 'feat/a' in page
+    assert beat(app, team, n, body['claim'], state='queued').status_code == 200             # no note: kept
+    assert tasks.get(conn, team['alpha']['id'], n)['note'] == note
+    assert beat(app, team, n, body['claim'], state='building').get_json()['task']['status'] == 'building'
+    assert not tasks.get(conn, team['alpha']['id'], n)['note']
+
+
+def test_a_waiting_note_is_limited_to_300_characters(app, team, conn):
+    body = record(app, team)
+    n = body['task']['number']
+    assert beat(app, team, n, body['claim'], state='queued', note='x' * 301).status_code == 400
+    assert beat(app, team, n, body['claim'], state='queued', note='x' * 300).status_code == 200
+
+
+def test_release_clears_a_waiting_note(app, team, conn):
+    body = record(app, team)
+    n = body['task']['number']
+    beat(app, team, n, body['claim'], state='queued', note='waits: b is not merged into origin/main yet')
+    assert post(team['clients']['admin'], '/projects/alpha/tasks/%d/release' % n, confirm='1').status_code == 302
+    assert tasks.get(conn, team['alpha']['id'], n)['status'] == 'approved'
+    assert not tasks.get(conn, team['alpha']['id'], n)['note']

@@ -357,3 +357,58 @@ def test_a_lost_claim_on_the_first_heartbeat_does_not_stop_the_run(project, cent
                   allow_dirty=True) == 0
     assert 'claim lost' in capsys.readouterr().out
     assert server_task(central, n)['status'] == 'approved'
+
+
+# ---------- why a queued task waits (Q3) ----------
+
+def _two_requests(project, central, team, env):
+    """Task A's request (first) and task B's (it will wait): both started, so both queued -> (slug A, B's number)."""
+    from central import tasks
+    a = _approved_task(project, central, team, env)
+    slug_a = at.start(project, a, env, central.send)
+    b = add_task(central, team, 'Second thing')['number']
+    at.take_next(project, env, central.send)
+    at.post_plan(project, b, '## Intent\nTwo.', ITEMS.replace('T1', 'T2'), env, central.send)
+    tasks.decide(central.conn, central.project, server_task(central, b), team['dev'], 'approve', '', team['now'])
+    at.take_next(project, env, central.send)
+    at.start(project, b, env, central.send)
+    return slug_a, b
+
+
+def test_a_waiting_request_sends_its_reason_and_keeps_its_claim(project, central, team, env, monkeypatch):
+    slug_a, b = _two_requests(project, central, team, env)
+    claim = server_task(central, b)['claim_id']
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    beats, send = _spy(central)
+    transport = ar.autodeliver.HttpTransport(BASE, team['token'], send=send, project=SLUG)
+    assert ar.run(project, max_iterations=5, claude=picking_agent(), transport=transport, enqueue=slug_a,
+                  allow_dirty=True) == 0
+    noted = [x for x in beats if x.get('note')]
+    assert noted and noted[0]['state'] == 'queued' and noted[0]['claim'] == claim
+    assert noted[0]['note'].startswith('waits: ') and 'is not merged into' in noted[0]['note']
+    row = server_task(central, b)
+    assert row['status'] == 'queued' and row['claim_id'] == claim and 'waits: ' in row['note']
+    at.reopen_build(project, b, env, central.send)                    # it starts building: the note goes
+    assert not server_task(central, b)['note']
+
+
+def test_a_service_error_while_noting_a_wait_does_not_stop_the_run(project, central, team, env, monkeypatch, capsys):
+    slug_a, b = _two_requests(project, central, team, env)
+
+    def send(method, url, headers, body, timeout):
+        if url.split('?')[0].endswith('/heartbeat') and b'"note"' in body:
+            return 503, b'{"error": "down"}'
+        return central.send(method, url, headers, body, timeout)
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    transport = ar.autodeliver.HttpTransport(BASE, team['token'], send=send, project=SLUG)
+    assert ar.run(project, max_iterations=5, claude=picking_agent(), transport=transport, enqueue=slug_a,
+                  allow_dirty=True) == 0
+    assert 'waits:' in capsys.readouterr().out
+    assert server_task(central, b)['status'] == 'queued'
+
+
+def test_wait_note_without_a_task_json_does_nothing(tmp_path):
+    (tmp_path / 'req').mkdir()
+    assert at.wait_note(object(), tmp_path / 'req', 'waits: x') is False

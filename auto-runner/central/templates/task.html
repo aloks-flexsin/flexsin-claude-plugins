@@ -62,7 +62,8 @@
     {% if progress.blocked %}· <a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}">blocked: {{ progress.blocked | join(", ") }}</a>{% endif %}</div>
 </div>
 {% elif task.status == "queued" %}
-<div class="decision-bar quiet"><div class="muted">Queued: it waits for its run to start. It becomes Building when the run takes it.</div></div>
+<div class="decision-bar quiet"><div class="muted">Queued: it waits for its run to start. It becomes Building when the run takes it.</div>
+{% if task.note %}<div class="muted">{{ task.note }}</div>{% endif %}</div>
 {% elif task.status == "building" %}
 <div class="decision-bar quiet"><div class="muted">Approved and claimed; no run has sent progress yet. It appears here as soon as the runner starts.</div></div>
 {% endif %}
@@ -143,7 +144,7 @@
     <section class="card"><h3>Queue items</h3><pre class="wrap">{{ task['items'] }}</pre></section>
     {% endif %}
 
-    {% if task.note %}
+    {% if task.note and task.status != "queued" %}
     <section class="card"><h3>Runner's last report</h3><p>{{ task.note }}</p></section>
     {% endif %}
 

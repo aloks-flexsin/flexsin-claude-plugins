@@ -127,9 +127,10 @@ def take_next(db, project, account, runner, moment):
             claim = secrets.token_urlsafe(16)
             new_status = {"open": "planning", "approved": "building"}.get(status, status)
             cur = db.execute("UPDATE project_task SET claim_id = ?, claim_runner = ?, heartbeat_at = ?, status = ?,"
+                             " note = CASE WHEN ? = 'building' AND ? <> 'building' THEN NULL ELSE note END,"
                              " updated_at = ? WHERE id = ? AND (claim_id IS NULL OR claim_id = ? OR heartbeat_at IS NULL"
                              " OR heartbeat_at < ? OR claim_runner = ?)",
-                             (claim, runner, at, new_status, at, row["id"], row["claim_id"] or "",
+                             (claim, runner, at, new_status, new_status, status, at, row["id"], row["claim_id"] or "",
                               _at(moment - CLAIM_TTL), runner))
             if cur.rowcount == 1:
                 db.commit()
@@ -147,19 +148,33 @@ def _held(db, project, number, claim, moment):
     return row
 
 
-def beat(db, project, number, claim, moment, state=None):
+MAX_WAIT_NOTE = 300
+
+
+def beat(db, project, number, claim, moment, state=None, note=None):
     """Keep the claim alive. `state` "queued" moves an approved or building task to queued; "building" (or no state on
-    a queued task) moves queued to building."""
+    a queued task) moves queued to building. `note` (at most MAX_WAIT_NOTE characters) says why a queued task waits; it is
+    kept only while the task is queued and cleared when it moves to building."""
     row = _held(db, project, number, claim, moment)
     if state not in (None, "queued", "building"):
         raise TaskError('state is "queued" or "building"')
+    if note is not None and not isinstance(note, str):
+        raise TaskError("the note must be text")
+    note = (note or "").strip()
+    if len(note) > MAX_WAIT_NOTE:
+        raise TaskError("the note is at most %d characters" % MAX_WAIT_NOTE)
     status = row["status"]
     if state == "queued" and status in ("approved", "building"):
         status = "queued"
     elif status == "queued" and state in (None, "building"):
         status = "building"
-    db.execute("UPDATE project_task SET heartbeat_at = ?, status = ?, updated_at = ? WHERE id = ?",
-               (_at(moment), status, _at(moment) if status != row["status"] else row["updated_at"], row["id"]))
+    kept = row["note"]
+    if status == "building" and row["status"] == "queued":
+        kept = None                                         # it started: the waiting note is stale
+    elif status == "queued" and note:
+        kept = note
+    db.execute("UPDATE project_task SET heartbeat_at = ?, status = ?, note = ?, updated_at = ? WHERE id = ?",
+               (_at(moment), status, kept, _at(moment) if status != row["status"] else row["updated_at"], row["id"]))
     db.commit()
     return get(db, project["id"], number)
 
@@ -245,8 +260,8 @@ def release(db, project, row, assignee, moment):
     if assignee is not None and status in ("plan_review", "changes_requested"):
         status = "open"                                     # a new person plans it afresh
     db.execute("UPDATE project_task SET claim_id = NULL, claim_runner = NULL, heartbeat_at = NULL, status = ?,"
-               " assignee_id = ?, updated_at = ? WHERE id = ?",
-               (status, assignee["id"] if assignee else row["assignee_id"], at, row["id"]))
+               " note = CASE WHEN ? = 'queued' THEN NULL ELSE note END, assignee_id = ?, updated_at = ? WHERE id = ?",
+               (status, row["status"], assignee["id"] if assignee else row["assignee_id"], at, row["id"]))
     # a plan or a change request that no longer waits (the task went back to open for a new person) is done
     for kind, waiting in (("plan", "plan_review"), ("changes", "changes_requested")):
         if status != waiting:
@@ -391,7 +406,7 @@ def api_beat(number):
     _api_account()
     body = _body()
     return _api(lambda: jsonify(task=public(beat(get_db(), g.token_project, number, body.get("claim"), auth.now(),
-                                                 body.get("state")), auth.now())))
+                                                 body.get("state"), body.get("note")), auth.now())))
 
 
 @bp.post("/api/v1/tasks/<int:number>/report")

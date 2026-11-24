@@ -285,6 +285,20 @@ def beat(t, auto_dir, state=None):
         return 'unavailable'
 
 
+def wait_note(t, request_dir, note):
+    """A request left waiting for a merge: tell the service why, on the request's own task (its task.json), which stays
+    queued and keeps its claim. Best effort: no task.json, a refusal or an unreachable service changes nothing -> bool."""
+    try:
+        data = json.loads((Path(request_dir) / 'task.json').read_text(encoding='utf-8'))
+        if not (isinstance(data.get('number'), int) and data.get('claim')):
+            return False
+        t.request('POST', f'/api/v1/tasks/{data["number"]}/heartbeat',
+                  {'claim': data['claim'], 'state': 'queued', 'note': note[:300]})
+        return True
+    except (OSError, ValueError, AttributeError, RuntimeError, ConnectionError):
+        return False
+
+
 def finish(t, auto_dir, done, branch, pr_url, note):
     """Report the end of a run on the current task -> a line to say, or None. Done clears the current task."""
     task = current(auto_dir)
