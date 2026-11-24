@@ -84,7 +84,7 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Acceptance:* `tests/central/test_runners.py`: beat creates and updates, a token cannot beat another person's runner, silent after 2 hours, pause flag returned, `init-db` adds the table to an existing database.
   *Slice:* 5 Runner presence and controls
   *Kind:* feature
-- [ ] **H11 Runners on the pages, with controls.** Show runners on Overview, Runs and My work; Pause, Resume and Stop for the runner's person and admins, confirmed (`ui.confirm_page` and `data-confirm`) and audited.
+- [x] **H11 Runners on the pages, with controls.** Show runners on Overview, Runs and My work; Pause, Resume and Stop for the runner's person and admins, confirmed (`ui.confirm_page` and `data-confirm`) and audited.
   *Acceptance:* `tests/central/test_runner_pages.py`: who sees which buttons, nothing changes without confirmation, audit rows written, states shown in words.
   *Slice:* 5 Runner presence and controls
   *Kind:* feature

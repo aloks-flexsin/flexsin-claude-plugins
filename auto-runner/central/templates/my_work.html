@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_ui.html" as ui %}
+{% import "_runners.html" as rn %}
 {% block title %}My work{% endblock %}
 {% block body_attrs %} data-refresh="30"{% endblock %}
 {% macro task_link(t) -%}
@@ -77,6 +78,8 @@
   {{ ui.empty("Nothing is in progress. Add a task on a project's Tasks page.") }}
   {% endif %}
 </section>
+
+{% if runners %}{{ rn.section(runners, request.full_path if request.query_string else request.path, title="Your runners", show_project=True) }}{% endif %}
 
 <section class="block">
   <div class="block-head"><h2>Recently done</h2></div>

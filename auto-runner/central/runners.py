@@ -4,16 +4,18 @@ A runner sends `POST /api/v1/runners/beat?project=<slug>` with a personal token 
 `{"label": ..., "state": ..., "task": N or null, "spend_usd": today's spend}`. The first beat for a label creates the
 runner, owned by the token's account; a label belongs to one person in a project, so another person's token gets 403.
 The reply carries `control`: null (carry on), "pause" (wait without claiming) or "stop" (end cleanly). A runner whose
-last beat is older than SILENT_AFTER is shown as silent. People set `control` from the pages (a later step); the task
-API does not change.
+last beat is older than SILENT_AFTER is shown as silent. People set `control` from the pages (Pause, Resume and Stop, at the end of this
+file); the task API does not change.
 """
 import datetime
 import math
+import re
 import secrets
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, abort, g, jsonify, redirect, request, url_for
 
-from . import audit, auth, sessions, tokens
+from . import audit, auth, sessions, tokens, ui
+from .access import project_access
 from .db import get_db
 
 bp = Blueprint("runners", __name__)
@@ -133,3 +135,96 @@ def api_beat():
         db.commit()
     out = public(row, moment)
     return jsonify(runner=out, control=out["control"])
+
+
+# ---------- on the pages: state in words, and Pause / Resume / Stop ----------
+#
+# Overview, Runs and My work list runners. Each runner's person and admins (the account role, not a project role) get
+# Pause, Resume and Stop; everyone else sees the runner without buttons and gets 404 if they post. Each action asks
+# first (`data-confirm` dialog, or `ui.confirm_page` without JavaScript), sets `control` (what the next beat returns)
+# and writes an audit row `runner.pause`, `runner.resume` or `runner.stop`.
+
+ACTIONS = {"pause": "pause", "resume": None, "stop": "stop"}
+_STATE = re.compile(r"^(watching|planning|building|paused)\b(?:\s*#(\d+))?", re.I)
+ASK = {
+    "pause": ("Pause %s?", "It finishes the step it is on, then waits without taking new work until someone resumes it.",
+              "Pause runner"),
+    "resume": ("Resume %s?", "It takes work again at its next step. A runner that has already ended must be started "
+               "again on its computer.", "Resume runner"),
+    "stop": ("Stop %s?", "It finishes the step it is on and ends. Someone has to start it again on its computer.",
+             "Stop runner"),
+}
+WORDS = {"watching": "Watching for work", "planning": "Planning", "building": "Building", "paused": "Paused",
+         "silent": "Silent: no beat for 2 hours or more"}
+
+
+def by_id(db, project_id, runner_id):
+    return db.query_one("SELECT r.*, a.email AS account_email FROM runner r JOIN account a ON a.id = r.account_id"
+                        " WHERE r.project_id = ? AND r.id = ?", (project_id, runner_id))
+
+
+def can_control(row, account):
+    """The runner's own person and admins."""
+    return account is not None and (row["account_id"] == account["id"] or account["role"] == "admin")
+
+
+def words(row, moment):
+    """-> (key, task, text): the runner's state for a status chip and in a sentence. Silence wins over the last state."""
+    m = _STATE.match(row["state"] or "")
+    key = m.group(1).lower() if m else "other"
+    task = int(m.group(2)) if m and m.group(2) else row["task_number"]
+    if silent(row, moment):
+        key = "silent"
+    text = WORDS.get(key, (row["state"] or "").capitalize())
+    if task and key in ("planning", "building"):
+        text += " task #%d" % task
+    return key, task, text
+
+
+def view(row, moment, account, project):
+    """One runner as the pages show it."""
+    key, task, text = words(row, moment)
+    control = row["control"] if row["control"] in CONTROLS else None
+    note = None
+    if control == "pause":
+        note = "Paused by a person" if key == "paused" else "Asked to pause: it waits after the step it is on"
+    elif control == "stop":
+        note = "Asked to stop: it ends after the step it is on"
+    return {"id": row["id"], "label": row["label"], "person": row["account_email"], "key": key, "task": task,
+            "text": text, "state": row["state"], "spend_usd": row["spend_usd"], "beat_at": row["beat_at"],
+            "control": control, "note": note, "can_control": can_control(row, account), "project": project}
+
+
+def views(db, project, account, moment, only_controllable=False):
+    out = [view(r, moment, account, project) for r in for_project(db, project["id"])]
+    return [v for v in out if v["can_control"]] if only_controllable else out
+
+
+def set_control(db, row, action, account, moment):
+    """Pause, resume or stop -> True when `control` changed (the caller audits and commits)."""
+    value = ACTIONS[action]
+    if (row["control"] or None) == value:
+        return False
+    db.execute("UPDATE runner SET control = ?, control_by = ?, control_at = ? WHERE id = ?",
+               (value, account["id"], _at(moment), row["id"]))
+    return True
+
+
+@bp.post("/projects/<slug>/runners/<runner_id>/<action>")
+@project_access("viewer")
+def control_runner(slug, runner_id, action):
+    if action not in ACTIONS:
+        abort(404)
+    db, moment = get_db(), auth.now()
+    row = by_id(db, g.project["id"], runner_id)
+    if row is None or not can_control(row, g.account):
+        abort(404)
+    back = ui.safe_next(request.form.get("next")) or url_for("runs.runs_page", slug=slug)
+    if not ui.confirmed():
+        question, detail, label = ASK[action]
+        return ui.confirm_page(question % ui.runner_label(row["label"]), detail, label, back)
+    if set_control(db, row, action, g.account, moment):
+        audit.record(db, "runner." + action, _at(moment), account_id=g.account["id"], project_id=g.project["id"],
+                     detail={"label": row["label"], "owner": row["account_email"], "state": row["state"]})
+    db.commit()
+    return redirect(back)

@@ -27,7 +27,7 @@ and an owner, manager or admin answers it there.
 | `blockers.py` | Blocker list, blocker page and the answer form |
 | `deliveries.py` | Decisions and the delivery endpoints |
 | `audit.py` | The audit log |
-| `runners.py` | Runner presence: `POST /api/v1/runners/beat`, silent after 2 hours, pause/stop returned |
+| `runners.py` | Runner presence: `POST /api/v1/runners/beat`, silent after 2 hours, pause/stop returned; Pause, Resume and Stop on the pages |
 | `cli.py` | `python -m central init-db` and `python -m central create-admin --email X` |
 | `api/index.py`, `vercel.json` | Vercel entry point; every route is rewritten to it |
 | `templates/`, `static/style.css` | The pages (`base.html` holds the top bar) and their one stylesheet, served by Flask at `/static/style.css` because the CSP allows only same-origin styles; no inline styles or scripts |
@@ -130,8 +130,16 @@ may not stick over plain http. The API endpoints do not use the cookie.
   cleanly).
 - A runner whose last beat is 2 hours old or more is **silent** (`silent: true`); its next beat brings it back.
 - Audit: `runner.start` (first beat of a label) and `runner.back` (a beat after silence); ordinary beats are not audited.
-- Table `runner` (init-db adds it to an existing database). Pause, Resume and Stop on the pages come in a later step;
-  until then `control` is only set in the database. The task API is unchanged. Unverified on the live service.
+- Table `runner` (init-db adds it to an existing database). The task API is unchanged. Unverified on the live service.
+- **On the pages** (`templates/_runners.html`): Overview and Runs list the project's runners to every member, My work
+  lists **Your runners** (your own; every runner for an admin). Each shows the person, the label, the state in words
+  (*Watching for work*, *Building · task #3*, *Planning*, *Paused*, *Silent*), the last beat, today's spend and a pending
+  request ("Asked to pause", "Asked to stop").
+- **Pause, Resume, Stop:** `POST /projects/<slug>/runners/<id>/<pause|resume|stop>`, for the runner's own person and
+  admins only (anyone else gets 404, as for every hidden thing). Each asks first (the `data-confirm` dialog, or the
+  confirm page without JavaScript; nothing changes without `confirm=1`), sets `control` (Resume clears it), and writes
+  `runner.pause`, `runner.resume` or `runner.stop` to the audit (shown in Recent activity). Pause and Stop take effect at
+  the runner's next beat; the watch loop obeys them from H12. Unverified on the live service.
 
 ## Presentation (UX audit foundations)
 

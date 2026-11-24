@@ -177,7 +177,7 @@ OUTCOMES = (("running", "Running"), ("stopped", "Stopped"), ("silent", "Silent")
 def runs_page(slug):
     """Live runs as cards, then the history with outcome chips (`?outcome=`): what ended, why in words, and what to do
     next for a run that stopped."""
-    from . import auth
+    from . import auth, runners
     now = auth.now()
     runs = summarise(project_events(get_db(), g.project["id"]), now)
     outcome = request.args.get("outcome")
@@ -189,6 +189,7 @@ def runs_page(slug):
         history = []
     return render_template("runs.html", project=g.project, runs=runs, history=history, outcomes=OUTCOMES,
                            outcome=outcome, counts=counts, now=sessions_iso(now),
+                           runners=runners.views(get_db(), g.project, g.account, now),
                            active=[r for r in runs if r["state"] == "running"], stale_hours=int(STALE.total_seconds() // 3600))
 
 

@@ -13,7 +13,7 @@ import json
 
 from flask import g, request
 
-from . import auth, blockers, projects, runs, tasks, ui
+from . import auth, blockers, projects, runners, runs, tasks, ui
 from .db import get_db
 
 RECENT = 12
@@ -75,6 +75,9 @@ def _sentence(row, project_slug):
         "invite.create": "%s invited %s" % (who, d.get("email") or "someone"),
         "decision.record": "%s answered a blocker" % who,
         "project.repo_url": "%s changed the repository URL" % who,
+        "runner.pause": "%s paused the runner %s" % (who, ui.runner_label(d.get("label") or "")),
+        "runner.resume": "%s resumed the runner %s" % (who, ui.runner_label(d.get("label") or "")),
+        "runner.stop": "%s stopped the runner %s" % (who, ui.runner_label(d.get("label") or "")),
     }
     text = texts.get(row["action"])
     link = None
@@ -109,7 +112,8 @@ def overview(db, project, account, role, now):
                     " WHERE a.project_id = ? ORDER BY a.at DESC, a.id DESC LIMIT 60", (project["id"],))
     activity = [s for s in (_sentence(r, project["slug"]) for r in rows) if s][:RECENT]
     done = [t for t in all_tasks if t["status"] == "done"][:3]
-    return {"attention": attention, "working": working, "activity": activity, "done": done}
+    return {"attention": attention, "working": working, "activity": activity, "done": done,
+            "runners": runners.views(db, project, account, now)}
 
 
 def init_app(app):

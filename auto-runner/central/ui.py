@@ -113,6 +113,12 @@ STATUS = {
     ("run", "finished"): ("Finished", "ok", "dot"),
     ("run", "stopped"): ("Stopped", "bad", "square"),
     ("run", "silent"): ("Silent", "bad", "square"),
+    # watching runners (runners.words)
+    ("runner", "watching"): ("Watching for work", "info", "ring"),
+    ("runner", "planning"): ("Planning", "info", "dot"),
+    ("runner", "building"): ("Building", "info", "dot"),
+    ("runner", "paused"): ("Paused", "attention", "square"),
+    ("runner", "silent"): ("Silent", "bad", "square"),
     # blockers
     ("blocker", "OPEN"): ("Waiting for an answer", "attention", "dot"),
     ("blocker", "ESCALATED"): ("Escalated", "attention", "dot"),
