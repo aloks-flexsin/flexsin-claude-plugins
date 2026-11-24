@@ -39,3 +39,21 @@ def of_project(db, project_id):
     """The identities of the project's members (each row carries its account_id)."""
     return db.query("SELECT i.* FROM claude_identity i JOIN member m ON m.account_id = i.account_id"
                     " WHERE m.project_id = ? ORDER BY i.username, i.claude_account", (project_id,))
+
+
+def team_view(db, project_id):
+    """The project's identities grouped for the Members page -> {by_account: {account_id: [{claude_account, username,
+    shared}]}, shared: {claude accounts reported by more than one member}, clashes: {usernames reported by more than
+    one member}, claude_accounts: sorted distinct Claude accounts}."""
+    rows = of_project(db, project_id)
+    owners, users = {}, {}
+    for r in rows:
+        owners.setdefault(r["claude_account"], set()).add(r["account_id"])
+        users.setdefault(r["username"], set()).add(r["account_id"])
+    shared = {c for c, ids in owners.items() if len(ids) > 1}
+    by_account = {}
+    for r in rows:
+        by_account.setdefault(r["account_id"], []).append(
+            {"claude_account": r["claude_account"], "username": r["username"], "shared": r["claude_account"] in shared})
+    return {"by_account": by_account, "shared": shared, "claude_accounts": sorted(owners),
+            "clashes": sorted(u for u, ids in users.items() if len(ids) > 1)}

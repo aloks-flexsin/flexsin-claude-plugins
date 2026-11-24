@@ -73,3 +73,85 @@ def test_summarise_keeps_user_account_and_the_signed_in_name_apart():
     assert (r['user'], r['account'], r['signed_in'], r['signed_in_name']) == (
         'alok', 'bhawish', 'alok@example.com', 'Alok Sharma')
     assert r['who'] == 'alok via bhawish-claude-auto-runner'
+
+
+# Slice 2: the team's Claude accounts on Members, and the Runs filter
+
+def _person(world, conn, email, name):
+    acct = accounts.create(conn, email, PW)
+    accounts.set_name(conn, acct['id'], name)
+    conn.commit()
+    projects.add_member(conn, world['alpha']['id'], email, 'developer', AT)
+    return personal.create_token(conn, acct['id'], 'laptop', datetime.datetime(2026, 11, 23, 9, 0, tzinfo=datetime.timezone.utc))
+
+
+def _team(world, conn, clock, username_priya='priya'):
+    clock.now = NOW
+    alok, priya = _alok(world, conn), _person(world, conn, 'priya@example.com', 'Priya Rao')
+    run = lambda rid, user, acct, hour, reason='queue_empty', exit_=0: [
+        ev(rid, 'run_start', '2026-11-23T%02d:00:00+00:00' % hour, user=user, account=acct, branch='b' + rid),
+        ev(rid, 'run_end', '2026-11-23T%02d:30:00+00:00' % hour, exit=exit_, reason=reason)]
+    assert _post(world['app'], alok, run('r1', 'alok', 'bhawish', 9), '?project=alpha').status_code == 200
+    assert _post(world['app'], alok, run('r2', 'alok', 'bhawish', 10, 'budget', 1), '?project=alpha').status_code == 200
+    assert _post(world['app'], priya, run('r3', username_priya, 'bhawish', 11), '?project=alpha').status_code == 200
+    assert _post(world['app'], world['token'], run('r4', 'ravi', 'other', 8)).status_code == 200
+
+
+def test_members_page_marks_a_shared_claude_account(world, conn, clock):
+    _team(world, conn, clock)
+    page = signed_in(world['app'], 'alok@example.com').get('/projects/alpha/settings/members').get_data(as_text=True)
+    assert page.count('<code>bhawish</code> <span class="chip tone-attention">shared</span>') == 2
+    assert 'is reported by more than one member' not in page
+
+
+def test_members_page_warns_when_a_username_is_reported_twice(world, conn, clock):
+    _team(world, conn, clock, username_priya='alok')
+    page = signed_in(world['app'], 'priya@example.com').get('/projects/alpha/settings/members').get_data(as_text=True)
+    assert 'the username <code>alok</code> is reported by more than one member' in page
+
+
+def test_members_page_without_reports_says_so(world, conn):
+    _alok(world, conn)
+    page = signed_in(world['app'], 'alok@example.com').get('/projects/alpha/settings/members').get_data(as_text=True)
+    assert 'no Claude account reported' in page and 'shared' not in page.split('People')[1].split('roles-legend')[0]
+
+
+def test_runs_filter_by_claude_account(world, conn, clock):
+    _team(world, conn, clock)
+    client = signed_in(world['app'], 'alok@example.com')
+    page = client.get('/projects/alpha/runs?claude=bhawish').get_data(as_text=True)
+    assert 'Alok Sharma' in page and 'Priya Rao' in page and 'Claude account other' not in page
+    assert 'ravi' not in page
+    assert 'aria-label="Claude account"' in page and 'All Claude accounts' in page
+    both = client.get('/projects/alpha/runs').get_data(as_text=True)
+    assert 'ravi' in both
+
+
+def test_runs_claude_and_outcome_combine(world, conn, clock):
+    _team(world, conn, clock)
+    client = signed_in(world['app'], 'alok@example.com')
+    page = client.get('/projects/alpha/runs?claude=bhawish&outcome=finished').get_data(as_text=True)
+    assert 'Priya Rao' in page and 'Alok Sharma' in page
+    outcome_row = page.split('aria-label="Outcome"')[1].split('</nav>')[0]
+    assert outcome_row.count('claude=bhawish') == 4                   # All, Stopped, Silent, Finished
+    assert 'Finished 2' in outcome_row and 'Stopped 1' in outcome_row    # counts keep the Claude filter
+    # the Claude chips keep the outcome
+    assert 'outcome=finished' in page.split('aria-label="Claude account"')[1]
+    stopped = client.get('/projects/alpha/runs?claude=bhawish&outcome=stopped').get_data(as_text=True)
+    assert 'Priya Rao' not in stopped and 'Alok Sharma' in stopped
+
+
+def test_runs_unknown_claude_value_shows_no_runs(world, conn, clock):
+    _team(world, conn, clock)
+    r = signed_in(world['app'], 'alok@example.com').get('/projects/alpha/runs?claude=nobody')
+    assert r.status_code == 200
+    assert 'No run here with that outcome.' in r.get_data(as_text=True)
+
+
+def test_a_stranger_still_gets_404_on_members_and_runs(world, conn, clock):
+    _team(world, conn, clock)
+    accounts.create(conn, 'eve@example.com', PW)
+    conn.commit()
+    client = signed_in(world['app'], 'eve@example.com')
+    assert client.get('/projects/alpha/runs?claude=bhawish').status_code == 404
+    assert client.get('/projects/alpha/settings/members').status_code == 404

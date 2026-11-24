@@ -13,6 +13,7 @@ import re
 
 from flask import Blueprint, g, render_template, request
 
+from . import identities
 from .access import project_access
 from .db import get_db
 
@@ -184,12 +185,15 @@ def runs_page(slug):
     outcome = request.args.get("outcome")
     if outcome not in [k for k, _ in OUTCOMES]:
         outcome = None
-    counts = {k: sum(1 for r in runs if r["state"] == k) for k, _ in OUTCOMES}
-    history = [r for r in runs if r["state"] != "running" and (outcome is None or r["state"] == outcome)]
+    claude = request.args.get("claude") or None
+    claude_accounts = identities.team_view(get_db(), g.project["id"])["claude_accounts"]
+    scoped = [r for r in runs if claude is None or r["account"] == claude]    # unknown value: no runs, no error
+    counts = {k: sum(1 for r in scoped if r["state"] == k) for k, _ in OUTCOMES}
+    history = [r for r in scoped if r["state"] != "running" and (outcome is None or r["state"] == outcome)]
     if outcome == "running":
         history = []
     return render_template("runs.html", project=g.project, runs=runs, history=history, outcomes=OUTCOMES,
-                           outcome=outcome, counts=counts, now=sessions_iso(now),
+                           outcome=outcome, counts=counts, claude=claude, claude_accounts=claude_accounts, now=sessions_iso(now),
                            active=[r for r in runs if r["state"] == "running"], stale_hours=int(STALE.total_seconds() // 3600))
 
 

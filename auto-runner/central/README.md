@@ -178,6 +178,11 @@ may not stick over plain http. The API endpoints do not use the cookie.
   (`POST /admin/accounts/<id>/name`). Name changes are audited as `account.name`. The page also lists **Your Claude
   accounts** (from `identities.of_account`); on **Runs**, a run sent with a personal token shows the person's name,
   username and Claude account (runs from project tokens keep the old text; unverified in production).
+- **Team Claude accounts**: the project's Members page shows each member's Claude accounts
+  (`identities.team_view`), marks one reported by more than one member as "shared" and warns when one username is
+  reported by more than one member. Runs has a second chip row `?claude=<name>` ("All Claude accounts" plus one chip
+  per Claude account of the project); it combines with `?outcome=` (each row's links and the outcome counts keep the
+  other's value) and an unknown value shows no runs. Read-only for every member role.
 
 ## My work and task progress
 

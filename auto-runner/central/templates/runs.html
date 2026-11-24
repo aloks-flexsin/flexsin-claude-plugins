@@ -35,9 +35,15 @@
   <div class="block-head"><h2>History</h2></div>
   {% if runs %}
   <nav class="filter-chips" aria-label="Outcome">
-    <a href="{{ url_for('runs.runs_page', slug=project.slug) }}"{% if not outcome %} aria-current="page"{% endif %}>All</a>
-    {% for key, label in outcomes %}{% if key != "running" %}<a href="{{ url_for('runs.runs_page', slug=project.slug, outcome=key) }}"{% if outcome == key %} aria-current="page"{% endif %}>{{ label }} {{ counts[key] }}</a>{% endif %}{% endfor %}
+    <a href="{{ url_for('runs.runs_page', slug=project.slug, claude=claude) }}"{% if not outcome %} aria-current="page"{% endif %}>All</a>
+    {% for key, label in outcomes %}{% if key != "running" %}<a href="{{ url_for('runs.runs_page', slug=project.slug, outcome=key, claude=claude) }}"{% if outcome == key %} aria-current="page"{% endif %}>{{ label }} {{ counts[key] }}</a>{% endif %}{% endfor %}
   </nav>
+  {% if claude_accounts or claude %}
+  <nav class="filter-chips" aria-label="Claude account">
+    <a href="{{ url_for('runs.runs_page', slug=project.slug, outcome=outcome) }}"{% if not claude %} aria-current="page"{% endif %}>All Claude accounts</a>
+    {% for c in claude_accounts %}<a href="{{ url_for('runs.runs_page', slug=project.slug, outcome=outcome, claude=c) }}"{% if claude == c %} aria-current="page"{% endif %}>{{ c }}</a>{% endfor %}
+  </nav>
+  {% endif %}
   {% if history %}
   <div class="list">
     {% for r in history %}
