@@ -26,6 +26,7 @@ and an owner, manager or admin answers it there.
 | `ingest.py` | `POST /api/v1/events` |
 | `blockers.py` | Blocker list, blocker page and the answer form |
 | `deliveries.py` | Decisions and the delivery endpoints |
+| `identities.py` | Claude identities (`claude_identity`): the username and Claude account a signed-in person's runners report in `run_start` events; project-token events record nothing; first sighting audited as `identity_seen` (unverified in production) |
 | `audit.py` | The audit log |
 | `runners.py` | Runner presence: `POST /api/v1/runners/beat`, silent after 2 hours, pause/stop returned; Pause, Resume and Stop on the pages |
 | `cli.py` | `python -m central init-db` and `python -m central create-admin --email X` |
@@ -206,7 +207,14 @@ may not stick over plain http. The API endpoints do not use the cookie.
   and Approve.
 - **Account** (`/account`, was Password): your name (`POST /account/name`) and your password (`POST /account/password`,
   as before; `GET /account/password` redirects here). Admins set anyone's name from Accounts
-  (`POST /admin/accounts/<id>/name`). Name changes are audited as `account.name`.
+  (`POST /admin/accounts/<id>/name`). Name changes are audited as `account.name`. The page also lists **Your Claude
+  accounts** (from `identities.of_account`); on **Runs**, a run sent with a personal token shows the person's name,
+  username and Claude account (runs from project tokens keep the old text; unverified in production).
+- **Team Claude accounts**: the project's Members page shows each member's Claude accounts
+  (`identities.team_view`), marks one reported by more than one member as "shared" and warns when one username is
+  reported by more than one member. Runs has a second chip row `?claude=<name>` ("All Claude accounts" plus one chip
+  per Claude account of the project); it combines with `?outcome=` (each row's links and the outcome counts keep the
+  other's value) and an unknown value shows no runs. Read-only for every member role.
 
 ## My work and task progress
 
@@ -268,7 +276,16 @@ gets 403.
 `interval` (5 s) and `expires_in` (600 s). The person opens `/device` signed in, types the code, sees the computer and the
 repository, and approves or denies (audited). `POST /api/v1/device/token` with the `device_code` answers 400 with
 `authorization_pending`, `slow_down`, `access_denied` or `expired_token`, or once 200 with `token` and `email`. Both codes are
-stored only as SHA-256 (table `device_login`), and a request gives a token once.
+stored only as SHA-256 (table `device_login`), and a request gives a token once. The start body may also carry `user` and
+`claude_account` (the runner's username and Claude account); each is kept only when it matches the runner name pattern
+(`identities.NAME`) and is shown on `/device` and on **My tokens** ("not reported" when absent). When the token is
+delivered, the pair is also recorded as a Claude identity of the approving account (shown under "Your Claude accounts").
+
+**Who is identified how.** The person is verified: the personal token says whose account it is. The username and Claude
+account are only what the runner reports (unverified). A task call (`next`, `record`, or `plan` with a `runner` field) made
+with a personal token whose `runner` is `<user>/<account>-claude-auto-runner` (`identities.split_runner`, also used by
+`ui.runner_label`) records that pair as a Claude identity of the signed-in account; any other `runner` text records nothing.
+The task page shows the claim through the `ui.runner` macro.
 
 | Endpoint | Scope | What it does |
 | --- | --- | --- |

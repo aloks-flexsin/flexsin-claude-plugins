@@ -27,7 +27,7 @@ import secrets
 
 from flask import Blueprint, abort, g, jsonify, redirect, render_template, request, url_for
 
-from . import accounts, audit, auth, projects, sessions, tokens, ui
+from . import accounts, audit, auth, identities, projects, sessions, tokens, ui
 from .access import project_access
 from .db import get_db
 
@@ -247,6 +247,13 @@ def _api(fn):
         return response
 
 
+def _note_identity(db, account, runner, moment):
+    """A runner named `<user>/<claude account>-claude-auto-runner` reports who it is; record it for the signed-in person."""
+    pair = identities.split_runner(runner)
+    if pair:
+        identities.record(db, account["id"], pair[0], pair[1], _at(moment))
+
+
 def _body():
     data = request.get_json(silent=True)
     return data if isinstance(data, dict) else {}
@@ -281,6 +288,7 @@ def api_next():
     row, claim = take_next(db, g.token_project, account, runner, moment)
     if row is None:
         return jsonify(task=None)
+    _note_identity(db, account, runner, moment)
     audit.record(db, "task.claim", _at(moment), account_id=account["id"], project_id=g.token_project["id"],
                  detail={"number": row["number"], "runner": runner})
     db.commit()
@@ -307,6 +315,7 @@ def api_record():
         items = _text(body.get("items"), MAX_PLAN, "the items", required=on_page)
         row = create(db, g.token_project, account, account, body.get("title"), body.get("description"), moment,
                      status="plan_review" if on_page else "building", plan=plan, items=items, runner=runner)
+        _note_identity(db, account, runner, moment)
         audit.record(db, "task.create", _at(moment), account_id=account["id"], project_id=g.token_project["id"],
                      detail={"number": row["number"], "via": "terminal", "approval": approval})
         db.commit()
@@ -322,6 +331,7 @@ def api_plan(number):
     def run():
         db, moment = get_db(), auth.now()
         row = post_plan(db, g.token_project, number, body.get("claim"), body.get("plan"), body.get("items"), moment)
+        _note_identity(db, account, _text(body.get("runner"), 200, "the runner"), moment)
         audit.record(db, "task.plan.post", _at(moment), account_id=account["id"], project_id=g.token_project["id"],
                      detail={"number": number})
         db.commit()

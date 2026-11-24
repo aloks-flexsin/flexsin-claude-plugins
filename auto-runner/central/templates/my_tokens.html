@@ -10,7 +10,7 @@
   {% for t in tokens %}
   <div class="list-row">
     <div class="grow"><strong>{{ t.name }}</strong> <code>{{ t.prefix }}…</code>
-      <div class="row-sub muted">signed in {{ ui.when(t.created_at) }} · {% if t.last_used_at %}last used {{ ui.when(t.last_used_at) }}{% else %}never used{% endif %}</div></div>
+      <div class="row-sub muted">signed in {{ ui.when(t.created_at) }} · {% if t.runner_user and t.claude_account %}for {{ t.runner_user }} with Claude account {{ t.claude_account }}{% else %}identity not reported{% endif %} · {% if t.last_used_at %}last used {{ ui.when(t.last_used_at) }}{% else %}never used{% endif %}</div></div>
     {% if t.revoked_at %}{{ ui.status("token", "revoked") }}
     {% else %}{{ ui.status("token", "active") }}
     {{ ui.danger_form(url_for('personal.token_revoke', token_id=t.id), "Revoke", "Revoke the token of " ~ t.name ~ "?", "That computer stops working with the central service at once; sign it in again from Claude to get a new token.") }}

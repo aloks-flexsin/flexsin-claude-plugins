@@ -22,7 +22,7 @@ import secrets
 
 from flask import Blueprint, abort, current_app, g, jsonify, redirect, render_template, request, url_for
 
-from . import accounts, audit, auth, sessions, ui
+from . import accounts, audit, auth, identities, sessions, ui
 from .db import get_db
 
 bp = Blueprint("personal", __name__)
@@ -57,14 +57,20 @@ def _clean(text, limit=MAX_NAME):
 
 # ---------- device sign-in ----------
 
-def start(db, client_name, repo, moment):
-    """Store a new sign-in request and commit -> (device_code, user_code). Only their hashes are kept."""
+def _name(value):
+    """A username or Claude account as the runner reports it, or None when it is not a valid name."""
+    return value if identities.valid(value) else None
+
+
+def start(db, client_name, repo, moment, runner_user=None, claude_account=None):
+    """Store a new sign-in request and commit -> (device_code, user_code). Only their hashes are kept. The username and
+    Claude account the runner reports are stored when valid and dropped otherwise."""
     device_code, user_code = secrets.token_urlsafe(32), _user_code()
-    db.execute("INSERT INTO device_login (id, device_hash, user_hash, client_name, repo, created_at, expires_at)"
-               " VALUES (?, ?, ?, ?, ?, ?, ?)",
+    db.execute("INSERT INTO device_login (id, device_hash, user_hash, client_name, repo, created_at, expires_at,"
+               " runner_user, claude_account) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                (secrets.token_hex(16), _hash(device_code), _hash(normalize_user_code(user_code)),
                 _clean(client_name) or "a computer", _clean(repo, 300), sessions.iso(moment),
-                sessions.iso(moment + DEVICE_LIFETIME)))
+                sessions.iso(moment + DEVICE_LIFETIME), _name(runner_user), _name(claude_account)))
     db.commit()
     return device_code, user_code
 
@@ -111,18 +117,21 @@ def poll(db, device_code, moment):
     if cur.rowcount != 1:
         db.rollback()
         return "expired", None
-    raw = create_token(db, account["id"], row["client_name"], moment, commit=False)
+    raw = create_token(db, account["id"], row["client_name"], moment, commit=False,
+                       runner_user=row["runner_user"], claude_account=row["claude_account"])
+    identities.record(db, account["id"], row["runner_user"], row["claude_account"], at)
     db.commit()
     return "ok", (raw, account)
 
 
 # ---------- personal tokens ----------
 
-def create_token(db, account_id, name, moment, commit=True):
+def create_token(db, account_id, name, moment, commit=True, runner_user=None, claude_account=None):
     raw = PREFIX + secrets.token_urlsafe(32)
-    db.execute("INSERT INTO personal_token (id, account_id, token_hash, prefix, name, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    db.execute("INSERT INTO personal_token (id, account_id, token_hash, prefix, name, created_at, runner_user,"
+               " claude_account) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                (secrets.token_hex(16), account_id, _hash(raw), raw[:DISPLAY_LENGTH], _clean(name) or "a computer",
-                sessions.iso(moment)))
+                sessions.iso(moment), _name(runner_user), _name(claude_account)))
     if commit:
         db.commit()
     return raw
@@ -191,7 +200,8 @@ def api_start():
         response.status_code, response.headers["Retry-After"] = 429, str(wait)
         return response
     data = _json()
-    device_code, user_code = start(get_db(), data.get("client_name"), data.get("repo"), moment)
+    device_code, user_code = start(get_db(), data.get("client_name"), data.get("repo"), moment,
+                                  runner_user=data.get("user"), claude_account=data.get("claude_account"))
     base = (current_app.config.get("PUBLIC_URL") or "").strip().rstrip("/")
     uri = base + url_for("personal.device_page") if base else url_for("personal.device_page", _external=True)
     return jsonify(device_code=device_code, user_code=user_code, verification_uri=uri, interval=INTERVAL,

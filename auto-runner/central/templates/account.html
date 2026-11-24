@@ -18,6 +18,23 @@
   </form>
 </section>
 
+<section class="form-card" id="claude-accounts">
+  <h2>Your Claude accounts</h2>
+  <p class="muted">The username and Claude account your runners report when they start. Your sign-in is what proves who you are.</p>
+  {% if identities %}
+  <table>
+    <thead><tr><th>Username</th><th>Claude account</th><th>First seen</th><th>Last seen</th></tr></thead>
+    <tbody>
+    {% for i in identities %}
+    <tr><td>{{ i.username }}</td><td>{{ i.claude_account }}</td><td>{{ i.first_seen }}</td><td>{{ i.last_seen }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">None reported yet: your runners report it when they start.</p>
+  {% endif %}
+</section>
+
 <section class="form-card" id="password">
   <h2>Password</h2>
   <p class="muted">Changing it signs you out everywhere, including here.</p>

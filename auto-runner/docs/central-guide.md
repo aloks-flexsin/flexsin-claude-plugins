@@ -74,6 +74,12 @@ one unused for 90 days stops working (sign in again).
    the hidden-prompt line init prints for the variable it names, default `AUTO_RUNNER_TOKEN_<SLUG>`.)
 4. **Restart Claude Code**, then `/auto-runner:central`.
 
+## Who the service thinks is running
+The **person** is verified: your personal token says whose account the runner works for. The **username and Claude account**
+are only what the runner reports (from `AUTO_RUNNER_USER` and `AUTO_RUNNER_ACCOUNT`), so treat them as unverified. They arrive
+with sign-in, with run starts and with task claims (a runner named `alok/bhawish-claude-auto-runner`), and show on **Account**,
+**Members**, **Runs** and the task page.
+
 ## Following progress: My work
 **My work** (first link in the top bar) is the one page to check. Across all your projects (all projects for an admin;
 the chips at the top narrow it to one project):

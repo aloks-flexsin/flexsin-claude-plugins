@@ -33,10 +33,14 @@
     {% endif %}
   </div>
   <p class="muted small roles-legend"><strong>viewer</strong> sees everything · <strong>developer</strong> also runs runners · <strong>manager</strong> also approves plans, answers blockers and makes machine tokens · <strong>owner</strong> also manages people and the repository</p>
+  {% for u in team.clashes %}
+  <p class="alert" role="alert">Warning: the username <code>{{ u }}</code> is reported by more than one member. Check that each person uses their own username.</p>
+  {% endfor %}
   <div class="list">
     {% for m in members %}
     <div class="list-row">
       {{ ui.person(m.email, None, m.email) }}
+      <span class="muted small claude-accounts">{% set ids = team.by_account.get(m.account_id, []) %}{% if ids %}Claude accounts: {% for i in ids %}<code>{{ i.claude_account }}</code>{% if i.shared %} <span class="chip tone-attention">shared</span>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}no Claude account reported{% endif %}</span>
       <span class="muted nowrap grow-sm">{% if m.disabled %}<span class="chip tone-neutral"><span class="mark square" aria-hidden="true"></span>Disabled</span>{% elif m.last_active %}active {{ ui.when(m.last_active) }}{% else %}not active recently{% endif %}</span>
       {% if can_manage %}
       <form method="post" action="{{ url_for('projects.member_role', slug=project.slug, account_id=m.account_id) }}" class="inline role-form">
