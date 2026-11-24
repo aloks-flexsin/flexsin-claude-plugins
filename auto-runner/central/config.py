@@ -2,7 +2,14 @@
 import os
 import secrets
 
-ENV_VARS = ("SECRET_KEY", "DATABASE_URL", "CENTRAL_ENV", "PUBLIC_URL", "VERCEL_ENV")
+VAPID_VARS = ("CENTRAL_VAPID_PUBLIC_KEY", "CENTRAL_VAPID_PRIVATE_KEY", "CENTRAL_VAPID_SUBJECT")
+
+ENV_VARS = ("SECRET_KEY", "DATABASE_URL", "CENTRAL_ENV", "PUBLIC_URL", "VERCEL_ENV") + VAPID_VARS
+
+
+def push_configured(cfg):
+    """Browser push is set up when all three VAPID settings are present (public key, private key, subject)."""
+    return all((cfg.get(name) or "").strip() for name in VAPID_VARS)
 
 MIN_SECRET_KEY_LENGTH = 32
 

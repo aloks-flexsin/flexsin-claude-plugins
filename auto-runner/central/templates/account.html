@@ -38,6 +38,22 @@
     <div class="form-actions"><button type="submit" class="btn primary">Change password</button></div>
   </form>
 </section>
+<section class="form-card" id="push">
+  <h2>Notifications on this browser</h2>
+  {% if push.configured %}
+  <div data-push data-vapid-public-key="{{ push.public_key }}" data-csrf-token="{{ csrf_token() }}" data-subscribe-url="{{ url_for('push.subscribe_post') }}" data-unsubscribe-url="{{ url_for('push.unsubscribe_post') }}">
+    <p class="muted">Get a notification on this device when a plan, a change or a blocker waits on you, even when this page is closed.</p>
+    <p class="muted" data-push-status>{% if push.count %}Turned on in {{ push.count }} browser{{ "s" if push.count != 1 }} for your account.{% else %}Not turned on in any browser yet.{% endif %}</p>
+    {# Hidden until the page's script finds push support in this browser (queue item N4), so no button is dead. #}
+    <div class="form-actions" data-push-actions hidden>
+      <button type="button" class="btn primary" data-push-on>Turn on</button>
+      <button type="button" class="btn" data-push-off>Turn off</button>
+    </div>
+  </div>
+  {% else %}
+  <p class="muted">Push is not set up on this service. You still see everything waiting on you under the bell.</p>
+  {% endif %}
+</section>
 <p class="muted"><a href="{{ url_for('personal.tokens_page') }}">My tokens</a>: the computers you signed in from Claude.</p>
 </div>
 {% endblock %}

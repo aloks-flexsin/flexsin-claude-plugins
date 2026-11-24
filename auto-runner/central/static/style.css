@@ -370,3 +370,4 @@ ul.plain{padding-left:18px}
 .link-button{background:none;border:0;padding:0;font:inherit;font-weight:600;color:var(--brand);cursor:pointer;text-align:left}
 .link-button:hover{text-decoration:underline}
 .notif-done .link-button{color:var(--muted);font-weight:500}
+[hidden]{display:none !important}

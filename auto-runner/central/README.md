@@ -29,6 +29,7 @@ and an owner, manager or admin answers it there.
 | `audit.py` | The audit log |
 | `runners.py` | Runner presence: `POST /api/v1/runners/beat`, silent after 2 hours, pause/stop returned; Pause, Resume and Stop on the pages |
 | `notifications.py` | In-app notifications: `notify` (members only, no duplicates), `resolve`, `unread_count`, `for_account`; the Notifications page, open and read-all |
+| `push.py` | Browser push subscriptions: `POST /push/subscribe`, `POST /push/unsubscribe`, the Account page's push section |
 | `cli.py` | `python -m central init-db` and `python -m central create-admin --email X` |
 | `api/index.py`, `vercel.json` | Vercel entry point; every route is rewritten to it |
 | `templates/`, `static/style.css` | The pages (`base.html` holds the top bar) and their one stylesheet, served by Flask at `/static/style.css` because the CSP allows only same-origin styles; no inline styles or scripts |
@@ -43,6 +44,9 @@ Listed in `.env.example`; no value is ever kept in the repo.
 | `DATABASE_URL` | `sqlite:///path/to/central.db` locally, the Supabase `postgres://...` connection string in production. |
 | `CENTRAL_ENV` | `production` turns on the production check (so does Vercel's `VERCEL_ENV=production`). |
 | `PUBLIC_URL` | The service's `https://` address; required in production. |
+| `CENTRAL_VAPID_PUBLIC_KEY` | VAPID public key for browser push (shown to the page). Optional: push is off unless all three VAPID settings are set. |
+| `CENTRAL_VAPID_PRIVATE_KEY` | VAPID private key that signs pushes; never shown on a page. |
+| `CENTRAL_VAPID_SUBJECT` | Contact for push services, `mailto:...` or an `https://` address. |
 
 ## Local run and tests
 
@@ -171,6 +175,19 @@ Each notification is a small form: `POST /notifications/<id>/open` marks it read
 the link is a same-site path (`ui.safe_next`; otherwise back to the page); another person's id gets 404.
 `POST /notifications/read-all` ("Mark all as read") clears the count. Both carry the CSRF token like every form; no
 inline styles or scripts.
+
+**Push subscriptions (`push.py`).** A `push_subscription` row (account, endpoint (unique), `p256dh`, `auth`, user agent,
+`created_at`, `last_ok_at`, `failures`) records each browser where a person turned push on; `init-db` adds the table to
+an existing database. `POST /push/subscribe` takes the browser's `PushSubscription` JSON (`endpoint`, `keys.p256dh`,
+`keys.auth`) and `POST /push/unsubscribe` takes `{"endpoint": ...}`; both need a signed-in session (401 otherwise) and
+the page's CSRF token in the `X-CSRF-Token` header (`auth._check_csrf` accepts the header when the form field is
+missing; a missing or wrong token gets 400). The endpoint must be `https://` (400 otherwise). One row per endpoint:
+subscribing again updates the keys, and if another person turns push on in the same browser the row becomes theirs.
+Unsubscribe deletes the endpoint only when it is your own. Without all three `CENTRAL_VAPID_*` settings, subscribe
+answers 409 and the Account page's "Notifications on this browser" section says push is not set up on this service.
+With them, the section carries the public key, the CSRF token and both URLs as `data-` attributes, says in how many
+browsers the account has it on, and holds the Turn on / Turn off buttons, hidden until the browser script (N4) finds
+push support. Sending pushes (`pywebpush`, in `requirements.txt`) is N5.
 
 ## Presentation (UX audit foundations)
 

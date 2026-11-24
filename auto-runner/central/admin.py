@@ -7,7 +7,7 @@
 """
 from flask import Blueprint, abort, g, redirect, render_template, request, url_for
 
-from . import accounts, audit, auth, invites, passwords, personal, sessions, ui
+from . import accounts, audit, auth, invites, passwords, personal, push, sessions, ui
 from .db import get_db
 
 bp = Blueprint("admin", __name__)
@@ -147,7 +147,8 @@ def account_tokens_revoke(account_id):
 
 
 def _account_page(error=None, status=200, name_error=None, saved=None):
-    return render_template("account.html", error=error, name_error=name_error, saved=saved), status
+    return render_template("account.html", error=error, name_error=name_error, saved=saved,
+                           push=push.account_state(get_db(), g.account)), status
 
 
 @bp.get("/account")

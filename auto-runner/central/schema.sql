@@ -240,3 +240,17 @@ CREATE TABLE IF NOT EXISTS notification (
     push_state VARCHAR(16),
     push_detail TEXT
 );
+
+-- Browser push subscriptions (push.py): one row per browser endpoint, owned by the person who last turned push on
+-- there. `last_ok_at` and `failures` record sending (queue item N5).
+CREATE TABLE IF NOT EXISTS push_subscription (
+    id VARCHAR(64) PRIMARY KEY,
+    account_id VARCHAR(64) NOT NULL REFERENCES account (id) ON DELETE CASCADE,
+    endpoint VARCHAR(1000) NOT NULL UNIQUE,
+    p256dh VARCHAR(200) NOT NULL,
+    auth VARCHAR(100) NOT NULL,
+    user_agent VARCHAR(300),
+    created_at VARCHAR(32) NOT NULL,
+    last_ok_at VARCHAR(32),
+    failures INTEGER NOT NULL DEFAULT 0
+);
