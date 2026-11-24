@@ -149,6 +149,19 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Slice:* 3 Notification log
   *Kind:* feature
 
+- [ ] **F1 A resumed run keeps its task's newest claim.** In `auto-runner/bin/autotasks.py`, `current(auto_dir)` returns the claim from `.auto/run/tasks/<N>.json` when it differs from the one in `current-task.json` and rewrites `current-task.json` with it; when `current-task.json` is missing it stays missing. Update `auto-runner/README.md`.
+  *Acceptance:* tests in `tests/auto_runner/test_central_tasks.py` with `fake_central.py`: after `next` gives a new claim, `beat` uses the new claim and gets `ok`; with matching claims nothing changes; with no `current-task.json`, `current` returns None.
+  *Slice:* 1 A resumed run keeps its task
+  *Kind:* fix
+- [ ] **F2 An item whose agent exited early is retried, not blocked.** In `auto-runner/bin/auto_run.py`, when the agent exited non-zero and the only explanation would be refused tool calls, set the item back to queued with the detail `agent exited with <code>; retried next iteration` instead of `blocked: needs permission ...`; keep "needs permission" for an agent that exited 0. The no-progress rule (stop when nothing changed twice) still applies. Update `auto-runner/README.md`.
+  *Acceptance:* tests in `tests/auto_runner/test_runner.py` with a fake claude: exit 1 with refusals leaves the item queued with that detail and the next iteration runs it; exit 0 with refusals still blocks with "needs permission"; two such early exits in a row stop the run by the no-progress rule.
+  *Slice:* 2 An interrupted item is retried
+  *Kind:* fix
+- [ ] **F3 Open the pull request with the REST API when GraphQL is blocked.** In `auto-runner/bin/auto_run.py` `publish`, when `gh pr create` fails and its output mentions GraphQL, call `gh api repos/<owner>/<repo>/pulls -X POST -f title=... -f head=... -f base=... -f body=... --jq .html_url` through the same `pr_runner`, with owner and repository taken from `autocentral.repo_key` on the push remote's URL (`git remote get-url <remote>`; it already handles https and ssh forms), not a second parser; record the URL, or both errors when it also fails. Update `auto-runner/README.md` and the root `CHANGELOG.md`.
+  *Acceptance:* tests with a fake `pr_runner`: a GraphQL 403 followed by a REST success records the REST URL; a non-GraphQL failure makes no REST call; both failing records both errors; owner/repo come out right for `https://github.com/o/r.git` and `git@github.com:o/r.git` remotes (in `tests/auto_runner/test_publish.py`); `python -m pytest -q` passes.
+  *Slice:* 3 The run opens its pull request in cloud sessions
+  *Kind:* fix
+
 ## Needs a person (the runner never does these)
 - Push, merge, deploy, or anything outside this repository.
 - Decisions about what the product should do.
