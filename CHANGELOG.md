@@ -4,6 +4,10 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+### Fixed
+- Central service: a page that needs a table or column `init-db` has not added yet answers 503 "This page needs a
+  database update" with the command to run, instead of crashing (the live site broke this way after the runner table).
+
 ### Added
 - Central pages: a dark mode toggle in the top bar ("Dark mode" / "Light mode", signed in and signed out). It posts to
   `POST /theme`, which takes `light` or `dark` (anything else is 400), keeps the choice in the `theme` cookie for a
