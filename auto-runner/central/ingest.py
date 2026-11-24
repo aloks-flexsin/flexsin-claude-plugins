@@ -24,7 +24,7 @@ import threading
 
 from flask import Blueprint, current_app, g, jsonify, request
 
-from . import auth, sessions, tokens
+from . import auth, identities, sessions, tokens
 from .db import get_db
 
 bp = Blueprint("ingest", __name__)
@@ -257,6 +257,9 @@ def store(db, project, events, at):
                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                        (clean["id"], project["id"], clean["type"], clean["time"], body, digest, at,
                         account["id"] if account else None))
+            if clean["type"] == "run_start" and account:
+                detail = clean["detail"] if isinstance(clean["detail"], dict) else {}
+                identities.record(db, account["id"], detail.get("user"), detail.get("account"), at)
             if _raised_blocker(clean):
                 _upsert_blocker(db, project["id"], clean, body, at)
             elif _resumed_blocker(clean):

@@ -179,6 +179,17 @@ CREATE TABLE IF NOT EXISTS personal_token (
     revoked_at VARCHAR(32)
 );
 
+-- Claude identities reported by runners: which username works with which Claude account, per signed-in person.
+CREATE TABLE IF NOT EXISTS claude_identity (
+    id VARCHAR(64) PRIMARY KEY,
+    account_id VARCHAR(64) NOT NULL REFERENCES account (id) ON DELETE CASCADE,
+    username VARCHAR(64) NOT NULL,
+    claude_account VARCHAR(64) NOT NULL,
+    first_seen VARCHAR(32) NOT NULL,
+    last_seen VARCHAR(32) NOT NULL,
+    UNIQUE (account_id, username, claude_account)
+);
+
 -- Central tasks (decision record 0007, step 4): what each person's runner does next, its plan and its claim.
 CREATE TABLE IF NOT EXISTS project_task (
     id VARCHAR(64) PRIMARY KEY,
