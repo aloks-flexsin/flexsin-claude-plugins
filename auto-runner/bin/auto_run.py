@@ -1137,6 +1137,8 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         for d in pending_requests(project):
             say(f"request '{d.name}' waits: {branch} is not merged into {start} yet (one request per branch; "
                 'it starts on a new branch in the first run after the merge)')
+            if pusher is not None:
+                autotasks.wait_note(pusher, d, f'waits: {branch} is not merged into {start} yet')
 
     prompt = build_prompt(cfg, queue_rel, principles=principles_text(project, cfg))
     allowed = (list(BASE_ALLOWED) + ([f'Bash({cfg["test_command"]}:*)'] if cfg['test_command'] else [])
@@ -1260,6 +1262,10 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         copy_env_files(project, wt, cfg['env_files'])
         if new_branch:
             apply_pending(project, wt, cfg, queue_rel, limit=1)
+            if pusher is not None and task_number is not None:
+                # the request was taken on a new branch: its task stops being Queued and becomes Building
+                if autotasks.beat(pusher, auto, 'building') == 'lost':
+                    say(f'task {task_number}: claim lost; carrying on without a central task')
         report_waiting()
         known = {i: (s, d) for i, s, d in queue.statuses(pq.read_text(encoding='utf-8'))} if pq.exists() else {}
         statuses.update({i: sd for i, sd in known.items() if sd[0] in ('blocked', 'rejected')})

@@ -2,7 +2,7 @@
 {% import "_ui.html" as ui %}
 {% from "_project.html" import header with context %}
 {% block title %}#{{ task.number }} {{ task.title }}{% endblock %}
-{% block body_attrs %}{% if task.status in ("planning", "building", "changes_requested", "approved") %} data-refresh="30"{% endif %}{% endblock %}
+{% block body_attrs %}{% if task.status in ("planning", "queued", "building", "changes_requested", "approved") %} data-refresh="30"{% endif %}{% endblock %}
 {% block content %}
 {{ header(project, "tasks", ("Tasks", url_for("tasks.tasks_page", slug=project.slug))) }}
 
@@ -22,6 +22,19 @@
 {% endif %}
 
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+
+{% if can_close %}
+<details class="pop" id="close">
+  <summary class="btn">Close task…</summary>
+  <form method="post" action="{{ url_for('tasks.task_close', slug=project.slug, number=task.number) }}" class="pop-body"
+        data-confirm="Close task #{{ task.number }} {{ task.title }}?" data-confirm-detail="The task is marked rejected with your reason and no runner will take it." data-confirm-action="Close task">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="close-reason">Why is it closed?</label>
+    <textarea id="close-reason" name="reason" rows="3" maxlength="500" required></textarea>
+    <button type="submit" class="btn danger">Close task</button>
+  </form>
+</details>
+{% endif %}
 
 {% if can_decide %}
 <div class="decision-bar" id="decide">
@@ -61,6 +74,9 @@
     · last event {{ ui.when(progress.latest.last) }}
     {% if progress.blocked %}· <a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}">blocked: {{ progress.blocked | join(", ") }}</a>{% endif %}</div>
 </div>
+{% elif task.status == "queued" %}
+<div class="decision-bar quiet"><div class="muted">Queued: it waits for its run to start. It becomes Building when the run takes it.</div>
+{% if task.note %}<div class="muted">{{ task.note }}</div>{% endif %}</div>
 {% elif task.status == "building" %}
 <div class="decision-bar quiet"><div class="muted">Approved and claimed; no run has sent progress yet. It appears here as soon as the runner starts.</div></div>
 {% endif %}
@@ -141,7 +157,7 @@
     <section class="card"><h3>Queue items</h3><pre class="wrap">{{ task['items'] }}</pre></section>
     {% endif %}
 
-    {% if task.note %}
+    {% if task.note and task.status != "queued" %}
     <section class="card"><h3>Runner's last report</h3><p>{{ task.note }}</p></section>
     {% endif %}
 

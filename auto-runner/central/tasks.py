@@ -7,7 +7,7 @@ Life of a task (`status`):
   open --claim--> planning --plan posted--> plan_review --approve--> approved --claim--> building --report done--> done
                       ^                        | request changes                                 \\--report stopped: stays building
                       +---- changes_requested <+         reject --> rejected
-A task typed in the terminal (`/auto-runner:auto <task>`, plan approved there) is recorded straight as `building`;
+A task typed in the terminal (`/auto-runner:auto <task>`, plan approved there) is recorded straight as `queued` (its run has not started; the first heartbeat without a state makes it `building`);
 a plan proposed from the terminal (`"approval": "page"`) is recorded as `plan_review`, claimed, and approved on the page.
 
 **Claims.** A runner takes its person's next task with `POST /api/v1/tasks/next` and gets a claim id; only that claim
@@ -34,13 +34,14 @@ from .db import get_db
 bp = Blueprint("tasks", __name__)
 
 CLAIM_TTL = datetime.timedelta(hours=2)
-STATUSES = ("open", "planning", "plan_review", "changes_requested", "approved", "building", "done", "rejected")
+STATUSES = ("open", "planning", "plan_review", "changes_requested", "approved", "queued", "building", "done", "rejected")
 RUNNER_SIDE = ("planning", "changes_requested", "approved", "building")   # a silent claim on these expires
 TAKE_ORDER = ("approved", "building", "changes_requested", "planning", "open")
 APPROVER_ROLE = "manager"            # besides the assignee: managers, owners and admins approve plans
 MAX_TITLE, MAX_TEXT, MAX_PLAN = 200, 20000, 200000
 DESCRIBE = {"open": "open", "planning": "planning", "plan_review": "plan waiting for approval",
-            "changes_requested": "changes requested", "approved": "approved, waiting to be built", "building": "building",
+            "changes_requested": "changes requested", "approved": "approved, waiting to be built", "queued": "queued: waits for its run to start",
+            "building": "building",
             "done": "done", "rejected": "rejected"}
 
 
@@ -67,8 +68,8 @@ def claim_live(row, moment):
     """True while the task's claim holds: a plan waiting for a person, or a heartbeat within CLAIM_TTL."""
     if not row["claim_id"]:
         return False
-    if row["status"] == "plan_review":
-        return True
+    if row["status"] in ("plan_review", "queued"):
+        return True                                        # waiting for a person or for its run to start
     beat = sessions.parse_iso(row["heartbeat_at"]) if row["heartbeat_at"] else None
     return beat is not None and moment - beat < CLAIM_TTL
 
@@ -126,9 +127,10 @@ def take_next(db, project, account, runner, moment):
             claim = secrets.token_urlsafe(16)
             new_status = {"open": "planning", "approved": "building"}.get(status, status)
             cur = db.execute("UPDATE project_task SET claim_id = ?, claim_runner = ?, heartbeat_at = ?, status = ?,"
+                             " note = CASE WHEN ? = 'building' AND ? <> 'building' THEN NULL ELSE note END,"
                              " updated_at = ? WHERE id = ? AND (claim_id IS NULL OR claim_id = ? OR heartbeat_at IS NULL"
                              " OR heartbeat_at < ? OR claim_runner = ?)",
-                             (claim, runner, at, new_status, at, row["id"], row["claim_id"] or "",
+                             (claim, runner, at, new_status, new_status, status, at, row["id"], row["claim_id"] or "",
                               _at(moment - CLAIM_TTL), runner))
             if cur.rowcount == 1:
                 db.commit()
@@ -146,9 +148,33 @@ def _held(db, project, number, claim, moment):
     return row
 
 
-def beat(db, project, number, claim, moment):
+MAX_WAIT_NOTE = 300
+
+
+def beat(db, project, number, claim, moment, state=None, note=None):
+    """Keep the claim alive. `state` "queued" moves an approved or building task to queued; "building" (or no state on
+    a queued task) moves queued to building. `note` (at most MAX_WAIT_NOTE characters) says why a queued task waits; it is
+    kept only while the task is queued and cleared when it moves to building."""
     row = _held(db, project, number, claim, moment)
-    db.execute("UPDATE project_task SET heartbeat_at = ? WHERE id = ?", (_at(moment), row["id"]))
+    if state not in (None, "queued", "building"):
+        raise TaskError('state is "queued" or "building"')
+    if note is not None and not isinstance(note, str):
+        raise TaskError("the note must be text")
+    note = (note or "").strip()
+    if len(note) > MAX_WAIT_NOTE:
+        raise TaskError("the note is at most %d characters" % MAX_WAIT_NOTE)
+    status = row["status"]
+    if state == "queued" and status in ("approved", "building"):
+        status = "queued"
+    elif status == "queued" and state in (None, "building"):
+        status = "building"
+    kept = row["note"]
+    if status == "building" and row["status"] == "queued":
+        kept = None                                         # it started: the waiting note is stale
+    elif status == "queued" and note:
+        kept = note
+    db.execute("UPDATE project_task SET heartbeat_at = ?, status = ?, note = ?, updated_at = ? WHERE id = ?",
+               (_at(moment), status, kept, _at(moment) if status != row["status"] else row["updated_at"], row["id"]))
     db.commit()
     return get(db, project["id"], number)
 
@@ -184,7 +210,7 @@ def notify_assigned(db, project, row, moment):
 
 def report(db, project, number, claim, result, branch, pr_url, note, moment):
     row = _held(db, project, number, claim, moment)
-    if row["status"] != "building":
+    if row["status"] not in ("building", "queued"):
         raise TaskError("task %d is %s; only a task being built is reported" % (number, row["status"]), 409)
     if result not in ("done", "stopped"):
         raise TaskError("result must be done or stopped")
@@ -226,16 +252,42 @@ def decide(db, project, row, account, decision, comment, moment):
     return get(db, project["id"], row["number"])
 
 
+CLOSABLE = ("open", "planning", "changes_requested", "approved", "queued")
+MAX_CLOSE_REASON = 500
+
+
+def close(db, project, row, account, reason, moment):
+    """End a task that will not be built: rejected, with the reason in `note` and the claim cleared."""
+    if not can_decide(db, project, row, account):
+        raise TaskError("only the assignee or a manager, owner or admin closes a task", 403)
+    if row["status"] == "building":
+        raise TaskError("task %d is being built: stop its runner first" % row["number"], 409)
+    if row["status"] not in CLOSABLE:
+        raise TaskError("task %d is already %s" % (row["number"], row["status"].replace("_", " ")), 409)
+    reason = (reason or "").strip() if isinstance(reason, str) else ""
+    if not reason:
+        raise TaskError("say why the task is closed")
+    if len(reason) > MAX_CLOSE_REASON:
+        raise TaskError("the reason is at most %d characters" % MAX_CLOSE_REASON)
+    at = _at(moment)
+    db.execute("UPDATE project_task SET status = 'rejected', note = ?, claim_id = NULL, claim_runner = NULL,"
+               " heartbeat_at = NULL, decided_by = ?, decided_at = ?, updated_at = ? WHERE id = ?",
+               (reason, account["id"], at, at, row["id"]))
+    for kind in ("plan", "changes"):
+        notifications.resolve(db, notifications.task_key(project, row["number"], kind), moment)
+    return reason
+
+
 def release(db, project, row, assignee, moment):
     """An admin ends the claim (and, with `assignee`, gives the task to someone else). Work in progress goes back to
     the step it was at: planning -> open, building -> approved."""
     at = _at(moment)
-    status = {"planning": "open", "building": "approved"}.get(row["status"], row["status"])
+    status = {"planning": "open", "building": "approved", "queued": "approved"}.get(row["status"], row["status"])
     if assignee is not None and status in ("plan_review", "changes_requested"):
         status = "open"                                     # a new person plans it afresh
     db.execute("UPDATE project_task SET claim_id = NULL, claim_runner = NULL, heartbeat_at = NULL, status = ?,"
-               " assignee_id = ?, updated_at = ? WHERE id = ?",
-               (status, assignee["id"] if assignee else row["assignee_id"], at, row["id"]))
+               " note = CASE WHEN ? = 'queued' THEN NULL ELSE note END, assignee_id = ?, updated_at = ? WHERE id = ?",
+               (status, row["status"], assignee["id"] if assignee else row["assignee_id"], at, row["id"]))
     # a plan or a change request that no longer waits (the task went back to open for a new person) is done
     for kind, waiting in (("plan", "plan_review"), ("changes", "changes_requested")):
         if status != waiting:
@@ -347,7 +399,7 @@ def api_record():
         plan = _text(body.get("plan"), MAX_PLAN, "the plan", required=on_page)
         items = _text(body.get("items"), MAX_PLAN, "the items", required=on_page)
         row = create(db, g.token_project, account, account, body.get("title"), body.get("description"), moment,
-                     status="plan_review" if on_page else "building", plan=plan, items=items, runner=runner)
+                     status="plan_review" if on_page else "queued", plan=plan, items=items, runner=runner)
         _note_identity(db, account, runner, moment)
         audit.record(db, "task.create", _at(moment), account_id=account["id"], project_id=g.token_project["id"],
                      detail={"number": row["number"], "via": "terminal", "approval": approval})
@@ -378,8 +430,9 @@ def api_plan(number):
 @tokens.bearer_token("ingest")
 def api_beat(number):
     _api_account()
-    return _api(lambda: jsonify(task=public(beat(get_db(), g.token_project, number, _body().get("claim"), auth.now()),
-                                            auth.now())))
+    body = _body()
+    return _api(lambda: jsonify(task=public(beat(get_db(), g.token_project, number, body.get("claim"), auth.now(),
+                                                 body.get("state"), body.get("note")), auth.now())))
 
 
 @bp.post("/api/v1/tasks/<int:number>/report")
@@ -428,7 +481,7 @@ def _runners(db, project):
 
 
 STATES = (("approval", "Needs approval", ("plan_review",)),
-          ("progress", "In progress", ("planning", "changes_requested", "approved", "building")),
+          ("progress", "In progress", ("planning", "changes_requested", "approved", "queued", "building")),
           ("open", "Open", ("open",)),
           ("done", "Done", ("done", "rejected")))
 
@@ -527,7 +580,7 @@ def task_add(slug):
 
 
 STEPS = (("open", "Open"), ("planned", "Planned"), ("approval", "Approval"), ("building", "Building"), ("done", "Done"))
-STEP_OF = {"open": 0, "planning": 1, "changes_requested": 1, "plan_review": 2, "approved": 3, "building": 3, "done": 4}
+STEP_OF = {"open": 0, "planning": 1, "changes_requested": 1, "plan_review": 2, "approved": 3, "queued": 3, "building": 3, "done": 4}
 
 
 def _activity(db, project, number, task_runs):
@@ -580,6 +633,7 @@ def _detail(number, error=None, status=200):
                            step=STEP_OF.get(row["status"]), stale_hours=int(_runs.STALE.total_seconds() // 3600),
                            live=live, quiet=bool(row["claim_id"]) and not live and row["status"] in RUNNER_SIDE,
                            can_decide=row["status"] == "plan_review" and can_decide(db, g.project, row, g.account),
+                           can_close=row["status"] in CLOSABLE and can_decide(db, g.project, row, g.account),
                            is_admin=g.account["role"] == projects.ADMIN, assignees=_runners(db, g.project),
                            activity=_activity(db, g.project, number, task_runs), error=error,
                            ttl_hours=int(CLAIM_TTL.total_seconds() // 3600), shots=shots,
@@ -615,6 +669,36 @@ def task_decide(slug, number):
                  detail={"number": number})
     db.commit()
     return redirect(ui.safe_next(request.form.get("next")) or url_for("tasks.task_page", slug=slug, number=number))
+
+
+@bp.post("/projects/<slug>/tasks/<int:number>/close")
+@project_access("viewer")
+def task_close(slug, number):
+    db, moment = get_db(), auth.now()
+    row = get(db, g.project["id"], number)
+    if row is None:
+        abort(404)
+    reason = request.form.get("reason")
+    try:
+        if not ui.confirmed():
+            # check first, so a refused close never reaches the confirm step
+            if not can_decide(db, g.project, row, g.account):
+                raise TaskError("only the assignee or a manager, owner or admin closes a task", 403)
+            if row["status"] == "building" or row["status"] not in CLOSABLE:
+                close(db, g.project, row, g.account, reason, moment)
+            text = (reason or "").strip()
+            if not text or len(text) > MAX_CLOSE_REASON:
+                close(db, g.project, row, g.account, reason, moment)
+            return ui.confirm_page("Close task #%d %s?" % (number, row["title"]),
+                                   "The task is marked rejected with your reason and no runner will take it.",
+                                   "Close task", url_for("tasks.task_page", slug=slug, number=number))
+        reason = close(db, g.project, row, g.account, reason, moment)
+    except TaskError as e:
+        return _detail(number, error=str(e), status=e.status)
+    audit.record(db, "task.close", _at(moment), account_id=g.account["id"], project_id=g.project["id"],
+                 detail={"number": number, "reason": reason})
+    db.commit()
+    return redirect(url_for("tasks.task_page", slug=slug, number=number))
 
 
 @bp.post("/projects/<slug>/tasks/<int:number>/release")

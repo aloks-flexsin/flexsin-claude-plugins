@@ -105,6 +105,15 @@ def take_next(project, env=None, send=None):
     return reply
 
 
+def reopen_build(project, number, env=None, send=None):
+    """A build that failed before its run began: put the queued task back to building so `next` offers it again."""
+    try:
+        _call(transport(project, env, send), 'POST', f'/api/v1/tasks/{int(number)}/heartbeat',
+              {'claim': _claim(project, number), 'state': 'building'})
+    except Exception:
+        pass                                            # best effort: the claim expires and the task is taken again
+
+
 SAFE_CHARS = re.compile(r'[^A-Za-z0-9._-]')
 
 
@@ -168,7 +177,7 @@ def start(project, number, env=None, send=None):
     approved items, the plan and task.json, ready for `auto_run.py --enqueue <slug>`."""
     claim = _claim(project, number)
     task = _call(transport(project, env, send), 'GET', f'/api/v1/tasks/{int(number)}')['task']
-    if task['status'] != 'building' or not task['items'].strip():
+    if task['status'] not in ('building', 'queued') or not task['items'].strip():
         raise TaskError(f'task {number} is {task["status"]}, not approved for building')
     slug = f'task-{int(number)}-{brief(task["title"])}'
     folder = _auto(project) / 'pending' / slug
@@ -176,6 +185,8 @@ def start(project, number, env=None, send=None):
     (folder / 'items.md').write_text(task['items'].rstrip() + '\n', encoding='utf-8')
     (folder / 'plan.md').write_text(task['plan'].rstrip() + '\n', encoding='utf-8')
     _save(folder / 'task.json', {'number': int(number), 'claim': claim})
+    _call(transport(project, env, send), 'POST', f'/api/v1/tasks/{int(number)}/heartbeat',
+          {'claim': claim, 'state': 'queued'})          # the request waits for its run: the page says Queued
     return slug
 
 
@@ -272,19 +283,35 @@ def current(auto_dir):
     return data
 
 
-def beat(t, auto_dir):
-    """-> 'none' (no current task), 'ok', 'lost' (released, reassigned or expired: stop) or 'unavailable'."""
+def beat(t, auto_dir, state=None):
+    """-> 'none' (no current task), 'ok', 'lost' (released, reassigned or expired: stop) or 'unavailable'.
+    `state` ('queued' or 'building') is sent along when given, so the task page says what the claim is doing."""
     task = current(auto_dir)
     if task is None:
         return 'none'
     try:
-        t.request('POST', f'/api/v1/tasks/{task["number"]}/heartbeat', {'claim': task['claim']})
+        t.request('POST', f'/api/v1/tasks/{task["number"]}/heartbeat',
+                  {'claim': task['claim'], **({'state': state} if state else {})})
         return 'ok'
     except (RuntimeError, ConnectionError) as e:        # TransportRefused / TransportUnavailable, whichever module copy
         if getattr(e, 'status', None) == 409:
             (Path(auto_dir) / CURRENT).unlink(missing_ok=True)
             return 'lost'
         return 'unavailable'
+
+
+def wait_note(t, request_dir, note):
+    """A request left waiting for a merge: tell the service why, on the request's own task (its task.json), which stays
+    queued and keeps its claim. Best effort: no task.json, a refusal or an unreachable service changes nothing -> bool."""
+    try:
+        data = json.loads((Path(request_dir) / 'task.json').read_text(encoding='utf-8'))
+        if not (isinstance(data.get('number'), int) and data.get('claim')):
+            return False
+        t.request('POST', f'/api/v1/tasks/{data["number"]}/heartbeat',
+                  {'claim': data['claim'], 'state': 'queued', 'note': note[:300]})
+        return True
+    except (OSError, ValueError, AttributeError, RuntimeError, ConnectionError):
+        return False
 
 
 def finish(t, auto_dir, done, branch, pr_url, note):

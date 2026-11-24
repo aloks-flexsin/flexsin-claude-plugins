@@ -76,7 +76,7 @@ def test_a_project_token_cannot_take_tasks(project, central, team):
 def test_record_a_terminal_task(project, central, team, env):
     connect(project)
     n = at.record(project, 'csv-export', 'CSV export', 'plan', ITEMS, env, central.send)
-    assert server_task(central, n)['status'] == 'building'
+    assert server_task(central, n)['status'] == 'queued'     # waits for its run to start (Q1)
     assert json.loads((project / '.auto' / 'pending' / 'csv-export' / 'task.json').read_text())['number'] == n
     assert [t['title'] for t in at.listing(project, env, central.send)] == ['CSV export']
 
@@ -105,8 +105,15 @@ def test_the_runner_beats_the_claim_and_reports_done(project, central, team, env
 def test_a_released_task_stops_the_run(project, central, team, env, monkeypatch, capsys):
     n, transport = _runner_with_task(project, central, team, env, monkeypatch)
     from central import tasks
-    tasks.release(central.conn, central.project, server_task(central, n), None, team['now'])
-    assert ar.run(project, max_iterations=5, claude=picking_agent(), transport=transport, allow_dirty=True) == 1
+    inner, released = picking_agent(), []
+
+    def claude(cmd, cwd):                                   # released while the first item is being worked
+        if not released:
+            released.append(True)
+            tasks.release(central.conn, central.project, server_task(central, n), None, team['now'])
+        return inner(cmd, cwd)
+
+    assert ar.run(project, max_iterations=5, claude=claude, transport=transport, allow_dirty=True) == 1
     assert 'was released, reassigned or its claim expired' in capsys.readouterr().out
     events = [json.loads(line) for line in (project / '.auto' / 'events.jsonl').read_text().splitlines()]
     assert events[-1]['type'] == 'run_end' and events[-1]['detail']['reason'] == 'claim_lost'
@@ -260,8 +267,9 @@ def test_a_resumed_run_beats_with_the_newest_claim(project, central, team, env, 
     auto = project / '.auto'
     at.adopt(auto, auto / 'pending' / 'csv-export')
     old = at.current(auto)['claim']
+    assert at.beat(transport, auto) == 'ok'                                 # the run started: queued -> building
     reply = at.take_next(project, env, central.send)
-    assert reply['task']['number'] == n and reply['claim'] != old          # the server issued a new claim
+    assert reply['task']['number'] == n and reply['claim'] != old         # the server issued a new claim
     assert at.current(auto)['claim'] == reply['claim']
     assert json.loads((auto / 'run' / 'current-task.json').read_text())['claim'] == reply['claim']
     assert at.beat(transport, auto) == 'ok'
@@ -290,6 +298,120 @@ def test_no_current_task_stays_missing(tmp_path):
     assert not (auto / 'run' / 'current-task.json').exists()
 
 
+# ---------- queued while it waits, building when the run starts (Q2) ----------
+
+def _spy(central):
+    """A send that keeps the heartbeat bodies of the real central app."""
+    beats = []
+
+    def send(method, url, headers, body, timeout):
+        if url.split('?')[0].endswith('/heartbeat'):
+            beats.append(json.loads(body.decode('utf-8')))
+        return central.send(method, url, headers, body, timeout)
+    return beats, send
+
+
+def _approved_task(project, central, team, env):
+    from central import tasks
+    connect(project)
+    n = add_task(central, team)['number']
+    at.take_next(project, env, central.send)
+    at.post_plan(project, n, '## Intent\nCSV.', ITEMS, env, central.send)
+    tasks.decide(central.conn, central.project, server_task(central, n), team['dev'], 'approve', '', team['now'])
+    at.take_next(project, env, central.send)
+    return n
+
+
+def test_start_marks_the_task_queued(project, central, team, env):
+    n = _approved_task(project, central, team, env)
+    assert server_task(central, n)['status'] == 'building'
+    beats, send = _spy(central)
+    at.start(project, n, env, send)
+    assert beats == [{'claim': server_task(central, n)['claim_id'], 'state': 'queued'}]
+    assert server_task(central, n)['status'] == 'queued'
+
+
+def test_a_run_taking_the_request_makes_the_task_building(project, central, team, env, monkeypatch):
+    n = _approved_task(project, central, team, env)
+    slug = at.start(project, n, env, central.send)
+    assert server_task(central, n)['status'] == 'queued'
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    beats, send = _spy(central)
+    transport = ar.autodeliver.HttpTransport(BASE, team['token'], send=send, project=SLUG)
+    assert ar.run(project, max_iterations=5, claude=picking_agent(), transport=transport, enqueue=slug,
+                  allow_dirty=True) == 0
+    assert beats[0]['state'] == 'building'
+    assert server_task(central, n)['status'] == 'done'
+
+
+def test_a_lost_claim_on_the_first_heartbeat_does_not_stop_the_run(project, central, team, env, monkeypatch, capsys):
+    from central import tasks
+    n = _approved_task(project, central, team, env)
+    slug = at.start(project, n, env, central.send)
+    tasks.release(central.conn, central.project, server_task(central, n), None, team['now'])
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    transport = ar.autodeliver.HttpTransport(BASE, team['token'], send=central.send, project=SLUG)
+    assert ar.run(project, max_iterations=5, claude=picking_agent(), transport=transport, enqueue=slug,
+                  allow_dirty=True) == 0
+    assert 'claim lost' in capsys.readouterr().out
+    assert server_task(central, n)['status'] == 'approved'
+
+
+# ---------- why a queued task waits (Q3) ----------
+
+def _two_requests(project, central, team, env):
+    """Task A's request (first) and task B's (it will wait): both started, so both queued -> (slug A, B's number)."""
+    from central import tasks
+    a = _approved_task(project, central, team, env)
+    slug_a = at.start(project, a, env, central.send)
+    b = add_task(central, team, 'Second thing')['number']
+    at.take_next(project, env, central.send)
+    at.post_plan(project, b, '## Intent\nTwo.', ITEMS.replace('T1', 'T2'), env, central.send)
+    tasks.decide(central.conn, central.project, server_task(central, b), team['dev'], 'approve', '', team['now'])
+    at.take_next(project, env, central.send)
+    at.start(project, b, env, central.send)
+    return slug_a, b
+
+
+def test_a_waiting_request_sends_its_reason_and_keeps_its_claim(project, central, team, env, monkeypatch):
+    slug_a, b = _two_requests(project, central, team, env)
+    claim = server_task(central, b)['claim_id']
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    beats, send = _spy(central)
+    transport = ar.autodeliver.HttpTransport(BASE, team['token'], send=send, project=SLUG)
+    assert ar.run(project, max_iterations=5, claude=picking_agent(), transport=transport, enqueue=slug_a,
+                  allow_dirty=True) == 0
+    noted = [x for x in beats if x.get('note')]
+    assert noted and noted[0]['state'] == 'queued' and noted[0]['claim'] == claim
+    assert noted[0]['note'].startswith('waits: ') and 'is not merged into' in noted[0]['note']
+    row = server_task(central, b)
+    assert row['status'] == 'queued' and row['claim_id'] == claim and 'waits: ' in row['note']
+    at.reopen_build(project, b, env, central.send)                    # it starts building: the note goes
+    assert not server_task(central, b)['note']
+
+
+def test_a_service_error_while_noting_a_wait_does_not_stop_the_run(project, central, team, env, monkeypatch, capsys):
+    slug_a, b = _two_requests(project, central, team, env)
+
+    def send(method, url, headers, body, timeout):
+        if url.split('?')[0].endswith('/heartbeat') and b'"note"' in body:
+            return 503, b'{"error": "down"}'
+        return central.send(method, url, headers, body, timeout)
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    transport = ar.autodeliver.HttpTransport(BASE, team['token'], send=send, project=SLUG)
+    assert ar.run(project, max_iterations=5, claude=picking_agent(), transport=transport, enqueue=slug_a,
+                  allow_dirty=True) == 0
+    assert 'waits:' in capsys.readouterr().out
+    assert server_task(central, b)['status'] == 'queued'
+
+
+def test_wait_note_without_a_task_json_does_nothing(tmp_path):
+    (tmp_path / 'req').mkdir()
+    assert at.wait_note(object(), tmp_path / 'req', 'waits: x') is False
 # ---------- decide a waiting plan from the terminal (P2) ----------
 
 def _waiting(svc, number=1):

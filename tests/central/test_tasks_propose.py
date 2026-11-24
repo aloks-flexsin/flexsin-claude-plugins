@@ -24,11 +24,11 @@ def test_a_proposed_plan_is_stored_for_review_and_can_be_approved(app, team, con
     assert got['action'] == 'build' and got['task']['number'] == n and got['task']['status'] == 'building'
 
 
-def test_the_default_is_still_building(app, team):
+def test_the_default_is_still_not_waiting_for_the_page(app, team):
     body = api(app, 'POST', '/api/v1/tasks', team['token']['dev'], {**PROPOSAL, 'approval': None}).get_json()
-    assert body['task']['status'] == 'building'
+    assert body['task']['status'] == 'queued'
     body = api(app, 'POST', '/api/v1/tasks', team['token']['dev'], {**PROPOSAL, 'approval': 'terminal'}).get_json()
-    assert body['task']['status'] == 'building'
+    assert body['task']['status'] == 'queued'
 
 
 def test_a_proposal_needs_a_plan_and_items_and_a_known_approval(app, team):
