@@ -17,6 +17,7 @@
   <dl class="facts plain-facts">
     <dt>Computer</dt><dd><strong>{{ row.client_name }}</strong></dd>
     {% if row.repo %}<dt>Repository</dt><dd><code>{{ row.repo }}</code></dd>{% endif %}
+    <dt>Identity</dt><dd>{% if row.runner_user and row.claude_account %}signs in for <strong>{{ row.runner_user }}</strong> with Claude account <strong>{{ row.claude_account }}</strong>{% else %}<span class="muted">not reported</span>{% endif %}</dd>
     <dt>Requested</dt><dd>{{ ui.when(row.created_at) }}</dd>
     <dt>Code expires</dt><dd><span data-countdown="{{ row.expires_at | iso }}">{{ row.expires_at | ago }}</span></dd>
   </dl>

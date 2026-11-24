@@ -164,7 +164,9 @@ CREATE TABLE IF NOT EXISTS device_login (
     approved_at VARCHAR(32),
     denied_at VARCHAR(32),
     delivered_at VARCHAR(32),
-    last_poll_at VARCHAR(32)
+    last_poll_at VARCHAR(32),
+    runner_user VARCHAR(64),
+    claude_account VARCHAR(64)
 );
 
 -- Personal tokens: one account, any project where it is a developer or above; only the SHA-256 is kept.
@@ -176,7 +178,9 @@ CREATE TABLE IF NOT EXISTS personal_token (
     name VARCHAR(100) NOT NULL,
     created_at VARCHAR(32) NOT NULL,
     last_used_at VARCHAR(32),
-    revoked_at VARCHAR(32)
+    revoked_at VARCHAR(32),
+    runner_user VARCHAR(64),
+    claude_account VARCHAR(64)
 );
 
 -- Claude identities reported by runners: which username works with which Claude account, per signed-in person.

@@ -244,7 +244,10 @@ gets 403.
 `interval` (5 s) and `expires_in` (600 s). The person opens `/device` signed in, types the code, sees the computer and the
 repository, and approves or denies (audited). `POST /api/v1/device/token` with the `device_code` answers 400 with
 `authorization_pending`, `slow_down`, `access_denied` or `expired_token`, or once 200 with `token` and `email`. Both codes are
-stored only as SHA-256 (table `device_login`), and a request gives a token once.
+stored only as SHA-256 (table `device_login`), and a request gives a token once. The start body may also carry `user` and
+`claude_account` (the runner's username and Claude account); each is kept only when it matches the runner name pattern
+(`identities.NAME`) and is shown on `/device` and on **My tokens** ("not reported" when absent). When the token is
+delivered, the pair is also recorded as a Claude identity of the approving account (shown under "Your Claude accounts").
 
 | Endpoint | Scope | What it does |
 | --- | --- | --- |
