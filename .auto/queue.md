@@ -72,7 +72,7 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Acceptance:* `tests/auto_runner/test_autoplan.py` with a fake claude and `fake_central.py`: a plan is posted with its items, a reply without Queue items is refused, the cost cap posts nothing and records the reason, a plan with remaining findings is posted with them under Needs a person, a sent-back comment reaches the prompt, the prompt file is loaded.
   *Slice:* 3 Headless planning
   *Kind:* feature
-- [ ] **H8 Watch loop core.** `bin/autowatch.py`: loop of claim next, then plan (autoplan) or build (`autotasks.start` then `auto_run.run`), then report; when idle, write a local heartbeat to `.auto/run/watch.json` (state, time) and sleep `watch.poll_seconds`; stop on `.auto/STOP`; one failed task never ends the loop. No service presence yet.
+- [x] **H8 Watch loop core.** `bin/autowatch.py`: loop of claim next, then plan (autoplan) or build (`autotasks.start` then `auto_run.run`), then report; when idle, write a local heartbeat to `.auto/run/watch.json` (state, time) and sleep `watch.poll_seconds`; stop on `.auto/STOP`; one failed task never ends the loop. No service presence yet.
   *Acceptance:* `tests/auto_runner/test_autowatch.py` with a fake claude, fake service and fake clock: plans a new task, builds an approved one, writes the idle heartbeat file, stops on STOP, continues after a failed build.
   *Slice:* 4 Watch mode
   *Kind:* feature
