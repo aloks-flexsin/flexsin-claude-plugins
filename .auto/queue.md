@@ -126,7 +126,7 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Acceptance:* tests in `tests/central/test_notifications.py` with a fake sender: a subscribed person gets one push per notification with the text and link, no keys means `off`, a 410 deletes the subscription, a sender error marks `failed` and the request still succeeds.
   *Slice:* 2 Browser push
   *Kind:* feature
-- [ ] **N6 Notification log and docs.** Show each notification's delivery on `/notifications` ("in-app", "push sent", "push failed: <reason>", "push off"); add `GET /admin/notifications` (admins only) listing recent notifications across people with recipient, project, kind, delivery and time, filterable by `?account=` and `?kind=`. Update `auto-runner/central/README.md` (the log page), `auto-runner/docs/central-guide.md` (a "Notifications" section) and the root `CHANGELOG.md`, marked unverified until tested live.
+- [x] **N6 Notification log and docs.** Show each notification's delivery on `/notifications` ("in-app", "push sent", "push failed: <reason>", "push off"); add `GET /admin/notifications` (admins only) listing recent notifications across people with recipient, project, kind, delivery and time, filterable by `?account=` and `?kind=`. Update `auto-runner/central/README.md` (the log page), `auto-runner/docs/central-guide.md` (a "Notifications" section) and the root `CHANGELOG.md`, marked unverified until tested live.
   *Acceptance:* `tests/central/test_notification_pages.py`: delivery words shown per state, the admin log lists everyone's and filters work, non-admins get 404; `python -m pytest -q` passes (doc-map check included).
   *Slice:* 3 Notification log
   *Kind:* feature

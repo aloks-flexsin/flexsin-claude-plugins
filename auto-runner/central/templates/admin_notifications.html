@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}Notification log{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Notification log</h1><p class="lead">The newest notifications across everyone, with how each was delivered.
+    <a href="{{ url_for('admin.accounts_page') }}">Back to Accounts</a></p></div>
+</div>
+
+<div class="toolbar">
+  <form method="get" action="{{ url_for('admin.notifications_log') }}" class="search" role="search">
+    <label class="sr-only" for="nl-account">Person</label>
+    <select id="nl-account" name="account">
+      <option value="">Everyone</option>
+      {% for p in people %}<option value="{{ p.id }}"{% if p.id == account_id %} selected{% endif %}>{{ p.email }}</option>{% endfor %}
+    </select>
+    <label class="sr-only" for="nl-kind">Kind</label>
+    <select id="nl-kind" name="kind">
+      <option value="">Every kind</option>
+      {% for k in kinds %}<option value="{{ k }}"{% if k == kind %} selected{% endif %}>{{ k }}</option>{% endfor %}
+    </select>
+    <button type="submit" class="btn">Filter</button>
+    {% if account_id or kind %}<a href="{{ url_for('admin.notifications_log') }}">Clear</a>{% endif %}
+  </form>
+</div>
+
+{% if rows %}
+<div class="list">
+  {% for n in rows %}
+  <div class="list-row notif-log-row">
+    {{ ui.person(n.account_email, n.account_name, n.account_email) }}
+    <div class="grow">
+      <div>{{ n.text }}</div>
+      <div class="row-sub muted"><span>{{ n.project_name }}</span> · <span class="notif-kind">{{ n.kind }}</span> · {{ ui.when(n.created_at) }}{% if n.resolved_at %} · done{% endif %}</div>
+    </div>
+    <span class="notif-delivery">{{ n.delivery }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+{{ ui.empty("No notification matches.") }}
+{% endif %}
+{% endblock %}

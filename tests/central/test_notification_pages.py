@@ -144,3 +144,93 @@ def test_signed_out_is_sent_to_sign_in(app):
 def test_empty_page(world):
     page = page_of(world, 'viewer')
     assert 'Nothing is waiting on you.' in page and '<h2>Done</h2>' not in page
+
+
+# ---------- N6: delivery words and the admins' notification log ----------
+
+def set_push(conn, nid, state, detail=None):
+    conn.execute('UPDATE notification SET push_state = ?, push_detail = ? WHERE id = ?', (state, detail, nid))
+    conn.commit()
+
+
+def row_of(page, text):
+    """The list row holding `text` (from its start to the next row)."""
+    start = page.rindex('<div class="list-row', 0, page.index(text))
+    end = page.find('<div class="list-row', start + 1)
+    return page[start:end if end != -1 else len(page)]
+
+
+def test_each_notification_shows_how_it_was_delivered(world, conn):
+    cases = {'In app': (None, None, 'in-app'), 'Sent': ('sent', None, 'push sent'),
+             'Broke': ('failed', 'HTTP 500', 'push failed: HTTP 500'),
+             'Off': ('off', 'no browser has push turned on', 'push off')}
+    for text, (state, detail, _) in cases.items():
+        nid = note(conn, world, 'owner', 'Plan waiting: ' + text)
+        set_push(conn, nid, state, detail)
+    page = page_of(world, 'owner')
+    for text, (_, _, words) in cases.items():
+        assert '<span class="notif-delivery">%s</span>' % words in row_of(page, 'Plan waiting: ' + text)
+    assert 'no browser has push turned on' not in page          # "push off" carries no reason
+
+
+def test_a_real_notify_without_push_keys_shows_push_off(world, conn):
+    note(conn, world, 'owner', 'Plan waiting: #9 Real')
+    assert 'push off' in row_of(page_of(world, 'owner'), 'Plan waiting: #9 Real')
+
+
+def test_delivery_words():
+    d = notifications.delivery
+    assert d({'push_state': None, 'push_detail': None}) == 'in-app'
+    assert d({'push_state': 'sent', 'push_detail': None}) == 'push sent'
+    assert d({'push_state': 'failed', 'push_detail': 'timeout'}) == 'push failed: timeout'
+    assert d({'push_state': 'failed', 'push_detail': ''}) == 'push failed'
+    assert d({'push_state': 'off', 'push_detail': 'x'}) == 'push off'
+
+
+def test_the_admin_log_lists_everyones_notifications_and_filters(world, conn, beta):
+    a = note(conn, world, 'owner', 'Plan waiting: #1 Owner plan')
+    set_push(conn, a, 'failed', 'HTTP 503')
+    note(conn, world, 'manager', 'Plan waiting: #2 Manager plan')
+    notifications.notify(conn, [world['accounts']['owner']['id']], beta, 'blocker', 'Blocker waiting: Which DB?',
+                         '/projects/beta/blockers/B1', 'blocker:b1', LATER)
+    conn.commit()
+    admin = world['clients']['admin']
+    resp = admin.get('/admin/notifications')
+    assert resp.status_code == 200
+    page = resp.get_data(as_text=True)
+    for text in ('Owner plan', 'Manager plan', 'Which DB?'):
+        assert text in page
+    assert 'owner@example.com' in page and 'manager@example.com' in page
+    assert 'Beta Shop' in page and 'Alpha' in page and '<time datetime=' in page
+    assert 'push failed: HTTP 503' in row_of(page, 'Owner plan') and 'push off' in row_of(page, 'Manager plan')
+    assert page.index('Which DB?') < page.index('Owner plan')     # newest first
+
+    mid = world['accounts']['manager']['id']
+    page = admin.get('/admin/notifications?account=%s' % mid).get_data(as_text=True)
+    assert 'Manager plan' in page and 'Owner plan' not in page and 'Which DB?' not in page
+    page = admin.get('/admin/notifications?account=owner@example.com').get_data(as_text=True)
+    assert 'Owner plan' in page and 'Which DB?' in page and 'Manager plan' not in page
+    page = admin.get('/admin/notifications?kind=blocker').get_data(as_text=True)
+    assert 'Which DB?' in page and 'Owner plan' not in page and 'Manager plan' not in page
+    page = admin.get('/admin/notifications?account=owner@example.com&kind=plan').get_data(as_text=True)
+    assert 'Owner plan' in page and 'Which DB?' not in page and 'Manager plan' not in page
+    page = admin.get('/admin/notifications?account=nobody@example.com').get_data(as_text=True)
+    assert 'No notification matches.' in page and 'Owner plan' not in page
+    page = admin.get('/admin/notifications?kind=bogus').get_data(as_text=True)
+    assert 'No notification matches.' in page
+
+
+@pytest.mark.parametrize('who', ['owner', 'manager', 'viewer'])
+def test_non_admins_get_404_on_the_log(world, conn, who):
+    note(conn, world, 'owner', 'Plan waiting: #1 Secret')
+    resp = world['clients'][who].get('/admin/notifications')
+    assert resp.status_code == 404 and 'Secret' not in resp.get_data(as_text=True)
+
+
+def test_signed_out_gets_404_on_the_log(app):
+    from .test_access import new_client
+    assert new_client(app).get('/admin/notifications').status_code == 404
+
+
+def test_the_accounts_page_links_to_the_log(world):
+    assert '/admin/notifications' in world['clients']['admin'].get('/admin/accounts').get_data(as_text=True)

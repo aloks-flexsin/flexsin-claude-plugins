@@ -28,7 +28,7 @@ and an owner, manager or admin answers it there.
 | `deliveries.py` | Decisions and the delivery endpoints |
 | `audit.py` | The audit log |
 | `runners.py` | Runner presence: `POST /api/v1/runners/beat`, silent after 2 hours, pause/stop returned; Pause, Resume and Stop on the pages |
-| `notifications.py` | In-app notifications: `notify` (members only, no duplicates), `resolve`, `unread_count`, `for_account`; the Notifications page, open and read-all |
+| `notifications.py` | In-app notifications: `notify` (members only, no duplicates), `resolve`, `unread_count`, `for_account`, `delivery`, `recent`; the Notifications page, open and read-all (the admins' log is in `admin.py`) |
 | `push.py` | Browser push subscriptions: `POST /push/subscribe`, `POST /push/unsubscribe`, the Account page's push section |
 | `cli.py` | `python -m central init-db` and `python -m central create-admin --email X` |
 | `api/index.py`, `vercel.json` | Vercel entry point; every route is rewritten to it |
@@ -215,6 +215,15 @@ event that adds no notification sends no push. The push goes out before the call
 change is then rolled back, the person may already have been pushed about it. Each request waits at most 5 seconds,
 in the request that caused the notification. Not yet tried against a real push service (**unverified**); the tests use
 a fake sender.
+
+**Delivery and the notification log.** Each row on `/notifications` says how it reached the person
+(`notifications.delivery`): "push sent", "push failed: <reason>" (the reason from `push_detail`), "push off" (no VAPID
+keys or no browser with push turned on), or "in-app" for rows where no push was tried (made before pushing existed).
+Admins also have `GET /admin/notifications` ("Notification log", linked from Accounts): the newest 200 notifications
+across everyone (`notifications.recent`), each with its recipient, project, kind, delivery and time, newest first.
+`?account=` (an account id or email) and `?kind=` (`plan`, `changes`, `assigned`, `blocker`) narrow it, together or
+alone; an unknown account or kind lists nothing. Anyone else, signed out included, gets 404, like every admin page.
+Delivery words for real pushes are **unverified** until push is tried live.
 
 ## Presentation (UX audit foundations)
 

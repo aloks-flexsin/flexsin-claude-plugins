@@ -8,7 +8,7 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="link-button">{{ n.text }}</button>
     </form>
-    <div class="row-sub muted"><span>{{ n.project_name }}</span> · {{ ui.when(n.created_at) }}</div>
+    <div class="row-sub muted"><span>{{ n.project_name }}</span> · {{ ui.when(n.created_at) }} · <span class="notif-delivery">{{ n.delivery }}</span></div>
   </div>
   {% if done %}<span class="badge off">Done</span>{% elif not n.read_at %}<span class="badge warn">New</span>{% endif %}
 </div>

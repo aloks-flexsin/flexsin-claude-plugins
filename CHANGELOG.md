@@ -5,6 +5,10 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Central notifications: each notification on `/notifications` says how it was delivered ("in-app", "push sent",
+  "push failed: <reason>", "push off"), and admins get a **Notification log** (`GET /admin/notifications`, linked from
+  Accounts) of recent notifications across everyone with recipient, project, kind, delivery and time, filterable by
+  `?account=` and `?kind=`. The central guide gains a "Notifications" section. Unverified against a live push service.
 - Central pages: a dark mode toggle in the top bar ("Dark mode" / "Light mode", signed in and signed out). It posts to
   `POST /theme`, which takes `light` or `dark` (anything else is 400), keeps the choice in the `theme` cookie for a
   year and returns to the page it came from (same-site paths only, else `/my`). Light stays the default.

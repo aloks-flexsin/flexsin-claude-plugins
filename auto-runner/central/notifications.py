@@ -15,6 +15,9 @@ and records `push_state` (`off` without VAPID keys or subscriptions, `sent`, or 
 `push_detail`). Pushing never raises into the caller. The push goes out before the caller commits, so if the caller
 then rolls back, the person may have been pushed about a notification that is not stored.
 
+Delivery (queue item N6): `delivery(row)` puts `push_state` into words ("in-app", "push sent", "push failed: <reason>",
+"push off"), shown on each row of `/notifications` and on the admins' log `GET /admin/notifications` (`recent`).
+
 Neither function commits: the caller commits with the change that caused the notification, so both land together.
 
 Keys used by the service:
@@ -128,6 +131,38 @@ def for_account(db, account_id, limit=200):
                     " LIMIT %d" % int(limit), (account_id,))
 
 
+def delivery(row):
+    """How a notification reached the person, in words: "push sent", "push failed: <reason>", "push off", or
+    "in-app" when no push was tried (rows from before pushing existed)."""
+    state = row["push_state"]
+    if state == "sent":
+        return "push sent"
+    if state == "failed":
+        reason = (row["push_detail"] or "").strip()
+        return "push failed: %s" % reason if reason else "push failed"
+    if state == "off":
+        return "push off"
+    return "in-app"
+
+
+def recent(db, account_id=None, kind=None, limit=200):
+    """The newest notifications across people (for admins), with recipient and project; optionally only one
+    account's and/or one kind's."""
+    where, args = [], []
+    if account_id:
+        where.append("n.account_id = ?")
+        args.append(account_id)
+    if kind:
+        where.append("n.kind = ?")
+        args.append(kind)
+    sql = ("SELECT n.*, p.slug AS project_slug, p.name AS project_name, a.email AS account_email,"
+           " a.name AS account_name FROM notification n JOIN project p ON p.id = n.project_id"
+           " JOIN account a ON a.id = n.account_id")
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    return db.query(sql + " ORDER BY n.created_at DESC, n.id DESC LIMIT %d" % int(limit), tuple(args))
+
+
 def find_own(db, account_id, notification_id):
     """The person's notification with this id, else None (another person's id is treated as unknown)."""
     return db.query_one("SELECT * FROM notification WHERE id = ? AND account_id = ?", (notification_id, account_id))
@@ -151,7 +186,7 @@ def mark_all_read(db, account_id, now):
 @bp.get("/notifications")
 @auth.login_required
 def notifications_page():
-    rows = [dict(r) for r in for_account(get_db(), g.account["id"])]
+    rows = [dict(r, delivery=delivery(r)) for r in for_account(get_db(), g.account["id"])]
     return render_template("notifications.html", waiting=[r for r in rows if r["resolved_at"] is None],
                            done=[r for r in rows if r["resolved_at"] is not None])
 
