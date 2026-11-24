@@ -5,6 +5,10 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Auto-runner watch mode from setup: `/auto-runner:central` offers to start the watcher as its optional last step once
+  the checkout is connected and signed in; the central guide gains a "Hands-free work" section (starting it, limits,
+  runners on the pages, Pause, Resume and Stop), and the plugin and central READMEs say so. Unverified against the live
+  service.
 - Auto-runner watch mode reports and obeys: the watcher beats the central service (`runners/beat`) with what it is
   doing (watching, planning #N, building #N, paused) and its spend, and between steps obeys Pause (waits without taking
   work) and Stop (ends cleanly) pressed on the pages. Unverified against the live service.

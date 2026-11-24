@@ -54,7 +54,9 @@ Check the manifest with `claude plugin validate ./auto-runner` (needs the `claud
    the service's answer to `GET /api/v1/project` and the repository check, runner identity, events not sent yet, waiting
    blockers with their page links) and walks you through what is missing, changing anything only after you agree
    (`bin/autocentral.py status` is the read-only check; tested with the real central app through Flask's test client,
-   never against the live service). How teammates and admins use the page: `docs/central-guide.md`.
+   never against the live service). How teammates and admins use the page: `docs/central-guide.md`. Once connected,
+   its optional last step offers watch mode (`/auto-runner:auto watch`), started only after a clear yes; the guide's
+   "Hands-free work" section explains it for people. Unverified on the live service.
    With `"enforce_runner": true`, edits in the main checkout are blocked (see the config table);
    `/auto-runner:allow-edits` lets the current session edit there for 12 hours.
 3. `/auto-runner:status` and `/auto-runner:log` are read-only reports (counts by state, the running item, blocked questions, recorded spend; the last iterations and log tails; `--full N` prints one whole log).

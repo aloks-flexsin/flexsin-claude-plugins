@@ -140,6 +140,9 @@ may not stick over plain http. The API endpoints do not use the cookie.
   confirm page without JavaScript; nothing changes without `confirm=1`), sets `control` (Resume clears it), and writes
   `runner.pause`, `runner.resume` or `runner.stop` to the audit (shown in Recent activity). Pause and Stop take effect at
   the runner's next beat; the watch loop obeys them from H12. Unverified on the live service.
+- **Starting a watcher:** `/auto-runner:central` offers watch mode (`/auto-runner:auto watch`) as its optional last
+  step once a checkout is connected and signed in; people read about it in `docs/central-guide.md` ("Hands-free work").
+  The service needs nothing for it beyond `runners/beat` and the task API. Unverified on the live service.
 
 ## Presentation (UX audit foundations)
 

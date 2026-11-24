@@ -17,7 +17,7 @@ the page is used, and help the user finish the setup. Every change previews firs
 
    `python "${CLAUDE_PLUGIN_ROOT}/bin/autocentral.py" sync --project "${CLAUDE_PROJECT_DIR}"`
 
-   Exit code 0 of the check means connected; report the sync line and stop here.
+   Exit code 0 of the check means connected; report the sync line and go to step 9 (the optional watch mode).
 
 1b. **Not a git checkout** (for example a new, empty folder). Offer to set a project up here from the central service.
    Ask for the service address unless known (Flexsin: `https://auto-runner-central.vercel.app`; never guess another).
@@ -67,6 +67,17 @@ the page is used, and help the user finish the setup. Every change previews firs
    URL, this folder's origin is a different repository). Explain what it said and what fixes it, and stop. Never work around it.
 
 8. After any change, run the check again and report what is still missing, until it says CONNECTED or only steps the
-   user must do themselves are left (the token, a restart, something on the site).
+   user must do themselves are left (the token, a restart, something on the site). Once it says CONNECTED, go to step 9.
+
+9. **Optional last step: watch mode.** Only once the check says CONNECTED (token set, runner identity set), offer it in
+   one question: this computer can keep taking the user's central tasks hands-free (`/auto-runner:auto watch`). It plans
+   new tasks (each plan waits for approval on the central page) and builds approved ones on their own branches, within
+   `watch.plan_budget_usd` per plan (default 2 USD) and `watch.daily_budget_usd` per local day (default 20 USD), and it
+   shows on the project's Overview, Runs and My work, where its person or an admin can Pause, Resume or Stop it. Say that
+   it is unverified on the live service so far. Never start it without a clear yes; a no (or no answer) ends this
+   command. After a yes, follow "W. Watch mode" in `/auto-runner:auto` (start `autowatch.py` in the background, report
+   what it printed, and how to stop it: Stop on the page, or create `.auto/STOP`). Do not offer it in a worktree, outside
+   a git checkout, or while anything above is still missing. More: the guide's "Hands-free work" section
+   (`docs/central-guide.md`).
 
 Do not edit `.claude/auto.json`, `.claude/settings.json` or any other file by hand as part of this command.

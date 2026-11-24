@@ -92,7 +92,7 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Acceptance:* tests in `tests/auto_runner/test_autowatch.py` with `fake_central.py`: beats carry the right states, a paused runner waits without claiming, stop ends the loop cleanly.
   *Slice:* 5 Runner presence and controls
   *Kind:* feature
-- [ ] **H13 Start it from setup and document it.** `/auto-runner:central` offers watch mode as its optional last step; guide section "Hands-free work"; central README, plugin README and CHANGELOG updated, all marked unverified until run on the live service.
+- [x] **H13 Start it from setup and document it.** `/auto-runner:central` offers watch mode as its optional last step; guide section "Hands-free work"; central README, plugin README and CHANGELOG updated, all marked unverified until run on the live service.
   *Acceptance:* `tests/auto_runner/test_central_status.py` checks the command and guide mention watch mode, and `python -m pytest -q` (doc-map check included) passes.
   *Slice:* 6 Start it from setup, documented
   *Kind:* internal
