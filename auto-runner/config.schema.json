@@ -25,6 +25,7 @@
     "base_branch": {"$ref": "#/$defs/text", "description": "'' = detect."},
     "branch_prefix": {"$ref": "#/$defs/text", "description": "Deprecated and ignored since 0.14.0: run branches are <user>/<account>-claude-auto-runner/<type>/<brief> (AUTO_RUNNER_USER, AUTO_RUNNER_ACCOUNT)."},
     "commit_trailer": {"$ref": "#/$defs/text"},
+    "enforce_runner": {"$ref": "#/$defs/flag", "description": "true = the PreToolUse guard (autohook.py guard) blocks Edit/Write/MultiEdit/NotebookEdit in the main checkout; .auto/, the runner's worktree and paths outside the project stay allowed; /auto-runner:allow-edits lets one session edit for 12 hours."},
     "models": {
       "type": "object", "additionalProperties": false,
       "description": "Role -> model alias or name.",
@@ -113,6 +114,15 @@
       "properties": {
         "path": {"$ref": "#/$defs/text"},
         "stale_after_minutes": {"$ref": "#/$defs/count"}
+      }
+    },
+    "watch": {
+      "type": "object", "additionalProperties": false,
+      "description": "Watch mode (headless planner and build loop). poll_seconds: sleep between claims when idle (default 300); plan_budget_usd: cost cap of one headless plan (default 2); daily_budget_usd: spend per local day before the watcher pauses until midnight (default 20).",
+      "properties": {
+        "poll_seconds": {"$ref": "#/$defs/count"},
+        "plan_budget_usd": {"$ref": "#/$defs/amount"},
+        "daily_budget_usd": {"$ref": "#/$defs/amount"}
       }
     },
     "usage_limit": {

@@ -37,11 +37,16 @@ Check the manifest with `claude plugin validate ./auto-runner` (needs the `claud
    fixed in the plan (up to `review.max_plan_revisions` rounds) and listed in its **Spec check** section; a reply that is not valid
    `spec.v1` fails the check rather than passing it. `/auto-runner:spec <plan file>` runs the same check on a plan written by hand.
    Unverified beyond a fake reviewer. When you accept the plan it writes the request to `.auto/pending/<slug>/items.md` and starts the runner.
+   **Watch mode** (`/auto-runner:auto watch`): `bin/autowatch.py` keeps taking your central tasks, planning new ones and
+   building approved ones, within a daily spend cap (`watch.daily_budget_usd`), waiting out usage limits, one watcher per
+   checkout; stop it with `.auto/STOP`. Unverified against the live CLI and service.
    **No task given** (`/auto-runner:auto` alone): the runner takes your next task from the central service
    (`bin/autotasks.py`, 0.19.0, decision record 0007; needs the project connected and this computer signed in). A new task is
    planned the same way and its plan **waits for approval on the central page** while the runner moves on; an approved task
    becomes a request (`.auto/pending/task-<N>-<brief>/`) and runs on its own branch. A task typed in the terminal is also
-   recorded there (`autotasks.py record`). While a run works on a task it beats the claim before every iteration, stops
+   recorded there (`autotasks.py record`), or, when its plan should be approved on the central page instead, proposed
+   (`autotasks.py propose --title T --plan FILE --items FILE`: stored as `plan_review` and claimed by this runner; once
+   approved, `next` hands it back to build; `list` shows it as "waiting for approval"). While a run works on a task it beats the claim before every iteration, stops
    (reason `claim_lost`, exit 1) if an admin released or reassigned it, and reports it done (clean run, queue empty) or
    stopped at the end. Its `run_start` and `run_end` events name the task (`task`, 0.21.0), so the central task page and
    **My work** show the build's progress live. Tested against the real central app through its test client.
@@ -51,7 +56,11 @@ Check the manifest with `claude plugin validate ./auto-runner` (needs the `claud
    the service's answer to `GET /api/v1/project` and the repository check, runner identity, events not sent yet, waiting
    blockers with their page links) and walks you through what is missing, changing anything only after you agree
    (`bin/autocentral.py status` is the read-only check; tested with the real central app through Flask's test client,
-   never against the live service). How teammates and admins use the page: `docs/central-guide.md`.
+   never against the live service). How teammates and admins use the page: `docs/central-guide.md`. Once connected,
+   its optional last step offers watch mode (`/auto-runner:auto watch`), started only after a clear yes; the guide's
+   "Hands-free work" section explains it for people. Unverified on the live service.
+   With `"enforce_runner": true`, edits in the main checkout are blocked (see the config table);
+   `/auto-runner:allow-edits` lets the current session edit there for 12 hours.
 3. `/auto-runner:status` and `/auto-runner:log` are read-only reports (counts by state, the running item, blocked questions, recorded spend; the last iterations and log tails; `--full N` prints one whole log).
 
 The runner can also be started by hand: `python bin/auto_run.py [--project DIR] [--max-iterations 8] [--max-budget-usd 5] [--enqueue SLUG] [--dry-run] [--allow-dirty]`.
@@ -89,6 +98,12 @@ skips duplicates); creates `.claude/auto.json`, `.auto/queue.md` and `.gitignore
 with `--with-rules` writes a short `AUTO_RULES.md` when there is no `CLAUDE.md`. Idempotent. `--remove` previews, and with `--apply` removes only what init added.
 It also writes the `central` section (next section) or, with `--local`, none. When a gitignored `.env` exists it proposes
 `"env_files": [".env"]`; `--allow-env-read` writes `"safety": {"allow_env_read": true}` into a new auto.json and leaves out the `.env` read rules.
+When the central service is enabled (a new or an existing `central` section), init also appends a short "Work goes through the
+auto-runner" section to `CLAUDE.md` (or to `AUTO_RULES.md` when there is no `CLAUDE.md`, including the one `--with-rules` creates)
+telling interactive sessions to plan with `/auto-runner:auto` and send the plan with `autotasks.py propose`. It sits between
+`<!-- auto-runner:routing:start -->` and `<!-- auto-runner:routing:end -->` markers, is shown in the preview, recorded in the
+manifest (`routing_rule`, with the exact text added), and `--remove` takes out exactly that text, leaving the rest of the file
+byte-for-byte as it was (an edited section is kept and reported).
 
 ## Central-first setup (tested with the real central app through Flask's test client; never against the live service)
 The central service is the starting point for a project: an admin creates it there with its repository URL, and init connects
@@ -137,6 +152,7 @@ Every key is optional; unknown keys and wrong types are errors that name the key
 | `base_branch` | `""` | Branch the worktree starts from. Empty = detect: `origin/HEAD`, else the current branch if it is main/master/trunk/develop, else one answer is needed. |
 | `branch_prefix` | `auto/` | **Deprecated, ignored** since 0.14.0 (still accepted so old files load): run branches are `<user>/<account>-claude-auto-runner/<type>/<brief>`. |
 | `commit_trailer` | `""` | Line added to each commit message. |
+| `enforce_runner` | `false` | Opt-in guard: the PreToolUse hook (`autohook.py guard`) blocks Edit, Write, MultiEdit and NotebookEdit on paths in the main checkout (exit 2, the message names `/auto-runner:auto`). Paths under `.auto/`, the runner's worktree, paths outside the project and every path in a linked git worktree stay allowed. Typing `/auto-runner:allow-edits` lets that one session edit for 12 hours (`.auto/run/allow-<session_id>`; delete it to end sooner). |
 
 Schema v2 sections (objects, every nested key optional, unknown nested keys and wrong types fail naming `section.key`). They are **parsed and validated only**, with one exception: `models.implementer` is passed to `claude -p` as `--model <value>` (no flag when it is unset or `inherit`). The preflight refuses any `models.<role>` value that is not `opus`, `sonnet`, `haiku`, `inherit` or a name starting with `claude-`, naming the key. A section appears in the loaded config only when the file sets it, so a config with only the keys above behaves exactly as before. `config.schema.json` describes every key.
 
@@ -155,6 +171,7 @@ Schema v2 sections (objects, every nested key optional, unknown nested keys and 
 | `usage_limit` | `wait` (default false), `max_wait_minutes` (default 360): wait for Claude's usage limit to reset and continue, instead of stopping |
 | `acceptance` | `browser`: `enabled`, `base_url`, `command`, `headless`, `exploratory`, `accounts`: `method` (`seed_command` or `signup`), `seed_command` |
 | `changelog` | `enabled` (default off), `file` (default `CHANGELOG.md`), `versioning` (only `semver`) |
+| `watch` | `poll_seconds` (default 300), `plan_budget_usd` (default 2), `daily_budget_usd` (default 20); read with `autocfg.watch()`. Settings for watch mode (`/auto-runner:auto watch`). `plan_budget_usd` caps one headless plan (`bin/autoplan.py`: planner and spec check together); `poll_seconds` is how long the watch loop (`bin/autowatch.py`) waits when idle; `daily_budget_usd` caps what all of the watcher's `claude -p` calls (plans, spec checks, builds) report per local day (`.auto/run/spend-<date>.json`); at the cap the watcher pauses until local midnight. The headless planner's instructions are in `docs/planner-prompt.md` (the plan sections of `/auto-runner:auto` step 1) |
 
 Besides `models.implementer`, three sections act: `acceptance.browser` (the browser stage below), `changelog` (the changelog step) and
 `docs.map`/`docs.check` (the docs gate). Each does nothing when the file does not turn it on.
@@ -264,17 +281,20 @@ such as `₹` never breaks a run on Windows.
 | `bin/autostale.py` | Artifact front-matter (`version`, `hash`, `built_from`, `status`), `scan`, `status`, `revalidate`; stale artifacts refuse a resume. |
 | `bin/autoeval.py` | Evaluation harness: `run --benchmark ID --runner fake`, `validate`, `validate-results FILE`. |
 | `bin/auto_init.py`, `bin/auto_report.py` | Init (preview/apply/remove, the `central` section and its repository check) and the status/log reports. |
-| `bin/autotasks.py` | Central tasks: `next` (claim my next task; plan or build), `plan N` (post its plan), `start N` (an approved task → a request folder with `task.json`), `record` (a terminal task), `list`; and for the runner `adopt`, `beat` (`lost` on 409), `finish` (report done/stopped). Personal tokens only. |
+| `bin/autotasks.py` | Central tasks: `next` (claim my next task; plan or build), `plan N` (post its plan), `start N` (an approved task → a request folder with `task.json`), `record` (a terminal task), `propose` (a terminal plan sent for approval on the page: `"approval": "page"`, stored as `plan_review`, claim kept in `.auto/run/tasks/<N>.json`), `list` (`plan_review` shown as "waiting for approval"); and for the runner `adopt`, `beat` (`lost` on 409), `finish` (report done/stopped). Personal tokens only. |
 | `bin/autocentral.py` | What init and join share: `default_token_env`, `repo_key` / `clean_url`, `remote_url`, `lookup` (`GET /api/v1/project`), `check`, `token_steps`; `status` (`python autocentral.py status`, `/auto-runner:central`): the read-only connection check with next steps, exit 0 when connected; and **sign in from Claude** (0.18.0, decision record 0008): `login start` asks the service for a code and shows it with the address, keeping the device code in a private file; `login wait` polls until the person approves or denies in the browser (10 minutes at most) and stores the personal token without printing it, on Windows in the user variable `AUTO_RUNNER_TOKEN` (set by PowerShell from the child's environment, never on a command line), elsewhere in `~/.config/auto-runner/credentials` (mode 600). **One-command setup** (0.20.0): `projects` lists the signed-in person's projects (`GET /api/v1/projects`), `sync` fetches origin and fast-forwards the base branch only when it is checked out, clean and has no commits of its own (anything else is reported, never changed), and `status` in a folder that is not a checkout says how to sign in, list and clone. The page links it prints point to My work and the project's Overview (0.22: the project page opens on its Overview; members, repository and machine tokens are under Settings). Tested against the real central app through its test client. |
 | `bin/auto_join.py` | Join: repository URL from the central service, `git clone` into a folder you confirm, then init's preview. |
 | `bin/autojourney.py` | Journey check: parses journeys, starts and stops the app, runs the click-through agent, validates `journey.v1`, writes fix items. |
 | `bin/autodeck.py` | Journey deck: after each journey check, the passing journeys' screenshots replace their slides in `.auto/journeys/deck.html` (`deck.v1` in `deck.json`). |
+| `bin/autoplan.py` | Headless planner (watch mode): `plan N` plans a central task this computer claimed. Prompt = `docs/planner-prompt.md` + principles + the task text (and the sent-back comment); `claude -p` read-only with `models.planner`; a reply without Queue items is refused; spec check with one revision at most, findings still open go under **Needs a person**; then `autotasks.post_plan`. Planner and spec-check costs count against `watch.plan_budget_usd`: at the cap nothing is posted, the local claim file is dropped (the claim lapses after 2 hours) and the reason goes to `.auto/run/watch.json`. Tested with a fake claude and `fake_central.FakeTasks`; never against the live CLI (unverified). |
+| `bin/autowatch.py` | Watch loop (watch mode, core): claims this person's next central task (`autotasks.take_next`), plans it (`autoplan.plan`) or builds an approved one (`autotasks.start`, then `auto_run.run` with `enqueue`), and reports each step on stdout and under `last` in `.auto/run/watch.json`. Idle: writes the heartbeat `.auto/run/watch.json` (`state`, `at`) and waits `watch.poll_seconds`. Stops on `.auto/STOP` (checked before every claim and while waiting; the file is left in place). A failed step (refused plan, crashed or stopped build, unreachable service) is reported, the loop waits one poll and carries on. Guardrails: every `claude -p` it starts (planner, spec check, builds) adds its `total_cost_usd` to `.auto/run/spend-<local date>.json`, and before each claim a day at `watch.daily_budget_usd` pauses the loop until local midnight (a step already started finishes, bounded by its own plan or attempt cap); a usage limit in any output (`auto_run.usage_limit`) or a build exit 75 waits for the reset plus a minute, at most `auto_run.LIMIT_POLL_MINUTES`; the checkout lock `.auto/run/watch.lock` (`auto_run.Lock`, stale ones cleared) lets one watcher, so one build, run per checkout and a second one refuses to start (exit 2). Started by `/auto-runner:auto watch`. Presence: it sends `POST /api/v1/runners/beat` (personal token, label `<user>/<account>-claude-auto-runner`, the day's spend) with `watching` or `paused` before each claim, `planning #N` / `building #N` once a task is claimed, and `paused: daily budget reached` each poll during the daily-budget pause; between steps it obeys the reply's `control`: `pause` waits a poll at a time without claiming until resumed, `stop` ends the loop (exit 0, heartbeat `stopped`); a step already started always finishes; a failed beat is reported once and the loop carries on. Tested against the real central app (test client), `fake_central.FakeRunners` and the real runner with a fake claude and a fake clock; never against the live CLI or service (unverified). |
 | `bin/autospec.py` | Spec check: a read-only reviewer `claude -p` checks a plan's queue items against the code and answers `spec.v1` findings. |
 | `bin/autoupdate.py` | Update: `check` refreshes the marketplace and lists the changelog between the installed and the available version; `apply` runs `claude plugin update`. |
 | `bin/autosetup.py` | Capability registry and `doctor` (read-only), `plan` / `apply` / `remove` for setup. |
 | `bin/autobrowser.py` | Host policy (`check_base_url`), throwaway accounts, `redact` / `scan_diff`, `browser.v1` results and the Layer 1 stage, `finding.v1` and the Layer 2 explorer. |
 | `bin/automail.py` | Stdlib SMTP sink bound to 127.0.0.1; messages stored as JSON under `.auto/run/mail/`. |
 | `bin/autochange.py` | Changelog sentence rules, Keep a Changelog entries, the runner's changelog commit, `release` (SemVer proposal). |
+| `bin/autohook.py` | Claude Code hooks, registered in `hooks/hooks.json`. `prompt` (UserPromptSubmit): in a project whose `.claude/auto.json` has `central.enabled`, prints one line reminding the session to plan new work with `/auto-runner:auto` and send it for approval with `autotasks.py propose`; nothing for other projects, for prompts starting with `/`, or when the config or the hook input cannot be read; always exits 0. A prompt of `/auto-runner:allow-edits` (command `commands/allow-edits.md`) instead calls `allow`. `guard` (PreToolUse, matcher `Edit\|Write\|MultiEdit\|NotebookEdit`): only with `"enforce_runner": true`, exits 2 with a message naming `/auto-runner:auto` for a path in the main checkout; allows `.auto/`, the runner's worktree, paths outside the project, any path when the project is a linked worktree, and a session with a live allow file; allows when the config or input cannot be read. `allow` writes `.auto/run/allow-<session_id>` (the time), valid for that session only, for 12 hours or until deleted. Tested with temp projects and a subprocess run; never in a live Claude Code session (unverified). |
 | `bin/autodocs.py` | Doc map, `check` (mapped docs changed, relative links resolve, new symbols documented) and the stale-doc scan (`gate`). |
 
 ## Setup and doctor (unverified: fake installer only)

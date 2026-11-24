@@ -12,6 +12,7 @@ The project file is `.claude/auto.json`; every key is optional and a missing fil
     base_branch      branch the worktree starts from ('' = detect)
     branch_prefix    deprecated, ignored since 0.14.0 (run branches are <user>/<account>-claude-auto-runner/<type>/<brief>)
     commit_trailer   line added to each commit message ('' = none)
+    enforce_runner   true = the PreToolUse guard (autohook.py guard) blocks edits in the main checkout (default false)
 
 Schema v2 adds optional sections (objects; each nested key optional, unknown nested keys and wrong types fail naming
 `section.key`). They are parsed and validated only: a section is in the loaded dict only when the file sets it, so a
@@ -66,6 +67,7 @@ DEFAULTS = {
     'base_branch': '',
     'branch_prefix': 'auto/',
     'commit_trailer': '',
+    'enforce_runner': False,
 }
 
 # Nested key -> kind: 'text', 'flag', 'count' (whole number >= 0), 'amount' (number >= 0), 'texts' (list of text).
@@ -88,9 +90,11 @@ SECTIONS = {
     'safety': {'allow_env_read': 'flag'},
     'publish': {'push': 'flag', 'pull_request': 'flag', 'remote': 'text'},
     'principles': {'enabled': 'flag', 'file': 'text', 'require_slices': 'flag'},
+    'watch': {'poll_seconds': 'count', 'plan_budget_usd': 'amount', 'daily_budget_usd': 'amount'},
 }
 # Values a section means when the file leaves a key out (section() still returns only what the file sets).
 CHANGELOG_DEFAULTS = {'enabled': False, 'file': 'CHANGELOG.md', 'versioning': 'semver'}
+WATCH_DEFAULTS = {'poll_seconds': 300, 'plan_budget_usd': 2, 'daily_budget_usd': 20}
 DOCS_MAP_DEFAULT = 'docs/doc-map.json'
 KIND_TEXT = {'text': 'text', 'flag': 'true/false', 'count': 'a whole number >= 0',
              'amount': 'a number >= 0', 'texts': 'a list of text'}
@@ -182,6 +186,11 @@ def section(cfg, name):
 def changelog(cfg):
     """The changelog section with its defaults filled in (off, CHANGELOG.md, semver)."""
     return {**CHANGELOG_DEFAULTS, **section(cfg, 'changelog')}
+
+
+def watch(cfg):
+    """The watch section with its defaults filled in (poll every 300 s, $2 per plan, $20 per local day)."""
+    return {**WATCH_DEFAULTS, **section(cfg, 'watch')}
 
 
 PRINCIPLES_FILE = Path(__file__).resolve().parent.parent / 'docs' / 'engineering-principles.md'

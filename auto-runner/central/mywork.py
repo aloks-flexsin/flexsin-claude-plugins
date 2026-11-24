@@ -5,12 +5,13 @@
   blockers in projects where they answer them.
 - **In progress:** their own unfinished tasks first, then every other task a runner is on, each once, with build
   progress and a warning when its runner went quiet.
+- **Your runners:** the runners this person may pause, resume or stop (their own; every runner for an admin).
 - **Recently done:** the last finished tasks, with their pull requests.
 `?project=<slug>` narrows the page to one project. Built from the same rows as the project pages; nothing is stored.
 """
 from flask import Blueprint, g, render_template, request
 
-from . import auth, blockers, projects, runs, tasks
+from . import auth, blockers, projects, runners, runs, tasks
 from .db import get_db
 
 bp = Blueprint("mywork", __name__)
@@ -22,12 +23,13 @@ INLINE_ITEMS = 2           # a plan this short is approved from its card; longer
 def collect(db, account, moment, only=None):
     """-> {approve, blockers, waiting, progress, done, projects}. `waiting` merges plans and blockers, oldest first;
     `progress` is mine first, then the team's live work; `only` is a project slug or None."""
-    out = {"approve": [], "blockers": [], "mine": [], "team": [], "done": [], "projects": []}
+    out = {"approve": [], "blockers": [], "mine": [], "team": [], "done": [], "projects": [], "runners": []}
     for p in projects.visible_to(db, account):
         out["projects"].append(p)
         if only and p["slug"] != only:
             continue
         role = projects.effective_role(db, p, account)
+        out["runners"] += runners.views(db, p, account, moment, only_controllable=True)
         task_runs = None
         for t in tasks.for_project(db, p["id"]):
             t = dict(t, project=p, describe=tasks.DESCRIBE.get(t["status"], t["status"]), live=tasks.claim_live(t, moment),

@@ -7,6 +7,9 @@ Central tasks from the plugin's side (decision record 0007, step 4). Needs the c
     python autotasks.py start N [--project DIR]                     # an approved task N -> .auto/pending/task-N-<brief>/
     python autotasks.py record --slug SLUG --title T --plan FILE --items FILE [--project DIR]
                                                                     # a task planned in the terminal, recorded as building
+    python autotasks.py propose --title T --plan FILE --items FILE [--project DIR]
+                                                                    # a task planned in the terminal, sent for approval
+                                                                    # on the central page (plan_review, claimed here)
     python autotasks.py list   [--project DIR]                      # every task of the project and who works on it
 
 The claim of a task this computer took is kept in `.auto/run/tasks/<N>.json` (git-ignored). A request made from a task
@@ -132,8 +135,33 @@ def record(project, slug, title, plan_text, items_text, env=None, send=None):
     return number
 
 
+def propose(project, title, plan_text, items_text, env=None, send=None):
+    """A task planned in the terminal, sent for approval on the central page: recorded as plan_review, claimed by this
+    runner (the claim is saved like one taken with `next`) -> its number. Once approved, `next` hands it back to build."""
+    if not plan_text.strip() or not items_text.strip():
+        raise TaskError('propose needs the plan (--plan FILE) and its queue items (--items FILE)')
+    reply = _call(transport(project, env, send), 'POST', '/api/v1/tasks',
+                  {'runner': runner_label(env), 'title': title, 'plan': plan_text, 'items': items_text,
+                   'approval': 'page'})
+    task = reply['task']
+    _save(_auto(project) / CLAIMS / f'{task["number"]}.json',
+          {'number': task['number'], 'claim': reply['claim'], 'title': task['title'], 'action': 'plan'})
+    return task['number']
+
+
 def listing(project, env=None, send=None):
     return _call(transport(project, env, send), 'GET', '/api/v1/tasks')['tasks']
+
+
+SHOWN = {'plan_review': 'waiting for approval', 'changes_requested': 'changes requested',
+         'approved': 'approved, waiting to be built'}
+
+
+def line(task):
+    """One task as `list` prints it."""
+    who = f' (worked by {task["runner"]})' if task.get('runner') else ''
+    status = SHOWN.get(task['status'], task['status'])
+    return f'#{task["number"]} [{status}] {task["title"]} - {task["assignee"]}{who}'
 
 
 # ---------- used by the runner ----------
@@ -202,7 +230,7 @@ def finish(t, auto_dir, done, branch, pr_url, note):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('cmd', choices=('next', 'plan', 'start', 'record', 'list'))
+    ap.add_argument('cmd', choices=('next', 'plan', 'start', 'record', 'propose', 'list'))
     ap.add_argument('number', nargs='?', type=int)
     ap.add_argument('--project', default=os.environ.get('CLAUDE_PROJECT_DIR') or '.')
     ap.add_argument('--plan', default='')
@@ -229,10 +257,13 @@ def main(argv=None):
             print(start(a.project, a.number))
         elif a.cmd == 'record':
             print(f'Recorded as task {record(a.project, a.slug, a.title, read(a.plan), read(a.items))}.')
+        elif a.cmd == 'propose':
+            n = propose(a.project, a.title, read(a.plan), read(a.items))
+            print(f'Task {n}: the plan waits for approval on the central page (Tasks); once approved, '
+                  f'"autotasks.py next" hands it back to build.')
         else:
             for t in listing(a.project):
-                who = f' (worked by {t["runner"]})' if t.get('runner') else ''
-                print(f'#{t["number"]} [{t["status"]}] {t["title"]} - {t["assignee"]}{who}')
+                print(line(t))
     except (TaskError, autodeliver.TransportUnavailable, OSError) as e:
         print(f'Not done: {e}')
         return 1
