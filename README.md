@@ -17,6 +17,10 @@ claude plugin install auto-runner@flexsin-claude-plugins
 
 This is a private repository, so `git` must be signed in to GitHub with an account that has access (see "Access" below).
 
+Working on this repository itself (including Claude Code cloud sessions): nothing to install. Its
+`.claude/settings.json` names this marketplace and enables `auto-runner`, so Claude Code offers to install it when the
+folder is trusted and the `/auto-runner:...` commands are there.
+
 Try it for one session without installing, from a clone of this repository:
 
 ```

@@ -14,5 +14,16 @@
       "Read(./.env.*)",
       "Read(./.auto/run/accounts.json)"
     ]
+  },
+  "extraKnownMarketplaces": {
+    "flexsin-claude-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "aloks-flexsin/flexsin-claude-plugins"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "auto-runner@flexsin-claude-plugins": true
   }
 }
