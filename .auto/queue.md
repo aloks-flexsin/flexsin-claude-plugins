@@ -204,6 +204,10 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Slice:* 3 The runner sees the screenshots
   *Kind:* feature
 
+- [x] **G1 GitHub Actions workflow that runs the suite.** Add `.github/workflows/tests.yml`, workflow `name: tests`, one job `tests` on `ubuntu-latest` that runs on `pull_request` to `main` and `push` to `main`. It uses `permissions: contents: read`, a `concurrency` group per ref with `cancel-in-progress: true`, `actions/checkout@v4`, `actions/setup-python@v5` with `python-version: '3.12'` and `cache: pip`, installs `requirements-dev.txt` and `auto-runner/central/requirements.txt` with pip, then runs `python -m pytest -q`. First check whether any test launches a real browser (search `tests/` for `sync_playwright`, `.launch(`, `chromium`): if one does, add `python -m playwright install --with-deps chromium` before the tests; if none does, leave it out and say so in the commit message. It sets no secrets and no environment values beyond what the suite needs. Add a test `tests/auto_runner/test_ci_workflow.py` that reads the file as text and asserts those triggers, the Python version, the read-only permissions, the pytest command, and that it contains no `secrets.`. Add a short "Continuous integration" paragraph to `auto-runner/README.md`.
+  *Slice:* 1 A tests check on every PR
+  *Acceptance:* `python -m pytest -q tests/auto_runner/test_ci_workflow.py` passes; the docs check passes; full `python -m pytest -q` green. The pull request the runner opens for this task shows a `tests` check (checked by a person or the Supervisor on the PR; unverified until then).
+
 ## Needs a person (the runner never does these)
 - Push, merge, deploy, or anything outside this repository.
 - Decisions about what the product should do.
