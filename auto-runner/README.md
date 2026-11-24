@@ -164,6 +164,7 @@ Schema v2 sections (objects, every nested key optional, unknown nested keys and 
 | `usage_limit` | `wait` (default false), `max_wait_minutes` (default 360): wait for Claude's usage limit to reset and continue, instead of stopping |
 | `acceptance` | `browser`: `enabled`, `base_url`, `command`, `headless`, `exploratory`, `accounts`: `method` (`seed_command` or `signup`), `seed_command` |
 | `changelog` | `enabled` (default off), `file` (default `CHANGELOG.md`), `versioning` (only `semver`) |
+| `watch` | `poll_seconds` (default 300), `plan_budget_usd` (default 2), `daily_budget_usd` (default 20); read with `autocfg.watch()`. Settings for watch mode, which is still being built (not used by any command yet). The headless planner's instructions are in `docs/planner-prompt.md` (the plan sections of `/auto-runner:auto` step 1) |
 
 Besides `models.implementer`, three sections act: `acceptance.browser` (the browser stage below), `changelog` (the changelog step) and
 `docs.map`/`docs.check` (the docs gate). Each does nothing when the file does not turn it on.

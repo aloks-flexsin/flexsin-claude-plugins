@@ -64,7 +64,7 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Acceptance:* tests in `tests/auto_runner/test_autohook.py` prove block, worktree allowed, `.auto/` allowed, `/auto-runner:allow-edits` opens the escape for that session only and it expires after 12 hours, off by default; the hooks.json test checks the PreToolUse entry; `test_config.py` passes with `enforce_runner: true` loading.
   *Slice:* 2 Opt-in guard
   *Kind:* feature
-- [ ] **H6 Watch settings and planner prompt.** Add a `watch` section (`poll_seconds` 300, `plan_budget_usd` 2, `daily_budget_usd` 20) to `config.schema.json` and `autocfg.SECTIONS`; write `auto-runner/docs/planner-prompt.md` with the plan sections of `/auto-runner:auto` step 1 (Intent, Key decisions, Slices, Journeys, Reuse check, Queue items, Needs a person).
+- [x] **H6 Watch settings and planner prompt.** Add a `watch` section (`poll_seconds` 300, `plan_budget_usd` 2, `daily_budget_usd` 20) to `config.schema.json` and `autocfg.SECTIONS`; write `auto-runner/docs/planner-prompt.md` with the plan sections of `/auto-runner:auto` step 1 (Intent, Key decisions, Slices, Journeys, Reuse check, Queue items, Needs a person).
   *Acceptance:* the schema/defaults sync test passes with `watch`; a config test loads all three keys and refuses an unknown one; a test checks the prompt file names every required section.
   *Slice:* 3 Headless planning
   *Kind:* internal

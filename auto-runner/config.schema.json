@@ -116,6 +116,15 @@
         "stale_after_minutes": {"$ref": "#/$defs/count"}
       }
     },
+    "watch": {
+      "type": "object", "additionalProperties": false,
+      "description": "Watch mode (headless planner and build loop). poll_seconds: sleep between claims when idle (default 300); plan_budget_usd: cost cap of one headless plan (default 2); daily_budget_usd: spend per local day before the watcher pauses until midnight (default 20).",
+      "properties": {
+        "poll_seconds": {"$ref": "#/$defs/count"},
+        "plan_budget_usd": {"$ref": "#/$defs/amount"},
+        "daily_budget_usd": {"$ref": "#/$defs/amount"}
+      }
+    },
     "usage_limit": {
       "type": "object", "additionalProperties": false,
       "description": "When Claude's usage limit stops an item: wait for the reset (up to max_wait_minutes, default 360) and continue, instead of stopping. Off by default.",
