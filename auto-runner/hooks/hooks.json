@@ -1,0 +1,16 @@
+{
+  "description": "auto-runner: remind sessions in projects connected to the central service to plan work with /auto-runner:auto and send it with autotasks.py propose.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/bin/autohook.py\" prompt",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

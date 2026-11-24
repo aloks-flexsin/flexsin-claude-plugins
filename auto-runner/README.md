@@ -281,6 +281,7 @@ such as `₹` never breaks a run on Windows.
 | `bin/autobrowser.py` | Host policy (`check_base_url`), throwaway accounts, `redact` / `scan_diff`, `browser.v1` results and the Layer 1 stage, `finding.v1` and the Layer 2 explorer. |
 | `bin/automail.py` | Stdlib SMTP sink bound to 127.0.0.1; messages stored as JSON under `.auto/run/mail/`. |
 | `bin/autochange.py` | Changelog sentence rules, Keep a Changelog entries, the runner's changelog commit, `release` (SemVer proposal). |
+| `bin/autohook.py` | Claude Code hooks, registered in `hooks/hooks.json`. `prompt` (UserPromptSubmit): in a project whose `.claude/auto.json` has `central.enabled`, prints one line reminding the session to plan new work with `/auto-runner:auto` and send it for approval with `autotasks.py propose`; nothing for other projects, for prompts starting with `/`, or when the config or the hook input cannot be read; always exits 0. Tested with temp projects and a subprocess run; never in a live Claude Code session (unverified). |
 | `bin/autodocs.py` | Doc map, `check` (mapped docs changed, relative links resolve, new symbols documented) and the stale-doc scan (`gate`). |
 
 ## Setup and doctor (unverified: fake installer only)

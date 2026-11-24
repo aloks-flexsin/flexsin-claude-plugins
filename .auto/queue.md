@@ -56,7 +56,7 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Acceptance:* `tests/central/test_tasks_propose.py` (stored as plan_review, then approve works, default still building) and a test in `tests/auto_runner/test_central_tasks.py` with `fake_central.py` showing `propose` makes a task that `list` shows as waiting for approval.
   *Slice:* 1 Prompt routing reminder
   *Kind:* feature
-- [ ] **H4 UserPromptSubmit reminder hook.** Add `auto-runner/hooks/hooks.json` and `bin/autohook.py prompt`: in a project whose `.claude/auto.json` has `central.enabled`, print a one-line reminder that names `/auto-runner:auto` planning and `autotasks.py propose`; print nothing for other projects, prompts starting with `/`, or an unreadable config. Always exit 0.
+- [x] **H4 UserPromptSubmit reminder hook.** Add `auto-runner/hooks/hooks.json` and `bin/autohook.py prompt`: in a project whose `.claude/auto.json` has `central.enabled`, print a one-line reminder that names `/auto-runner:auto` planning and `autotasks.py propose`; print nothing for other projects, prompts starting with `/`, or an unreadable config. Always exit 0.
   *Acceptance:* `tests/auto_runner/test_autohook.py` covers onboarded (text contains `autotasks.py propose`), not onboarded, slash command and broken config; a test loads `hooks.json` and checks each command points at `autohook.py`.
   *Slice:* 1 Prompt routing reminder
   *Kind:* feature
