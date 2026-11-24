@@ -86,6 +86,17 @@ def test_two_people_one_claude_account_gives_two_rows(conn):
     assert pairs(conn, priya['id']) == [('priya', 'bhawish')]
 
 
+def test_surfaces_make_separate_rows_and_unknown_ones_record_nothing(conn):
+    alok = person(conn, 'alok@example.com')
+    a = identities.record(conn, alok['id'], 'alok', 'bhawish', NOW)
+    b = identities.record(conn, alok['id'], 'alok', 'bhawish', NOW, 'cli')
+    assert a and b and a != b
+    assert [r['surface'] for r in identities.of_account(conn, alok['id'])] == ['auto-runner', 'cli']
+    for bad in ('phone', '', None, 'CLI'):
+        assert identities.record(conn, alok['id'], 'alok', 'bhawish', NOW, bad) is None
+    assert count(conn, 'claude_identity') == 2
+
+
 def test_a_repeat_updates_last_seen_only_and_audits_once(conn):
     alok = person(conn, 'alok@example.com')
     first = identities.record(conn, alok['id'], 'alok', 'bhawish', NOW)

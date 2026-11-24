@@ -26,7 +26,7 @@ and an owner, manager or admin answers it there.
 | `ingest.py` | `POST /api/v1/events` |
 | `blockers.py` | Blocker list, blocker page and the answer form |
 | `deliveries.py` | Decisions and the delivery endpoints |
-| `identities.py` | Claude identities (`claude_identity`): the username and Claude account a signed-in person's runners report in `run_start` events; project-token events record nothing; first sighting audited as `identity_seen` (unverified in production) |
+| `identities.py` | Claude identities (`claude_identity`): the username and Claude account a signed-in person's runners report in `run_start` events; project-token events record nothing; first sighting audited as `identity_seen`; each row also has a surface (`auto-runner`, `cli`, `desktop` or `browser`; today every caller records `auto-runner`), and `init_db` rebuilds an older table without `surface` once, copying its rows as `auto-runner` (unverified in production) |
 | `audit.py` | The audit log |
 | `runners.py` | Runner presence: `POST /api/v1/runners/beat`, silent after 2 hours, pause/stop returned; Pause, Resume and Stop on the pages |
 | `cli.py` | `python -m central init-db` and `python -m central create-admin --email X` |

@@ -189,9 +189,10 @@ CREATE TABLE IF NOT EXISTS claude_identity (
     account_id VARCHAR(64) NOT NULL REFERENCES account (id) ON DELETE CASCADE,
     username VARCHAR(64) NOT NULL,
     claude_account VARCHAR(64) NOT NULL,
+    surface VARCHAR(32) NOT NULL,
     first_seen VARCHAR(32) NOT NULL,
     last_seen VARCHAR(32) NOT NULL,
-    UNIQUE (account_id, username, claude_account)
+    UNIQUE (account_id, username, claude_account, surface)
 );
 
 -- Central tasks (decision record 0007, step 4): what each person's runner does next, its plan and its claim.

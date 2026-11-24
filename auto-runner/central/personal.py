@@ -119,7 +119,7 @@ def poll(db, device_code, moment):
         return "expired", None
     raw = create_token(db, account["id"], row["client_name"], moment, commit=False,
                        runner_user=row["runner_user"], claude_account=row["claude_account"])
-    identities.record(db, account["id"], row["runner_user"], row["claude_account"], at)
+    identities.record(db, account["id"], row["runner_user"], row["claude_account"], at, "auto-runner")
     db.commit()
     return "ok", (raw, account)
 

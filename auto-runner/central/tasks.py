@@ -251,7 +251,7 @@ def _note_identity(db, account, runner, moment):
     """A runner named `<user>/<claude account>-claude-auto-runner` reports who it is; record it for the signed-in person."""
     pair = identities.split_runner(runner)
     if pair:
-        identities.record(db, account["id"], pair[0], pair[1], _at(moment))
+        identities.record(db, account["id"], pair[0], pair[1], _at(moment), "auto-runner")
 
 
 def _body():

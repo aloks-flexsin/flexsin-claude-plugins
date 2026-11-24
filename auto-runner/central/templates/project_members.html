@@ -40,7 +40,7 @@
     {% for m in members %}
     <div class="list-row">
       {{ ui.person(m.email, None, m.email) }}
-      <span class="muted small claude-accounts">{% set ids = team.by_account.get(m.account_id, []) %}{% if ids %}Claude accounts: {% for i in ids %}<code>{{ i.claude_account }}</code>{% if i.shared %} <span class="chip tone-attention">shared</span>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}no Claude account reported{% endif %}</span>
+      <span class="muted small claude-accounts">{% set ids = team.by_account.get(m.account_id, []) %}{% if ids %}Claude accounts: {% for i in ids %}<code>{{ i.claude_account }}</code>{% if i.shared %} <span class="chip tone-attention">shared</span>{% endif %} <span class="surface">({{ i.surface }})</span>{% if not loop.last %}, {% endif %}{% endfor %}{% else %}no Claude account reported{% endif %}</span>
       <span class="muted nowrap grow-sm">{% if m.disabled %}<span class="chip tone-neutral"><span class="mark square" aria-hidden="true"></span>Disabled</span>{% elif m.last_active %}active {{ ui.when(m.last_active) }}{% else %}not active recently{% endif %}</span>
       {% if can_manage %}
       <form method="post" action="{{ url_for('projects.member_role', slug=project.slug, account_id=m.account_id) }}" class="inline role-form">

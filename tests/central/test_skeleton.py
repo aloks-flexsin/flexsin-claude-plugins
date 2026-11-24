@@ -25,6 +25,49 @@ def test_schema_applies_twice_and_creates_all_tables(db_url):
     assert set(db.TABLES) <= _tables(db_url)
 
 
+OLD_IDENTITY = """CREATE TABLE claude_identity (
+    id VARCHAR(64) PRIMARY KEY,
+    account_id VARCHAR(64) NOT NULL REFERENCES account (id) ON DELETE CASCADE,
+    username VARCHAR(64) NOT NULL,
+    claude_account VARCHAR(64) NOT NULL,
+    first_seen VARCHAR(32) NOT NULL,
+    last_seen VARCHAR(32) NOT NULL,
+    UNIQUE (account_id, username, claude_account)
+)"""
+
+
+def test_init_db_rebuilds_an_old_claude_identity_table_once(db_url):
+    db.init_db(db_url)
+    conn = db.connect(db_url)
+    conn.execute("INSERT INTO account (id, email, password_hash, created_at) VALUES ('a1', 'a@example.com', 'x', 't')")
+    conn.execute("DROP TABLE claude_identity")
+    conn.execute(OLD_IDENTITY)
+    conn.execute("INSERT INTO claude_identity VALUES ('i1', 'a1', 'alok', 'bhawish', 't1', 't2')")
+    conn.commit()
+    conn.close()
+
+    assert db.init_db(db_url) == []                  # a rebuild is not a COLUMNS_ADDED column
+    conn = db.connect(db_url)
+    try:
+        rows = conn.query("SELECT * FROM claude_identity")
+        assert [(r['id'], r['username'], r['claude_account'], r['surface'], r['first_seen'], r['last_seen'])
+                for r in rows] == [('i1', 'alok', 'bhawish', 'auto-runner', 't1', 't2')]
+        assert 'claude_identity_new' not in _tables(db_url)
+        conn.execute("INSERT INTO claude_identity VALUES ('i2', 'a1', 'alok', 'bhawish', 'cli', 't', 't')")
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("INSERT INTO claude_identity VALUES ('i3', 'a1', 'alok', 'bhawish', 'cli', 't', 't')")
+        conn.rollback()
+    finally:
+        conn.close()
+
+    db.init_db(db_url)                               # second run changes nothing
+    conn = db.connect(db_url)
+    try:
+        assert [r['id'] for r in conn.query("SELECT id FROM claude_identity ORDER BY id")] == ['i1']
+    finally:
+        conn.close()
+
+
 def test_row_with_missing_foreign_key_is_refused(db_url):
     db.init_db(db_url)
     conn = db.connect(db_url)
