@@ -180,6 +180,91 @@
     });
   }
 
+  /* Screenshots: a form with data-paste-images takes pasted or dropped images into its file input (through
+     DataTransfer, so the normal multipart post sends them) and lists the chosen files. Without this file the plain
+     file input still works. */
+  var IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+  function shotInput(form) { return form.querySelector('input[type="file"][name="file"]'); }
+  function sizeText(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB"; }
+  function listShots(form) {
+    var input = shotInput(form);
+    if (!input) return;
+    var list = form.querySelector(".picked-files");
+    if (!list) {
+      list = document.createElement("ul");
+      list.className = "picked-files";
+      list.setAttribute("aria-live", "polite");
+      input.insertAdjacentElement("afterend", list);
+    }
+    list.textContent = "";
+    var total = 0, max = parseInt(form.getAttribute("data-max-bytes") || "0", 10);
+    Array.prototype.forEach.call(input.files || [], function (f) {
+      total += f.size;
+      var li = document.createElement("li");
+      li.textContent = f.name + " (" + sizeText(f.size) + ")";
+      list.appendChild(li);
+    });
+    if (max && total > max) {
+      var warn = document.createElement("li");
+      warn.className = "picked-warn";
+      warn.textContent = "Together these are " + sizeText(total) + ", over the " + sizeText(max) + " one form can send. Remove some first.";
+      list.appendChild(warn);
+    }
+  }
+  function addShots(form, files) {
+    var input = shotInput(form);
+    if (!input || typeof DataTransfer === "undefined") return false;
+    var images = Array.prototype.filter.call(files || [], function (f) { return IMAGE_TYPES.indexOf(f.type) !== -1; });
+    if (!images.length) return false;
+    var dt = new DataTransfer();
+    Array.prototype.forEach.call(input.files || [], function (f) { dt.items.add(f); });
+    images.forEach(function (f, i) {
+      if (!f.name || /^image\.\w+$/.test(f.name)) {             /* pasted images all arrive as "image.png" */
+        var ext = f.type.split("/")[1].replace("jpeg", "jpg");
+        f = new File([f], "pasted-" + (dt.items.length + 1) + "." + ext, { type: f.type });
+      }
+      dt.items.add(f);
+    });
+    try { input.files = dt.files; } catch (err) { return false; }
+    listShots(form);
+    return true;
+  }
+  function pasteForm(target) {
+    var f = target && target.closest ? target.closest("form[data-paste-images]") : null;
+    if (f) return f;
+    var all = document.querySelectorAll("form[data-paste-images]");
+    return all.length === 1 ? all[0] : null;                      /* one form on the page: a paste anywhere goes there */
+  }
+  document.addEventListener("paste", function (e) {
+    var form = pasteForm(e.target);
+    if (!form || !e.clipboardData) return;
+    if (addShots(form, e.clipboardData.files)) e.preventDefault();  /* text pastes are left alone */
+  });
+  document.addEventListener("change", function (e) {
+    var t = e.target;
+    if (t.form && t.form.hasAttribute("data-paste-images") && t === shotInput(t.form)) listShots(t.form);
+  });
+  document.addEventListener("dragover", function (e) {
+    var form = e.target.closest && e.target.closest("form[data-paste-images]");
+    if (!form || !e.dataTransfer || Array.prototype.indexOf.call(e.dataTransfer.types || [], "Files") === -1) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    form.classList.add("drop-over");
+  });
+  document.addEventListener("dragleave", function (e) {
+    var form = e.target.closest && e.target.closest("form[data-paste-images]");
+    if (form && !form.contains(e.relatedTarget)) form.classList.remove("drop-over");
+  });
+  document.addEventListener("drop", function (e) {
+    var form = e.target.closest && e.target.closest("form[data-paste-images]");
+    if (!form || !e.dataTransfer) return;
+    form.classList.remove("drop-over");
+    if (e.dataTransfer.files && e.dataTransfer.files.length) {
+      e.preventDefault();                                            /* never let the browser navigate to the image */
+      addShots(form, e.dataTransfer.files);
+    }
+  });
+
   /* Auto-refresh: <body data-refresh="30"> reloads while the tab is visible and nobody is typing or deciding. */
   var every = parseInt(document.body.getAttribute("data-refresh") || "0", 10);
   if (every > 0) {

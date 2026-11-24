@@ -121,6 +121,9 @@ bar tells you when something waits on you (see Notifications).
 - Run `/auto-runner:auto` again: an approved task is built on its own branch and pull request, and shows **done** with the
   PR when the run finishes.
 - A task you type in the terminal (`/auto-runner:auto <task>`) is approved there as before and recorded on the page too.
+- **Screenshots** added to a task (on its page, or while adding it) reach your runner: `/auto-runner:auto` downloads them
+  to `.auto/run/tasks/<N>/attachments/` when it takes the task and looks at them before planning or building. Each is
+  downloaded once. Watch mode does not fetch them yet. (Unverified until used on the live service.)
 - **Claims:** a task a runner works on shows its runner, so nobody else's runner takes it. A runner silent for 2 hours
   loses its claim. An admin can release a claim or give the task to someone else; the old runner stops that task at its
   next step.

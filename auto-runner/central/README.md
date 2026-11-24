@@ -31,6 +31,7 @@ and an owner, manager or admin answers it there.
 | `runners.py` | Runner presence: `POST /api/v1/runners/beat`, silent after 2 hours, pause/stop returned; Pause, Resume and Stop on the pages |
 | `notifications.py` | In-app notifications: `notify` (members only, no duplicates), `resolve`, `unread_count`, `for_account`, `delivery`, `recent`; the Notifications page, open and read-all (the admins' log is in `admin.py`) |
 | `push.py` | Browser push subscriptions: `POST /push/subscribe`, `POST /push/unsubscribe`, the Account page's push section |
+| `attachments.py` | Task screenshots (`task_attachment`): `add`, `for_task`, `get`, `delete`; upload, view and delete routes; the 4 MB request cap and its 413 page |
 | `cli.py` | `python -m central init-db` and `python -m central create-admin --email X` |
 | `api/index.py`, `vercel.json` | Vercel entry point; every route is rewritten to it |
 | `templates/`, `static/style.css` | The pages (`base.html` holds the top bar) and their one stylesheet, served by Flask at `/static/style.css` because the CSP allows only same-origin styles; no inline styles or scripts |
@@ -127,6 +128,42 @@ may not stick over plain http. The API endpoints do not use the cookie.
   `.../heartbeat` (`{claim}`), `.../report` (`{claim, result: done|stopped, branch, pr_url, note}`). 409 = this runner no
   longer holds the task.
 - Table `project_task` (init-db creates it).
+
+## Task screenshots (`attachments.py`)
+
+- Images attached to a task, stored in the database (table `task_attachment`, data as `BYTEA`; init-db adds the table to
+  an existing database). Only **PNG, JPEG, GIF and WebP** are kept, recognised by their first bytes (never by the name or
+  the type the browser sends); at most **4 MB** each and **10 per task**. The name is kept as shown (last path part only).
+- `POST /projects/<slug>/tasks/<N>/attachments` (multipart `file`, one or more; members except viewers, so developer and
+  up; CSRF as every form): each good image is stored and audited (`task.attachment.add`); refused files are named with the
+  reason on the task page (status 400) while the good ones are kept. Viewers get 403, non-members 404.
+- `GET /projects/<slug>/tasks/<N>/attachments/<id>` (any member): the bytes with the stored content type,
+  `X-Content-Type-Options: nosniff`, `Content-Disposition: inline` and `Cache-Control: private`.
+- `POST .../attachments/<id>/delete`: the uploader or an admin, after a confirm step; audited (`task.attachment.delete`).
+- **For the runner** (task API, personal tokens of a developer or above, the project named as for every call):
+  `GET /api/v1/tasks/<N>` lists `attachments` (`id`, `filename`, `content_type`, `size`; no bytes), and
+  `GET /api/v1/tasks/<N>/attachments/<id>` returns the bytes with the same headers as the page route. A project token gets
+  403, a screenshot of another project's task (or an unknown id) 404. `autotasks.py next` downloads them (see the plugin
+  README). Unverified until used against the live service.
+- **Every request is capped at 4 MB** (`MAX_CONTENT_LENGTH`): a larger one gets 413 with a page (JSON under `/api/`)
+  that names the limit. So one upload request carries at most 4 MB of files in total.
+- The task page has a **Screenshots** section: a thumbnail of each image (the image itself, sized by CSS in
+  `static/style.css`) linking to the full image, its filename, uploader and time, and a delete button under "⋯" for the
+  uploader and admins (confirm step). Members except viewers get an upload form (`multipart/form-data`, `multiple`,
+  `accept` limited to the four types) with the limits in words; viewers see the screenshots but no form. A refused file
+  shows the reason above the page, which stays usable.
+- **While adding a task**: the New task form (`multipart/form-data`) has the same file input for members except viewers.
+  `tasks.task_add` creates the task first, then stores the files (`attachments.store_files`, audited as above), so a
+  refused file never loses the task. The browser is sent on to the task page with the refusals in `?refused=`, signed
+  with `SECRET_KEY` and bound to that task (itsdangerous, which ships with Flask), and the page names each refused file
+  and why; a tampered value or one from another task shows nothing. The 4 MB request cap covers the whole form.
+- **Paste and drag-and-drop** (`static/app.js`): forms with `data-paste-images` (the New task form and the task page's
+  upload form) take pasted or dropped PNG/JPEG/GIF/WebP images into their file input through `DataTransfer` (pasted
+  images are named `pasted-<n>.<ext>`), list the chosen files with their sizes, and warn when together they are over
+  `data-max-bytes`. Text pastes are left alone; on a page with one such form a paste anywhere goes to it. Without
+  JavaScript the plain file input still works. The browser behaviour is unverified until tried live (tests check the
+  HTML and that the handlers exist).
+- Postgres storage is unverified until used live (tests run on SQLite).
 
 ## Runner presence (decision record 0009; `runners.py`)
 

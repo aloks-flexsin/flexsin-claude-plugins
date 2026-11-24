@@ -119,25 +119,45 @@ class FakeRunners:
 class FakeTasks:
     """In-memory fake of the central task API (personal token) for the planner and watch tests: a `send` for
     autodeliver.HttpTransport that answers GET /api/v1/tasks/N and POST /api/v1/tasks/N/plan (the claim must match;
-    the task then waits in plan_review). `posted` keeps every plan the runner posted."""
+    the task then waits in plan_review), POST /api/v1/tasks/next, and a task's screenshots (`attach()`; listed in
+    GET /api/v1/tasks/N, bytes from GET /api/v1/tasks/N/attachments/<id>). `posted` keeps every plan the runner posted,
+    `downloads` every screenshot it fetched."""
 
     def __init__(self):
         self.tasks = {}                           # number -> task dict (number, title, description, comment, status, claim)
         self.posted = []
+        self.files = {}                           # (number, attachment id) -> bytes; listed in GET /api/v1/tasks/N
+        self.downloads = []                       # (number, attachment id) of every screenshot the runner fetched
 
     def add(self, number, title, description='', comment='', claim='claim-1'):
         self.tasks[number] = {'number': number, 'title': title, 'description': description, 'comment': comment,
-                              'status': 'planning', 'plan': '', 'items': '', 'claim': claim}
+                              'status': 'planning', 'plan': '', 'items': '', 'claim': claim, 'attachments': []}
         return self.tasks[number]
+
+    def attach(self, number, attachment_id, filename, data, content_type='image/png'):
+        """A person adds a screenshot to task `number` on the page."""
+        self.tasks[number]['attachments'].append({'id': attachment_id, 'filename': filename,
+                                                  'content_type': content_type, 'size': len(data)})
+        self.files[(number, attachment_id)] = data
 
     @staticmethod
     def _reply(status, data):
         return status, json.dumps(data).encode('utf-8')
 
     def send(self, method, url, headers, body, timeout):
-        if urlparse(url).path == '/api/v1/tasks':
+        path = urlparse(url).path
+        if path == '/api/v1/tasks':
             return self._collection(method, body)
-        m = re.fullmatch(r'/api/v1/tasks/(\d+)(/plan)?', urlparse(url).path)
+        if path == '/api/v1/tasks/next' and method == 'POST':
+            return self._next()
+        m = re.fullmatch(r'/api/v1/tasks/(\d+)/attachments/([^/]+)', path)
+        if m and method == 'GET':
+            key = (int(m.group(1)), m.group(2))
+            if key not in self.files:
+                return self._reply(404, {'error': 'no such screenshot'})
+            self.downloads.append(key)
+            return 200, self.files[key]
+        m = re.fullmatch(r'/api/v1/tasks/(\d+)(/plan)?', path)
         task = self.tasks.get(int(m.group(1))) if m else None
         if task is None:
             return self._reply(404, {'error': 'no such task'})
@@ -152,6 +172,16 @@ class FakeTasks:
             self.posted.append({'number': task['number'], 'plan': data['plan'], 'items': data['items']})
             return self._reply(200, {'task': {k: v for k, v in task.items() if k != 'claim'}})
         return self._reply(405, {'error': 'not allowed'})
+
+    def _next(self):
+        """POST /api/v1/tasks/next: the oldest planning task, claimed again (the service's reply carries no screenshots;
+        the runner lists them with GET /api/v1/tasks/N)."""
+        for number in sorted(self.tasks):
+            task = self.tasks[number]
+            if task['status'] == 'planning':
+                public = {k: v for k, v in task.items() if k not in ('claim', 'attachments')}
+                return self._reply(200, {'task': public, 'claim': task['claim'], 'action': 'plan'})
+        return self._reply(200, {'task': None})
 
     def _collection(self, method, body):
         """GET /api/v1/tasks lists every task; POST /api/v1/tasks records one as the service does (building, or

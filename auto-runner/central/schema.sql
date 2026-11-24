@@ -221,6 +221,20 @@ CREATE TABLE IF NOT EXISTS project_task (
     UNIQUE (project_id, number)
 );
 
+-- Task screenshots (attachments.py): PNG, JPEG, GIF or WebP images of a central task, at most 4 MB each and 10 per
+-- task. `content_type` is read from the image's first bytes; `account_id` is the uploader.
+CREATE TABLE IF NOT EXISTS task_attachment (
+    id VARCHAR(64) PRIMARY KEY,
+    project_id VARCHAR(64) NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    task_number INTEGER NOT NULL,
+    account_id VARCHAR(64) REFERENCES account (id) ON DELETE SET NULL,
+    filename VARCHAR(200) NOT NULL,
+    content_type VARCHAR(32) NOT NULL,
+    size INTEGER NOT NULL,
+    data BYTEA NOT NULL,
+    created_at VARCHAR(32) NOT NULL
+);
+
 -- Runner presence (decision record 0009): one row per runner label in a project, owned by the account that first sent
 -- a beat for it. `control` is what a person asked the runner to do (NULL, 'pause' or 'stop'); each beat returns it.
 CREATE TABLE IF NOT EXISTS runner (

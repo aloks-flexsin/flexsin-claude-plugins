@@ -3,6 +3,8 @@ Central tasks from the plugin's side (decision record 0007, step 4). Needs the c
 (sign in with /auto-runner:central): a task is someone's, and the service knows whose from the token.
 
     python autotasks.py next   [--project DIR]                      # claim my next task; print what to do (plan or build)
+                                                                    # and download its screenshots (paths printed under
+                                                                    # "Screenshots", in .auto/run/tasks/<N>/attachments/)
     python autotasks.py plan N --plan FILE --items FILE [--project DIR]   # post the plan of task N; it waits for approval
     python autotasks.py start N [--project DIR]                     # an approved task N -> .auto/pending/task-N-<brief>/
     python autotasks.py record --slug SLUG --title T --plan FILE --items FILE [--project DIR]
@@ -98,6 +100,55 @@ def take_next(project, env=None, send=None):
         _save(_auto(project) / CLAIMS / f'{task["number"]}.json',
               {'number': task['number'], 'claim': reply['claim'], 'title': task['title'], 'action': reply.get('action')})
     return reply
+
+
+SAFE_CHARS = re.compile(r'[^A-Za-z0-9._-]')
+
+
+def attachment_name(attachment_id, filename):
+    """The local name of a screenshot: `<id>-<basename>`, every character outside letters, digits, `.`, `-` and `_`
+    replaced by `_`, so it never leaves the folder (no `/` or `\\`, never `.` or `..`) and two screenshots of the same
+    name do not collide. None when the id has nothing but dots and underscores."""
+    safe_id = SAFE_CHARS.sub('_', str(attachment_id or ''))
+    if not safe_id.strip('._'):
+        return None
+    base = str(filename or '').replace('\\', '/').rsplit('/', 1)[-1]
+    return f'{safe_id}-{SAFE_CHARS.sub("_", base) or "screenshot"}'
+
+
+def attachments_dir(project, number):
+    return _auto(project) / CLAIMS / str(int(number)) / 'attachments'
+
+
+def fetch_attachments(project, number, env=None, send=None):
+    """Download task N's screenshots to `.auto/run/tasks/<N>/attachments/<id>-<basename>` -> (paths, problems).
+    A file already there is not downloaded again; a failed download is named in `problems` and never stops `next`."""
+    t = transport(project, env, send)
+    listed = _call(t, 'GET', f'/api/v1/tasks/{int(number)}')['task'].get('attachments') or []
+    folder = attachments_dir(project, number)
+    paths, problems = [], []
+    for item in listed:
+        name = attachment_name(item.get('id') if isinstance(item, dict) else None,
+                               item.get('filename') if isinstance(item, dict) else None)
+        if name is None:
+            problems.append('a screenshot without an id was skipped')
+            continue
+        path = folder / name
+        if path.resolve().parent != folder.resolve():   # cannot happen with attachment_name; never write outside
+            problems.append(f'{name}: skipped, not inside the attachments folder')
+            continue
+        if not path.exists():
+            try:
+                data = t.fetch(f'/api/v1/tasks/{int(number)}/attachments/{SAFE_CHARS.sub("_", str(item["id"]))}')
+            except (RuntimeError, ConnectionError) as e:   # TransportRefused / TransportUnavailable
+                problems.append(f'{item.get("filename") or name}: could not download ({e})')
+                continue
+            folder.mkdir(parents=True, exist_ok=True)
+            partial = folder / f'.{name}.part'          # a half-written file is never taken as downloaded
+            partial.write_bytes(data)
+            partial.replace(path)
+        paths.append(path)
+    return paths, problems
 
 
 def post_plan(project, number, plan_text, items_text, env=None, send=None):
@@ -262,6 +313,17 @@ def main(argv=None):
             for key in ('description', 'comment', 'plan', 'items'):
                 if task.get(key):
                     print(f'--- {key} ---\n{task[key]}\n')
+            try:
+                paths, problems = fetch_attachments(a.project, task['number'])
+            except (TaskError, autodeliver.TransportUnavailable, OSError) as e:
+                paths, problems = [], [f'could not list them ({e})']
+            if paths or problems:
+                print('--- Screenshots ---')
+                for p in paths:
+                    print(p)
+                for p in problems:
+                    print(f'Not downloaded: {p}')
+                print()
         elif a.cmd == 'plan':
             task = post_plan(a.project, a.number, read(a.plan), read(a.items))
             print(f'Task {task["number"]}: the plan waits for approval on the central page (Tasks).')

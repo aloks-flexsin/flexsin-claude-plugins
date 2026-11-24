@@ -75,6 +75,48 @@
     <section class="card note-card"><h3>Changes asked for</h3><p>{{ task.decision_comment }}</p></section>
     {% endif %}
 
+    <section class="card shots" id="screenshots">
+      <h3>Screenshots {% if shots %}<span class="muted">· {{ shots | length }} of {{ shot_limits.count }}</span>{% endif %}</h3>
+      {% if shots %}
+      <ul class="shot-grid">
+        {% for a in shots %}
+        {% set src = url_for('attachments.attachment_get', slug=project.slug, number=task.number, attachment_id=a.id) %}
+        <li class="shot">
+          <a href="{{ src }}" class="shot-link" target="_blank" rel="noopener"><img src="{{ src }}" alt="{{ a.filename }}" loading="lazy"></a>
+          <div class="shot-meta">
+            <div class="grow">
+              <a href="{{ src }}" class="shot-name" target="_blank" rel="noopener">{{ a.filename }}</a>
+              <div class="muted small">{{ (a.uploader_email | display_name) if a.uploader_email else "unknown" }} · {{ ui.when(a.created_at) }}</div>
+            </div>
+            {% if a.can_delete %}
+            <details class="pop row-menu">
+              <summary class="btn" aria-label="More for {{ a.filename }}">⋯</summary>
+              <div class="pop-body">
+                <form method="post" action="{{ url_for('attachments.attachment_delete', slug=project.slug, number=task.number, attachment_id=a.id) }}" data-confirm="Delete the screenshot {{ a.filename }}?" data-confirm-detail="It is removed from task #{{ task.number }} for everyone. This cannot be undone." data-confirm-action="Delete screenshot">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn danger">Delete screenshot</button>
+                </form>
+              </div>
+            </details>
+            {% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">No screenshots yet.</p>
+      {% endif %}
+      {% if can_upload %}
+      <form method="post" action="{{ url_for('attachments.attachment_upload', slug=project.slug, number=task.number) }}" enctype="multipart/form-data" class="shot-upload" data-paste-images data-max-bytes="{{ shot_limits.bytes }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="shot-file">Add screenshots</label>
+        <input id="shot-file" type="file" name="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple required>
+        <button type="submit" class="btn">Upload</button>
+        <p class="muted small">PNG, JPEG, GIF or WebP; at most {{ shot_limits.size }} per upload (all files together) and {{ shot_limits.count }} screenshots per task. You can also paste or drop images here.</p>
+      </form>
+      {% endif %}
+    </section>
+
     {% if task.plan %}
     <section class="card"><h3>Plan</h3><div class="md">{{ task.plan | md }}</div></section>
     {% endif %}

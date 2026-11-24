@@ -11,6 +11,7 @@ TABLES = (
     "account", "session", "project", "member", "token", "event", "task",
     "plan", "blocker", "decision", "delivery", "issue", "audit", "invite", "device_login", "personal_token",
     "project_task", "claude_identity", "runner", "notification", "push_subscription",
+    "task_attachment",
 )
 
 # Columns added to a table after it first shipped: (table, column, type). init_db adds each one that is missing
