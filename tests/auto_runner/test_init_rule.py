@@ -111,7 +111,8 @@ def test_remove_restores_the_file_byte_for_byte(tmp_path):
 def test_remove_keeps_an_edited_section(tmp_path):
     p = with_claude_md(tmp_path)
     ai.apply(plan(p))
-    edited = (p / 'CLAUDE.md').read_text(encoding='utf-8', newline='').replace('Do not build', 'Please do not build')
+    with open(p / 'CLAUDE.md', encoding='utf-8', newline='') as f:   # Path.read_text(newline=) needs Python 3.13
+        edited = f.read().replace('Do not build', 'Please do not build')
     (p / 'CLAUDE.md').write_bytes(edited.encode('utf-8'))
     actions, _ = ai.remove_plan(p)
     assert ('keep', 'the routing rule in CLAUDE.md') in actions
