@@ -22,11 +22,11 @@
       <td>{% if t.revoked_at %}<span class="badge off">revoked {{ t.revoked_at }}</span>{% else %}<span class="badge ok">active</span>{% endif %}</td>
       <td>
         {% if not t.revoked_at %}
-        <form method="post" action="{{ url_for('projects.token_rotate', slug=project.slug, token_id=t.id) }}">
+        <form method="post" action="{{ url_for('projects.token_rotate', slug=project.slug, token_id=t.id) }}" data-confirm="Replace the machine token {{ t.prefix }}…?" data-confirm-detail="A new token is shown once; the old one stops working at once, so every runner using it must get the new one." data-confirm-action="Replace token">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit">Rotate</button>
         </form>
-        <form method="post" action="{{ url_for('projects.token_revoke', slug=project.slug, token_id=t.id) }}">
+        <form method="post" action="{{ url_for('projects.token_revoke', slug=project.slug, token_id=t.id) }}" data-confirm="Revoke the machine token {{ t.prefix }}…?" data-confirm-detail="Every runner using it is refused from its next call. This cannot be undone; make a new token if it is still needed." data-confirm-action="Revoke token">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="danger">Revoke</button>
         </form>

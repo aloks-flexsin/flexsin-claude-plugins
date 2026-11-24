@@ -31,8 +31,9 @@ def create_app(config=None):
 
     app.teardown_appcontext(db.close_db)
 
-    from . import access, admin, auth, blockers, deliveries, ingest, invites, mywork, personal, runs, tasks
+    from . import access, admin, auth, blockers, deliveries, ingest, invites, mywork, personal, runs, tasks, ui
     auth.init_app(app)
+    ui.init_app(app)
     app.register_blueprint(admin.bp)
     app.register_blueprint(access.bp)
     app.register_blueprint(ingest.bp)

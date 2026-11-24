@@ -183,13 +183,13 @@ def test_revoked_on_my_tokens_and_by_an_admin(app, world, conn, clock, signed_in
     page = manager.get('/account/tokens').get_data(as_text=True)
     assert 'ALOK-LAPTOP' in page and signed_in_token not in page
     [row] = conn.query('SELECT id FROM personal_token')
-    assert post(manager, '/account/tokens/%s/revoke' % row['id']).status_code == 302
+    assert post(manager, '/account/tokens/%s/revoke' % row['id'], confirm='1').status_code == 302
     assert api(app, 'GET', '/api/v1/project?project=alpha', signed_in_token).status_code == 401
-    assert post(world['clients']['viewer'], '/account/tokens/%s/revoke' % row['id']).status_code == 404   # not theirs
+    assert post(world['clients']['viewer'], '/account/tokens/%s/revoke' % row['id'], confirm='1').status_code == 404   # not theirs
     s = start(app)
     approve(manager, s['user_code'])
     second = poll(app, clock, s['device_code']).get_json()['token']
-    assert post(world['clients']['admin'], '/admin/accounts/%s/tokens/revoke' % world['accounts']['manager']['id']).status_code == 302
+    assert post(world['clients']['admin'], '/admin/accounts/%s/tokens/revoke' % world['accounts']['manager']['id'], confirm='1').status_code == 302
     assert api(app, 'GET', '/api/v1/project?project=alpha', second).status_code == 401
 
 

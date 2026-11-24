@@ -262,7 +262,8 @@ def test_audit_rows_for_success_and_failure_never_hold_the_password(client, conn
 def test_security_headers_on_the_signin_page(client):
     resp = client.get('/signin')
     assert "frame-ancestors 'none'" in resp.headers['Content-Security-Policy']
-    assert 'style=' not in resp.get_data(as_text=True) and '<script' not in resp.get_data(as_text=True)
+    page = resp.get_data(as_text=True)
+    assert 'style=' not in page and all(' src=' in tag for tag in __import__('re').findall(r'<script\b[^>]*>', page))
 
 
 def test_healthz_still_works_without_a_session(client):

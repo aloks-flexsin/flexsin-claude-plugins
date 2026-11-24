@@ -20,7 +20,7 @@
       <td><span class="badge">{{ a.role }}</span></td>
       <td><span class="badge {{ 'off' if a.disabled else 'ok' }}">{{ "disabled" if a.disabled else "enabled" }}</span>{% if a.pending %} <span class="badge warn">invited</span>{% endif %}</td>
       <td>
-        <form method="post" action="{{ url_for('admin.account_disabled', account_id=a.id) }}">
+        <form method="post" action="{{ url_for('admin.account_disabled', account_id=a.id) }}"{% if not a.disabled %} data-confirm="Disable {{ a.email }}?" data-confirm-detail="They are signed out everywhere, their tokens stop working and their runners stop at their next step. You can enable the account again later." data-confirm-action="Disable"{% endif %}>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="disabled" value="{{ '0' if a.disabled else '1' }}">
           <button type="submit">{{ "Enable" if a.disabled else "Disable" }}</button>
@@ -36,7 +36,7 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit">{{ "New invite link" if a.pending else "Send reset link" }}</button>
         </form>
-        <form method="post" action="{{ url_for('admin.account_tokens_revoke', account_id=a.id) }}">
+        <form method="post" action="{{ url_for('admin.account_tokens_revoke', account_id=a.id) }}" data-confirm="Revoke every token of {{ a.email }}?" data-confirm-detail="Each computer they signed in from stops working at once; they sign in again from Claude to get a new one." data-confirm-action="Revoke tokens">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="danger">Revoke tokens</button>
         </form>

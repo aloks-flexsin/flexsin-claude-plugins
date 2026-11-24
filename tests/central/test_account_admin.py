@@ -143,7 +143,7 @@ def test_add_refuses_bad_input(conn, as_root, data):
 
 
 def test_disabled_account_cannot_sign_in_and_loses_its_sessions(app, conn, as_root, as_bob, bob, root):
-    assert post(as_root, '/admin/accounts/%s/disabled' % bob['id'], disabled='1').status_code == 302
+    assert post(as_root, '/admin/accounts/%s/disabled' % bob['id'], disabled='1', confirm='1').status_code == 302
     assert accounts.get(conn, bob['id'])['disabled'] == 1
     assert conn.query('SELECT * FROM session WHERE account_id = ?', (bob['id'],)) == []
     assert as_bob.get('/').status_code == 302
@@ -167,7 +167,7 @@ def test_change_role_is_audited_and_takes_effect(conn, as_root, as_bob, bob):
 
 
 def test_last_enabled_admin_cannot_be_disabled_or_demoted(conn, as_root, root, bob):
-    resp = post(as_root, '/admin/accounts/%s/disabled' % root['id'], disabled='1')
+    resp = post(as_root, '/admin/accounts/%s/disabled' % root['id'], disabled='1', confirm='1')
     assert resp.status_code == 400 and 'last enabled admin' in resp.get_data(as_text=True)
     resp = post(as_root, '/admin/accounts/%s/role' % root['id'], role='user')
     assert resp.status_code == 400

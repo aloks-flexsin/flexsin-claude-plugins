@@ -159,8 +159,8 @@ def test_a_token_of_another_project_is_404(world, conn):
     _, _ = create_token(world['clients']['stranger'], slug='beta')
     beta_token = conn.query_one('SELECT id FROM token')['id']
     owner = world['clients']['owner']
-    assert post(owner, '/projects/alpha/tokens/%s/revoke' % beta_token).status_code == 404
-    assert post(owner, '/projects/alpha/tokens/%s/rotate' % beta_token).status_code == 404
+    assert post(owner, '/projects/alpha/tokens/%s/revoke' % beta_token, confirm='1').status_code == 404
+    assert post(owner, '/projects/alpha/tokens/%s/rotate' % beta_token, confirm='1').status_code == 404
     assert conn.query_one('SELECT revoked_at FROM token')['revoked_at'] is None
 
 
@@ -178,11 +178,11 @@ def test_revoke_stops_the_token(world, conn):
     raw, _ = create_token(owner)
     assert api(world['app'], '/api/test/ingest', raw).status_code == 200
     token_id = conn.query_one('SELECT id FROM token')['id']
-    resp = post(owner, '/projects/alpha/tokens/%s/revoke' % token_id)
+    resp = post(owner, '/projects/alpha/tokens/%s/revoke' % token_id, confirm='1')
     assert resp.status_code == 302
     assert conn.query_one('SELECT revoked_at FROM token')['revoked_at'] == '2026-10-31T09:00:00Z'
     assert api(world['app'], '/api/test/ingest', raw).status_code == 401
-    again = post(owner, '/projects/alpha/tokens/%s/revoke' % token_id)
+    again = post(owner, '/projects/alpha/tokens/%s/revoke' % token_id, confirm='1')
     assert again.status_code == 400
     assert audit.rows(conn, 'token.revoke.refused')
 
@@ -191,7 +191,7 @@ def test_rotate_gives_a_new_token_and_revokes_the_old(world, conn):
     manager = world['clients']['manager']
     old_raw, _ = create_token(manager, scopes=('pull',))
     old_id = conn.query_one('SELECT id FROM token')['id']
-    resp = post(manager, '/projects/alpha/tokens/%s/rotate' % old_id)
+    resp = post(manager, '/projects/alpha/tokens/%s/rotate' % old_id, confirm='1')
     assert resp.status_code == 201
     new_raw = TOKEN_RE.search(resp.get_data(as_text=True)).group(1)
     assert new_raw != old_raw
@@ -204,7 +204,7 @@ def test_rotate_gives_a_new_token_and_revokes_the_old(world, conn):
     assert api(world['app'], '/api/test/pull', new_raw).status_code == 200
     assert new_raw not in everything_stored(conn)
     # A revoked token cannot be rotated.
-    assert post(manager, '/projects/alpha/tokens/%s/rotate' % old_id).status_code == 400
+    assert post(manager, '/projects/alpha/tokens/%s/rotate' % old_id, confirm='1').status_code == 400
     assert len(conn.query('SELECT id FROM token')) == 2
 
 
@@ -263,10 +263,10 @@ def test_every_action_is_audited_without_the_token(world, conn):
     owner = world['clients']['owner']
     raw, _ = create_token(owner, scopes=('ingest', 'pull'))
     token_id = conn.query_one('SELECT id FROM token')['id']
-    rotated = post(owner, '/projects/alpha/tokens/%s/rotate' % token_id)
+    rotated = post(owner, '/projects/alpha/tokens/%s/rotate' % token_id, confirm='1')
     new_raw = TOKEN_RE.search(rotated.get_data(as_text=True)).group(1)
     new_id = conn.query_one('SELECT id FROM token WHERE revoked_at IS NULL')['id']
-    post(owner, '/projects/alpha/tokens/%s/revoke' % new_id)
+    post(owner, '/projects/alpha/tokens/%s/revoke' % new_id, confirm='1')
 
     created = audit.rows(conn, 'token.create')
     assert len(created) == 1

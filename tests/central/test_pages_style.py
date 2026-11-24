@@ -15,4 +15,8 @@ def test_no_template_uses_inline_styles():
     root = pathlib.Path(__file__).resolve().parents[2] / 'auto-runner' / 'central' / 'templates'
     for path in root.glob('*.html'):
         text = path.read_text(encoding='utf-8')
-        assert not re.search(r'\sstyle=|<style|<script', text), path.name
+        assert not re.search(r'\sstyle=|<style', text), path.name
+        # scripts only from this app's own files (CSP script-src 'self'): no inline code, no handler attributes
+        for tag in re.findall(r'<script\b[^>]*>', text):
+            assert re.search(r'\ssrc=', tag), (path.name, tag)
+        assert not re.search(r'\son[a-z]+=|javascript:', text), path.name

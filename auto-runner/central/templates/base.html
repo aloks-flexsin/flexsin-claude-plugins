@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}auto-runner central{% endblock %}</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </head>
-<body>
+<body{% block body_attrs %}{% endblock %}>
 <header class="topbar"><div class="topbar-in">
   <a class="brand" href="{{ url_for('auth.home') }}">auto-runner <span>central</span></a>
   {% if g.account %}

@@ -19,6 +19,7 @@ COLUMNS_ADDED = (
     ("project", "repo_url", "VARCHAR(500)"),
     ("project", "repo_key", "VARCHAR(500)"),
     ("event", "account_id", "VARCHAR(64)"),
+    ("account", "name", "VARCHAR(100)"),
 )
 REPO_KEY_INDEX = "CREATE UNIQUE INDEX IF NOT EXISTS project_repo_key ON project (repo_key)"
 

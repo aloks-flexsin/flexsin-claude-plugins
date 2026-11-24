@@ -43,7 +43,7 @@
           <button type="submit">New invite link</button>
         </form>
         {% endif %}
-        <form method="post" action="{{ url_for('projects.member_remove', slug=project.slug, account_id=m.account_id) }}">
+        <form method="post" action="{{ url_for('projects.member_remove', slug=project.slug, account_id=m.account_id) }}" data-confirm="Remove {{ m.email | display_name }} from {{ project.name }}?" data-confirm-detail="Their runners stop working on this project at their next step, and tasks they are building go back to approved for someone else. Their account and other projects are not affected." data-confirm-action="Remove">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="danger">Remove</button>
         </form>

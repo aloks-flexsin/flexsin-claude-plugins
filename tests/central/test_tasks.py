@@ -60,7 +60,8 @@ def plan(app, team, number, claim, who='dev'):
 
 
 def decide(team, number, decision, who='dev', comment=''):
-    return post(team['clients'][who], '/projects/alpha/tasks/%d/decide' % number, decision=decision, comment=comment)
+    return post(team['clients'][who], '/projects/alpha/tasks/%d/decide' % number, decision=decision, comment=comment,
+                confirm='1')
 
 
 # ---------- adding and seeing ----------
@@ -149,8 +150,8 @@ def test_a_second_runner_of_the_same_person_skips_a_live_claim(app, team, conn, 
 def test_an_admin_releases_and_reassigns(app, team, conn):
     n = add(team)
     claim = take(app, team)['claim']
-    assert post(team['clients']['manager'], '/projects/alpha/tasks/%d/release' % n).status_code == 404   # admins only
-    assert post(team['clients']['admin'], '/projects/alpha/tasks/%d/release' % n,
+    assert post(team['clients']['manager'], '/projects/alpha/tasks/%d/release' % n, confirm='1').status_code == 404   # admins only
+    assert post(team['clients']['admin'], '/projects/alpha/tasks/%d/release' % n, confirm='1',
                 assignee=team['accounts']['manager']['id']).status_code == 302
     row = tasks.get(conn, team['alpha']['id'], n)
     assert row['assignee_email'] == 'manager@example.com' and row['status'] == 'open' and row['claim_id'] is None

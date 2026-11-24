@@ -25,7 +25,7 @@ import secrets
 
 from flask import Blueprint, abort, g, jsonify, redirect, render_template, request, url_for
 
-from . import accounts, audit, auth, projects, sessions, tokens
+from . import accounts, audit, auth, projects, sessions, tokens, ui
 from .access import project_access
 from .db import get_db
 
@@ -408,6 +408,10 @@ def task_decide(slug, number):
     if row is None:
         abort(404)
     decision = request.form.get("decision", "")
+    if decision == "reject" and row["status"] == "plan_review" and not ui.confirmed():
+        return ui.confirm_page("Reject task #%d %s?" % (number, row["title"]),
+                               "The task closes and its runner lets it go. To change the plan instead, request changes.",
+                               "Reject task", url_for("tasks.task_page", slug=slug, number=number))
     try:
         decide(db, g.project, row, g.account, decision, request.form.get("comment"), moment)
     except TaskError as e:
@@ -429,6 +433,12 @@ def task_release(slug, number):
     if row is None:
         abort(404)
     chosen = (request.form.get("assignee") or "").strip()
+    if not ui.confirmed():
+        to = accounts.get(db, chosen) if chosen and chosen != row["assignee_id"] else None
+        return ui.confirm_page(("Give task #%d to %s?" % (number, to["email"])) if to else "Take task #%d back from its runner?" % number,
+                               "The runner working on it stops at its next step. Work goes back one step (planning to open, "
+                               "building to approved)" + ("; the new person plans it afresh." if to else "."),
+                               "Give it to them" if to else "Take it back", url_for("tasks.task_page", slug=slug, number=number))
     assignee = accounts.get(db, chosen) if chosen and chosen != row["assignee_id"] else None
     if chosen and chosen != row["assignee_id"] and (assignee is None or not _can_run(db, g.project, assignee)):
         return _detail(number, error="choose a member who is a developer or above", status=400)
