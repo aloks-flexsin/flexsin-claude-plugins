@@ -120,14 +120,16 @@ class FakeTasks:
     """In-memory fake of the central task API (personal token) for the planner and watch tests: a `send` for
     autodeliver.HttpTransport that answers GET /api/v1/tasks/N and POST /api/v1/tasks/N/plan (the claim must match;
     the task then waits in plan_review), POST /api/v1/tasks/next, and a task's screenshots (`attach()`; listed in
-    GET /api/v1/tasks/N, bytes from GET /api/v1/tasks/N/attachments/<id>). `posted` keeps every plan the runner posted,
-    `downloads` every screenshot it fetched."""
+    GET /api/v1/tasks/N, bytes from GET /api/v1/tasks/N/attachments/<id>), and POST /api/v1/tasks/N/decide (a waiting
+    plan approved, sent back with a comment or rejected; 409 when no plan waits, 400 for changes without a comment).
+    `posted` keeps every plan the runner posted, `downloads` every screenshot it fetched, `decisions` every decision."""
 
     def __init__(self):
         self.tasks = {}                           # number -> task dict (number, title, description, comment, status, claim)
         self.posted = []
         self.files = {}                           # (number, attachment id) -> bytes; listed in GET /api/v1/tasks/N
         self.downloads = []                       # (number, attachment id) of every screenshot the runner fetched
+        self.decisions = []                       # (number, decision, comment) of every plan decided through the API
 
     def add(self, number, title, description='', comment='', claim='claim-1'):
         self.tasks[number] = {'number': number, 'title': title, 'description': description, 'comment': comment,
@@ -157,6 +159,9 @@ class FakeTasks:
                 return self._reply(404, {'error': 'no such screenshot'})
             self.downloads.append(key)
             return 200, self.files[key]
+        m = re.fullmatch(r'/api/v1/tasks/(\d+)/decide', path)
+        if m and method == 'POST':
+            return self._decide(int(m.group(1)), json.loads(body.decode('utf-8')))
         m = re.fullmatch(r'/api/v1/tasks/(\d+)(/plan)?', path)
         task = self.tasks.get(int(m.group(1))) if m else None
         if task is None:
@@ -172,6 +177,25 @@ class FakeTasks:
             self.posted.append({'number': task['number'], 'plan': data['plan'], 'items': data['items']})
             return self._reply(200, {'task': {k: v for k, v in task.items() if k != 'claim'}})
         return self._reply(405, {'error': 'not allowed'})
+
+    def _decide(self, number, data):
+        """POST /api/v1/tasks/N/decide with the service's rules (no permission check: the token is the assignee's)."""
+        task = self.tasks.get(number)
+        if task is None:
+            return self._reply(404, {'error': 'no such task'})
+        status = {'approve': 'approved', 'changes': 'changes_requested', 'reject': 'rejected'}.get(data.get('decision'))
+        if status is None:
+            return self._reply(400, {'error': 'decision is "approve", "changes" or "reject"'})
+        if task['status'] != 'plan_review':
+            return self._reply(409, {'error': 'task %d has no plan waiting for approval' % number})
+        comment = (data.get('comment') or '').strip()
+        if status == 'changes_requested' and not comment:
+            return self._reply(400, {'error': 'say what should change'})
+        task.update(status=status, comment=comment)
+        if status == 'rejected':
+            task['claim'] = None
+        self.decisions.append((number, data['decision'], comment))
+        return self._reply(200, {'task': {k: v for k, v in task.items() if k != 'claim'}})
 
     def _next(self):
         """POST /api/v1/tasks/next: the oldest planning task, claimed again (the service's reply carries no screenshots;

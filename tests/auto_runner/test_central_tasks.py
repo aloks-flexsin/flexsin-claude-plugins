@@ -184,7 +184,7 @@ def _fake_cli(project, monkeypatch):
     from tests.auto_runner.fake_central import FakeTasks
     connect(project)
     svc = FakeTasks()
-    real = ar.autodeliver.HttpTransport
+    real = at.autodeliver.HttpTransport          # autotasks' own copy, so its TransportRefused is the one it catches
     monkeypatch.setattr(at.autodeliver, 'HttpTransport', lambda *a, **k: real(*a, **dict(k, send=svc.send)))
     for k, v in FAKE_ENV.items():
         monkeypatch.setenv(k, v)
@@ -288,3 +288,67 @@ def test_no_current_task_stays_missing(tmp_path):
     _write(auto / 'run' / 'tasks' / '4.json', {'number': 4, 'claim': 'c-2'})
     assert at.current(auto) is None
     assert not (auto / 'run' / 'current-task.json').exists()
+
+
+# ---------- decide a waiting plan from the terminal (P2) ----------
+
+def _waiting(svc, number=1):
+    task = svc.add(number, 'CSV export')
+    task['status'] = 'plan_review'
+    return task
+
+
+def test_decide_approve_from_the_command_line(project, monkeypatch, capsys):
+    svc = _fake_cli(project, monkeypatch)
+    _waiting(svc)
+    assert at.main(['decide', '1', 'approve', '--project', str(project)]) == 0
+    assert capsys.readouterr().out.strip() == 'Task 1: approved'
+    assert svc.tasks[1]['status'] == 'approved' and svc.decisions == [(1, 'approve', '')]
+
+
+def test_decide_changes_with_a_comment_and_reject(project, monkeypatch, capsys):
+    svc = _fake_cli(project, monkeypatch)
+    _waiting(svc, 1)
+    _waiting(svc, 2)
+    assert at.main(['decide', '1', 'changes', '--comment', 'Add a header row', '--project', str(project)]) == 0
+    assert capsys.readouterr().out.strip() == 'Task 1: changes requested'
+    assert svc.tasks[1]['status'] == 'changes_requested' and svc.tasks[1]['comment'] == 'Add a header row'
+    assert at.main(['decide', '2', 'reject', '--project', str(project)]) == 0
+    assert capsys.readouterr().out.strip() == 'Task 2: rejected'
+    assert svc.tasks[2]['status'] == 'rejected' and svc.tasks[2]['claim'] is None
+
+
+def test_decide_changes_without_a_comment_prints_the_refusal(project, monkeypatch, capsys):
+    svc = _fake_cli(project, monkeypatch)
+    _waiting(svc)
+    assert at.main(['decide', '1', 'changes', '--project', str(project)]) == 1
+    out = capsys.readouterr().out
+    assert out.startswith('Not done: ') and 'say what should change' in out
+    assert svc.tasks[1]['status'] == 'plan_review' and svc.decisions == []
+
+
+def test_decide_a_task_not_waiting_or_unknown_prints_the_refusal(project, monkeypatch, capsys):
+    svc = _fake_cli(project, monkeypatch)
+    svc.add(1, 'CSV export')                                  # still planning: no plan waits
+    assert at.main(['decide', '1', 'approve', '--project', str(project)]) == 1
+    assert 'Not done: ' in capsys.readouterr().out and svc.tasks[1]['status'] == 'planning'
+    assert at.main(['decide', '9', 'approve', '--project', str(project)]) == 1
+    assert 'Not done: ' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('argv', [['decide', '1', 'okay'], ['decide', '1'], ['decide']])
+def test_decide_needs_a_known_decision_word(project, monkeypatch, capsys, argv):
+    svc = _fake_cli(project, monkeypatch)
+    _waiting(svc)
+    with pytest.raises(SystemExit) as e:
+        at.main(argv + ['--project', str(project)])
+    assert e.value.code == 2 and svc.decisions == [] and svc.tasks[1]['status'] == 'plan_review'
+
+
+def test_decide_against_the_real_service(project, central, team, env):
+    connect(project)
+    n = at.propose(project, 'CSV export', '## Intent\nCSV.', ITEMS, env, central.send)
+    task = at.decide(project, n, 'approve', '', env, central.send)
+    assert task['status'] == 'approved' and server_task(central, n)['status'] == 'approved'
+    with pytest.raises(at.TaskError, match='no plan waiting'):
+        at.decide(project, n, 'approve', '', env, central.send)
