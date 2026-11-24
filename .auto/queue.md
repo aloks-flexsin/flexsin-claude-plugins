@@ -44,7 +44,7 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Acceptance:* `docs/hello.md` exists with exactly the chosen greeting followed by ", central service"; `python -m pytest -q` green.
 
   *Status:* done 11caa36dfa
-- [x] **H1 Decision record for hands-free work.** Write `docs/decisions/0009-hands-free-runner.md` with the two layers, the planner, the watch loop, presence, and a "Decisions" section with exactly these answers: "Approval: on the central page", "Guard: opt-in per project", "Daily cap: 20 USD per runner", "Poll: 5 minutes", "Pause: the runner's person and admins", "Planner: opus, may plan without a person". Do not change code.
+- [ ] **H1 Decision record for hands-free work.** Write `docs/decisions/0009-hands-free-runner.md` with the two layers, the planner, the watch loop, presence, and a "Decisions" section with exactly these answers: "Approval: on the central page", "Guard: opt-in per project", "Daily cap: 20 USD per runner", "Poll: 5 minutes", "Pause: the runner's person and admins", "Planner: opus, may plan without a person". Do not change code.
   *Acceptance:* new test `tests/auto_runner/test_decision_0009.py` asserts the file exists and contains each of the six quoted answers; `python -m pytest -q` passes.
   *Slice:* 1 Prompt routing reminder
   *Kind:* internal
