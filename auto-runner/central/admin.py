@@ -7,7 +7,7 @@
 """
 from flask import Blueprint, abort, g, redirect, render_template, request, url_for
 
-from . import accounts, audit, auth, identities, invites, passwords, personal, sessions, ui
+from . import accounts, audit, auth, identities, invites, notifications, passwords, personal, push, sessions, ui
 from .db import get_db
 
 bp = Blueprint("admin", __name__)
@@ -146,8 +146,28 @@ def account_tokens_revoke(account_id):
     return redirect(url_for("admin.accounts_page"))
 
 
+@bp.get("/admin/notifications")
+def notifications_log():
+    """Admins only: the newest notifications across people, with how each was delivered. `?account=` (an account id
+    or email) and `?kind=` narrow it; an unknown account or kind lists nothing rather than everything."""
+    _require_admin()
+    db = get_db()
+    everyone = accounts.list_all(db)
+    wanted = (request.args.get("account") or "").strip()[:accounts.MAX_EMAIL]
+    kind = (request.args.get("kind") or "").strip()[:20]
+    account_id = None
+    if wanted:
+        found = accounts.get(db, wanted) or accounts.find_by_email(db, wanted)
+        account_id = found["id"] if found else "-"
+    rows = [dict(r, delivery=notifications.delivery(r))
+            for r in notifications.recent(db, account_id=account_id, kind=kind or None)]
+    return render_template("admin_notifications.html", rows=rows, people=everyone, kinds=notifications.KINDS,
+                           account_id=account_id, kind=kind)
+
+
 def _account_page(error=None, status=200, name_error=None, saved=None):
     return render_template("account.html", error=error, name_error=name_error, saved=saved,
+                           push=push.account_state(get_db(), g.account),
                            identities=identities.of_account(get_db(), g.account["id"])), status
 
 

@@ -19,7 +19,7 @@ import secrets
 
 from flask import Blueprint, g, jsonify
 
-from . import audit, auth, projects, sessions, tokens
+from . import audit, auth, notifications, projects, sessions, tokens
 from .db import get_db
 
 bp = Blueprint("deliveries", __name__)
@@ -129,6 +129,7 @@ def record_decision(db, project, blocker_id, account, option=None, text=None, co
                    (secrets.token_hex(16), project["id"], decision_ref, did, PENDING, at))
         db.execute("UPDATE blocker SET status = ?, updated_at = ? WHERE id = ?",
                    ("PENDING_DELIVERY", at, blocker["id"]))
+        notifications.resolve(db, notifications.blocker_key(project, blocker_id), at)
         audit.record(db, "decision.record", at, account_id=account["id"], project_id=project["id"],
                      detail={"blocker_id": blocker_id, "version": version, "delivery_id": did, "role": role})
     except Exception:

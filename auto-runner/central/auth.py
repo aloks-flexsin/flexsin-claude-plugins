@@ -4,7 +4,8 @@
 - 5 failed sign-ins lock the account for 15 minutes. Unknown email, wrong password, locked and disabled all get
   the same answer, so the page never tells whether an account exists.
 - Before sign-in the CSRF token is a random value in its own cookie (double submit); after sign-in it is the
-  session's token. A POST to a page without a matching `csrf_token` field gets 400. `/api/` routes use bearer
+  session's token. A POST to a page without a matching `csrf_token` field (or, for JSON from the page's script,
+  `X-CSRF-Token` header) gets 400. `/api/` routes use bearer
   tokens instead and are not forms.
 - The clock is `app.config["CLOCK"]` (a callable returning an aware UTC datetime) so tests can move time.
 """
@@ -78,7 +79,8 @@ def _load_session():
 def _check_csrf():
     if request.method != "POST" or request.url_rule is None or request.path.startswith("/api/"):
         return None
-    sent = request.form.get("csrf_token", "")
+    # Forms send the `csrf_token` field; the page's script sends the same token in X-CSRF-Token with JSON.
+    sent = request.form.get("csrf_token", "") or request.headers.get("X-CSRF-Token", "")
     if g.session_row:
         expected = g.session_row["csrf_token"]
     else:

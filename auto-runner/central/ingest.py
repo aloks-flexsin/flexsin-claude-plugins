@@ -24,7 +24,7 @@ import threading
 
 from flask import Blueprint, current_app, g, jsonify, request
 
-from . import auth, identities, sessions, tokens
+from . import auth, identities, notifications, sessions, tokens
 from .db import get_db
 
 bp = Blueprint("ingest", __name__)
@@ -206,7 +206,9 @@ def _question(event):
     return question[:MAX_QUESTION] if isinstance(question, str) and question.strip() else None
 
 
-def _upsert_blocker(db, project_id, event, body, at):
+def _upsert_blocker(db, project, event, body, at):
+    """Create or update the blocker row; a new one notifies the project's managers and owners."""
+    project_id = project["id"]
     task_id = _upsert_task(db, project_id, event["item"], at)
     blocker_id = event["detail"]["id"]
     question = _question(event)
@@ -218,6 +220,9 @@ def _upsert_blocker(db, project_id, event, body, at):
         db.execute("INSERT INTO blocker (id, project_id, task_id, blocker_id, question, body, status, created_at,"
                    " updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                    (secrets.token_hex(16), project_id, task_id, blocker_id, question, body, "OPEN", at, at))
+        notifications.notify(db, notifications.members_with(db, project, "manager"), project, "blocker",
+                             "Blocker waiting: %s" % (question or blocker_id), notifications.blocker_link(project, blocker_id),
+                             notifications.blocker_key(project, blocker_id), at)
 
 
 def _resumed_blocker(event):
@@ -261,7 +266,7 @@ def store(db, project, events, at):
                 detail = clean["detail"] if isinstance(clean["detail"], dict) else {}
                 identities.record(db, account["id"], detail.get("user"), detail.get("account"), at)
             if _raised_blocker(clean):
-                _upsert_blocker(db, project["id"], clean, body, at)
+                _upsert_blocker(db, project, clean, body, at)
             elif _resumed_blocker(clean):
                 _mark_resumed(db, project["id"], clean, at)
     except Exception:
