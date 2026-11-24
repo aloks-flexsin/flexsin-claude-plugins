@@ -274,6 +274,11 @@ def status(project, env=None, send=None):
                                  f'repository ({info["repo_url"]}).')
     identity = autosafe.runner_name_problems(env)
     lines.append('Runner identity: ' + (autosafe.runner_name(env) if not identity else 'MISSING'))
+    account_state = autosafe.account_check(env)
+    lines.append('  Claude account check: ' + {'match': 'the signed-in account matches AUTO_RUNNER_ACCOUNT_EMAIL',
+                                               'mismatch': 'MISMATCH, the signed-in account is not the one AUTO_RUNNER_ACCOUNT_EMAIL names',
+                                               'not_set': 'not checked (AUTO_RUNNER_ACCOUNT_EMAIL is not set)',
+                                               }.get(account_state, 'unknown (could not read `claude auth status`)'))
     for problem in identity:
         var = next(v for v in (autosafe.RUNNER_USER_ENV, autosafe.RUNNER_ACCOUNT_ENV) if v in problem)
         lines.append(f"  {problem} PowerShell: [Environment]::SetEnvironmentVariable('{var}', '<value>', 'User'); "

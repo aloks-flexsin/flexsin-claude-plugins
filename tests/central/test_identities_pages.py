@@ -48,12 +48,27 @@ def test_account_and_runs_show_the_reported_pairs(world, conn, clock):
     account = client.get('/account').get_data(as_text=True)
     assert 'None reported yet' not in account
     for pair in (('alok', 'bhawish'), ('alok', 'alok-pers')):
-        assert '<td>%s</td><td>%s</td>' % pair in account
+        assert '<td>%s</td><td>%s</td><td>auto-runner</td>' % pair in account
 
     page = client.get('/projects/alpha/runs').get_data(as_text=True)
     assert 'Alok Sharma' in page
     assert 'alok · Claude account bhawish' in page
     assert 'alok · Claude account alok-pers' in page
+
+
+def test_runs_marks_only_a_mismatched_account_check(world, conn, clock):
+    clock.now = NOW
+    raw = _alok(world, conn)
+    sent = []
+    for n, check in enumerate(('mismatch', 'match', None, 'bogus', ['x'])):
+        extra = {} if check is None else {'account_check': check}
+        sent.append(ev('r%d' % n, 'run_start', '2026-11-23T10:0%d:00+00:00' % n, user='alok', account='acc%d' % n,
+                       branch='b%d' % n, **extra))
+    assert _post(world['app'], raw, sent, '?project=alpha').status_code == 200
+    page = signed_in(world['app'], 'alok@example.com').get('/projects/alpha/runs').get_data(as_text=True)
+    assert page.count('Claude account not confirmed') == 1     # only the mismatched run
+    by_run = {r['run']: r['account_check'] for r in runs.summarise(sent, NOW)}
+    assert by_run == {'r0': 'mismatch', 'r1': 'match', 'r2': None, 'r3': None, 'r4': None}
 
 
 def test_a_project_token_run_keeps_the_old_who_text(world, conn, clock):
@@ -100,8 +115,22 @@ def _team(world, conn, clock, username_priya='priya'):
 def test_members_page_marks_a_shared_claude_account(world, conn, clock):
     _team(world, conn, clock)
     page = signed_in(world['app'], 'alok@example.com').get('/projects/alpha/settings/members').get_data(as_text=True)
-    assert page.count('<code>bhawish</code> <span class="chip tone-attention">shared</span>') == 2
+    assert page.count('<code>bhawish</code> <span class="chip tone-attention">shared</span> '
+                      '<span class="surface">(auto-runner)</span>') == 2
     assert 'is reported by more than one member' not in page
+
+
+def test_surface_shows_on_account_and_members_and_sharing_spans_surfaces(world, conn, clock):
+    from central import identities
+    _team(world, conn, clock)
+    priya = accounts.find_by_email(conn, 'priya@example.com')
+    identities.record(conn, priya['id'], 'priya', 'bhawish', AT, 'cli')
+    conn.commit()
+    client = signed_in(world['app'], 'alok@example.com')
+    assert '<td>auto-runner</td>' in client.get('/account').get_data(as_text=True)
+    page = client.get('/projects/alpha/settings/members').get_data(as_text=True)
+    assert '(auto-runner)' in page and '(cli)' in page
+    assert page.count('shared</span>') >= 3
 
 
 def test_members_page_warns_when_a_username_is_reported_twice(world, conn, clock):

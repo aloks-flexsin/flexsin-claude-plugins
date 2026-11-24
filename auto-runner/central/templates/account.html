@@ -23,10 +23,10 @@
   <p class="muted">The username and Claude account your runners report when they start. Your sign-in is what proves who you are.</p>
   {% if identities %}
   <table>
-    <thead><tr><th>Username</th><th>Claude account</th><th>First seen</th><th>Last seen</th></tr></thead>
+    <thead><tr><th>Username</th><th>Claude account</th><th>Surface</th><th>First seen</th><th>Last seen</th></tr></thead>
     <tbody>
     {% for i in identities %}
-    <tr><td>{{ i.username }}</td><td>{{ i.claude_account }}</td><td>{{ i.first_seen }}</td><td>{{ i.last_seen }}</td></tr>
+    <tr><td>{{ i.username }}</td><td>{{ i.claude_account }}</td><td>{{ i.surface }}</td><td>{{ i.first_seen }}</td><td>{{ i.last_seen }}</td></tr>
     {% endfor %}
     </tbody>
   </table>

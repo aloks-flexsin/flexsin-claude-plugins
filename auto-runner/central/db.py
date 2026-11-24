@@ -153,6 +153,36 @@ def add_missing_columns(db):
     return added
 
 
+IDENTITY_DDL = """CREATE TABLE %s (
+    id VARCHAR(64) PRIMARY KEY,
+    account_id VARCHAR(64) NOT NULL REFERENCES account (id) ON DELETE CASCADE,
+    username VARCHAR(64) NOT NULL,
+    claude_account VARCHAR(64) NOT NULL,
+    surface VARCHAR(32) NOT NULL,
+    first_seen VARCHAR(32) NOT NULL,
+    last_seen VARCHAR(32) NOT NULL,
+    UNIQUE (account_id, username, claude_account, surface)
+)"""
+
+
+def add_identity_surface(db):
+    """Rebuild a `claude_identity` table made before it had `surface` (its unique key changes, so ALTER cannot do it):
+    create the new table under a temporary name, copy every row with surface `auto-runner`, drop the old table and rename
+    the new one. Return True when it rebuilt, False when the table already has `surface`. The caller commits."""
+    if "surface" in db.columns("claude_identity"):
+        return False
+    if db.kind == "sqlite" and not db.conn.in_transaction:
+        db.execute("BEGIN")                          # sqlite3 does not open a transaction for DDL by itself
+    db.execute("DROP TABLE IF EXISTS claude_identity_new")
+    db.execute(IDENTITY_DDL % "claude_identity_new")
+    db.execute("INSERT INTO claude_identity_new (id, account_id, username, claude_account, surface, first_seen, last_seen)"
+               " SELECT id, account_id, username, claude_account, 'auto-runner', first_seen, last_seen"
+               " FROM claude_identity")
+    db.execute("DROP TABLE claude_identity")
+    db.execute("ALTER TABLE claude_identity_new RENAME TO claude_identity")
+    return True
+
+
 def _repo_keys(db):
     """-> [(project id, slug, stored repo_key or None, key computed from repo_url or None)]."""
     from . import projects as _projects                          # the one place that turns a URL into a key
@@ -189,6 +219,7 @@ def init_db(url):
     db = connect(url)
     try:
         db.executescript(script)                    # only creates what is missing; existing rows are untouched
+        add_identity_surface(db)                     # not in COLUMNS_ADDED: the unique key changes too
         duplicates = duplicate_repositories(db)      # checked before any column, key or index is added
         if duplicates:
             raise DuplicateRepositories(duplicates)

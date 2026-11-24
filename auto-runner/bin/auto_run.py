@@ -1124,10 +1124,13 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
     run_id = f'{stamp}-{uuid.uuid4().hex[:6]}'
     ledger = autoevents.Ledger(auto, run_id, slug, redact=lambda d: autobrowser.redact_obj(d, generated()))
     user, account = autosafe.runner_identity()
+    account_check = autosafe.account_check()
+    if autosafe.account_check_line(account_check):
+        say(autosafe.account_check_line(account_check))
     # the central task this run builds (decision record 0007): the task page shows the run's progress live
     task_number = autotasks.run_task(auto, auto / 'pending' / request if request else None, new_branch)
     ledger.emit('run_start', detail={'branch': branch, 'base': base, 'max_iterations': max_iterations,
-                                     'user': user, 'account': account,
+                                     'user': user, 'account': account, 'account_check': account_check,
                                      **({'task': task_number} if task_number is not None else {})})
     exit_code, reason = None, 'error'
     published = None

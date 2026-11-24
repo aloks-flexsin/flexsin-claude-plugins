@@ -26,7 +26,7 @@ and an owner, manager or admin answers it there.
 | `ingest.py` | `POST /api/v1/events` |
 | `blockers.py` | Blocker list, blocker page and the answer form |
 | `deliveries.py` | Decisions and the delivery endpoints |
-| `identities.py` | Claude identities (`claude_identity`): the username and Claude account a signed-in person's runners report in `run_start` events; project-token events record nothing; first sighting audited as `identity_seen` (unverified in production) |
+| `identities.py` | Claude identities (`claude_identity`): the username and Claude account a signed-in person's runners report in `run_start` events; project-token events record nothing; first sighting audited as `identity_seen`; each row also has a surface (`auto-runner`, `cli`, `desktop` or `browser`; today every caller records `auto-runner`), and `init_db` rebuilds an older table without `surface` once, copying its rows as `auto-runner` (unverified in production) |
 | `audit.py` | The audit log |
 | `runners.py` | Runner presence: `POST /api/v1/runners/beat`, silent after 2 hours, pause/stop returned; Pause, Resume and Stop on the pages |
 | `notifications.py` | In-app notifications: `notify` (members only, no duplicates), `resolve`, `unread_count`, `for_account`, `delivery`, `recent`; the Notifications page, open and read-all (the admins' log is in `admin.py`) |
@@ -360,6 +360,10 @@ stored only as SHA-256 (table `device_login`), and a request gives a token once.
 `claude_account` (the runner's username and Claude account); each is kept only when it matches the runner name pattern
 (`identities.NAME`) and is shown on `/device` and on **My tokens** ("not reported" when absent). When the token is
 delivered, the pair is also recorded as a Claude identity of the approving account (shown under "Your Claude accounts").
+
+`runs.summarise()` also reads `account_check` from `run_start` (only `match`, `mismatch`, `not_set` or `unknown`; anything
+else, or a missing field from an older runner, is ignored). The Runs page shows "Claude account not confirmed" beside the
+Claude account for `mismatch` only (the runner's own report, unverified).
 
 **Who is identified how.** The person is verified: the personal token says whose account it is. The username and Claude
 account are only what the runner reports (unverified). A task call (`next`, `record`, or `plan` with a `runner` field) made

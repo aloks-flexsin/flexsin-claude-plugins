@@ -264,7 +264,7 @@ def store(db, project, events, at):
                         account["id"] if account else None))
             if clean["type"] == "run_start" and account:
                 detail = clean["detail"] if isinstance(clean["detail"], dict) else {}
-                identities.record(db, account["id"], detail.get("user"), detail.get("account"), at)
+                identities.record(db, account["id"], detail.get("user"), detail.get("account"), at, "auto-runner")
             if _raised_blocker(clean):
                 _upsert_blocker(db, project, clean, body, at)
             elif _resumed_blocker(clean):

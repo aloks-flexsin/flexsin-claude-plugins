@@ -21,6 +21,7 @@ bp = Blueprint("runs", __name__)
 
 MAX_EVENTS = 5000
 STALE = datetime.timedelta(hours=2)
+ACCOUNT_CHECKS = ("match", "mismatch", "not_set", "unknown")
 SHOWN_TYPES = ("run_start", "run_end", "publish", "item_state", "tests", "blocker")
 
 
@@ -60,7 +61,7 @@ def summarise(events, now):
             "run": run_id, "user": None, "account": None, "branch": None, "base": None, "started": e.get("time"),
             "last": e.get("time"), "ended": None, "exit": None, "reason": None, "items": {}, "current": None,
             "tests": None, "pushed": None, "pr_url": None, "publish_error": None, "blockers": 0, "signed_in": None,
-            "signed_in_name": None, "task": None})
+            "signed_in_name": None, "task": None, "account_check": None})
         r["signed_in"] = r["signed_in"] or e.get("_signed_in")
         r["signed_in_name"] = r["signed_in_name"] or e.get("_signed_in_name")
         r["last"] = e.get("time") or r["last"]
@@ -71,6 +72,8 @@ def summarise(events, now):
             for k in ("user", "account", "branch", "base"):
                 if isinstance(detail.get(k), str) and detail[k]:
                     r[k] = detail[k]
+            if detail.get("account_check") in ACCOUNT_CHECKS:    # anything else (or an older runner) is ignored
+                r["account_check"] = detail["account_check"]
         elif kind == "run_end":
             r["ended"], r["exit"], r["reason"] = e.get("time"), detail.get("exit"), detail.get("reason")
         elif kind == "item_state" and e.get("item"):

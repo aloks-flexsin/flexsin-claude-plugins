@@ -185,3 +185,12 @@ def test_the_command_and_guide_offer_watch_mode():
     for readme in (root / 'README.md', root / 'central' / 'README.md'):
         text = readme.read_text(encoding='utf-8')
         assert 'Hands-free work' in text and '/auto-runner:auto watch' in text
+
+
+def test_status_shows_the_account_check_without_emails(connected, central, monkeypatch):
+    p, env = connected
+    text, _ = run(p, central, env)
+    assert 'Claude account check: not checked' in text
+    monkeypatch.setattr(ac._load('autorunner_safe', 'autosafe.py'), 'account_check', lambda env=None, run=None: 'mismatch')
+    text, _ = run(p, central, {**env, 'AUTO_RUNNER_ACCOUNT_EMAIL': 'me@example.com'})
+    assert 'Claude account check:' in text and 'me@example.com' not in text
