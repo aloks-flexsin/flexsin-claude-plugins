@@ -103,8 +103,8 @@ yet: check My work.
 ## Answering a blocker
 1. A run raises a blocker and stops working on that item; other ready items go on. `/auto-runner:central` and
    `/auto-runner:status` list it, and the page shows it at `<service>/projects/<slug>/blockers`.
-2. An owner, manager or admin opens it, reads the question, options and recommendation, and picks an option and/or writes
-   an answer. An answer cannot be changed from the page afterwards.
+2. An owner, manager or admin opens it (My work shows it as a card), reads the question and what it holds up, and picks
+   an option (the recommended one is marked and chosen in advance) and/or writes instructions, then **Send answer**. An answer cannot be changed from the page afterwards.
 3. The runner fetches answers between iterations and when it next starts, puts the item back in the queue and resumes it;
    the page then shows the blocker as RESUMED.
 

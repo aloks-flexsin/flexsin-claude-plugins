@@ -77,7 +77,7 @@ def test_the_page_shows_a_run_sent_by_the_real_ledger(world, conn, tmp_path):
     assert send(world['app'], world['token'], sent).status_code == 200
     viewer = _member(world['app'], conn, world['alpha'], 'viewer')
     page = viewer.get('/projects/alpha/runs').get_data(as_text=True)
-    assert '<strong>alok</strong>' in page and 'bhawish account' in page
+    assert 'class="person-name">alok</span>' in page and 'bhawish account' in page
     assert '>fix/login</code>' in page and 'title="alok/bhawish-claude-auto-runner/fix/login"' in page
     assert 'Working now' in page and 'item A1' in page
 

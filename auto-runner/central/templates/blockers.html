@@ -1,24 +1,37 @@
 {% extends "base.html" %}
-{% from "_project.html" import header, settings_nav with context %}
+{% import "_ui.html" as ui %}
+{% from "_project.html" import header with context %}
 {% block title %}{{ project.name }} blockers{% endblock %}
+{% block body_attrs %} data-refresh="30"{% endblock %}
 {% block content %}
 {{ header(project, "blockers") }}
 {% if blockers %}
-<table>
-  <thead><tr><th>Blocker</th><th>Item</th><th>Question</th><th>State</th><th>Raised</th></tr></thead>
-  <tbody>
-  {% for b in blockers %}
-    <tr>
-      <td><a href="{{ url_for('blockers.blocker_page', slug=project.slug, blocker_id=b.blocker_id) }}">{{ b.blocker_id }}</a></td>
-      <td>{{ b.task or "" }}</td>
-      <td>{{ b.question or "(no question sent)" }}</td>
-      <td>{% if b.waiting %}<span class="badge warn">{{ b.describe }}</span>{% else %}<span class="badge ok">{{ b.describe }}</span>{% endif %}</td>
-      <td>{{ b.created_at }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
+{% set waiting = blockers | selectattr("waiting") | list %}
+{% set rest = blockers | rejectattr("waiting") | list %}
+{% for group, title, empty in ((waiting, "Waiting for an answer", "Nothing is waiting for an answer."), (rest, "Answered", None)) %}
+{% if group or empty %}
+<section class="block">
+  <div class="block-head"><h2>{{ title }}{% if group and loop.first %} <span class="pill attention">{{ group | length }}</span>{% endif %}</h2></div>
+  {% if group %}
+  <div class="list">
+    {% for b in group %}
+    <div class="list-row">
+      <div class="grow">
+        <a class="row-title" href="{{ url_for('blockers.blocker_page', slug=project.slug, blocker_id=b.blocker_id) }}">{{ b.question or "(no question sent)" }}</a>
+        <div class="row-sub muted"><span>{{ b.blocker_id }}</span>{% if b.task %}<span>· item {{ b.task }}</span>{% endif %}<span>· {{ b.describe }}</span><span>· raised {{ ui.when(b.created_at) }}</span></div>
+      </div>
+      {{ ui.status("blocker", b.status) }}
+      {% if b.waiting %}<span class="muted nowrap">waiting {{ ui_duration(b.created_at, now) }}</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  {{ ui.empty(empty) }}
+  {% endif %}
+</section>
+{% endif %}
+{% endfor %}
 {% else %}
-<p class="card empty">No blockers yet. They appear here when the runner raises one and sends its events to this service.</p>
+{{ ui.empty("No blockers yet. They appear here when a runner raises one and sends its events to this service.") }}
 {% endif %}
 {% endblock %}

@@ -11,7 +11,7 @@ import datetime
 import json
 import re
 
-from flask import Blueprint, g, render_template
+from flask import Blueprint, g, render_template, request
 
 from .access import project_access
 from .db import get_db
@@ -169,10 +169,28 @@ def project_events(db, project_id, limit=MAX_EVENTS):
     return events
 
 
+OUTCOMES = (("running", "Running"), ("stopped", "Stopped"), ("silent", "Silent"), ("finished", "Finished"))
+
+
 @bp.get("/projects/<slug>/runs")
 @project_access("viewer")
 def runs_page(slug):
-    now = datetime.datetime.now(datetime.timezone.utc)
+    """Live runs as cards, then the history with outcome chips (`?outcome=`): what ended, why in words, and what to do
+    next for a run that stopped."""
+    from . import auth
+    now = auth.now()
     runs = summarise(project_events(get_db(), g.project["id"]), now)
-    return render_template("runs.html", project=g.project, runs=runs,
+    outcome = request.args.get("outcome")
+    if outcome not in [k for k, _ in OUTCOMES]:
+        outcome = None
+    counts = {k: sum(1 for r in runs if r["state"] == k) for k, _ in OUTCOMES}
+    history = [r for r in runs if r["state"] != "running" and (outcome is None or r["state"] == outcome)]
+    if outcome == "running":
+        history = []
+    return render_template("runs.html", project=g.project, runs=runs, history=history, outcomes=OUTCOMES,
+                           outcome=outcome, counts=counts, now=sessions_iso(now),
                            active=[r for r in runs if r["state"] == "running"], stale_hours=int(STALE.total_seconds() // 3600))
+
+
+def sessions_iso(moment):
+    return moment.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
