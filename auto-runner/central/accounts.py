@@ -61,6 +61,24 @@ def list_all(db):
     return db.query("SELECT * FROM account ORDER BY email")
 
 
+def last_active(db):
+    """-> {account_id: newest ISO time the account used the site (a session) or a personal token}. Nothing is stored for
+    it: an account whose sessions ended and whose tokens were never used has no entry."""
+    seen = {}
+    for sql in ("SELECT account_id, MAX(last_seen_at) AS at FROM session GROUP BY account_id",
+                "SELECT account_id, MAX(last_used_at) AS at FROM personal_token WHERE last_used_at IS NOT NULL"
+                " GROUP BY account_id"):
+        for r in db.query(sql):
+            if r["at"] and r["at"] > seen.get(r["account_id"], ""):
+                seen[r["account_id"]] = r["at"]
+    return seen
+
+
+def project_counts(db):
+    """-> {account_id: number of projects it is a member of}."""
+    return {r["account_id"]: r["n"] for r in db.query("SELECT account_id, COUNT(*) AS n FROM member GROUP BY account_id")}
+
+
 # Appended to an UPDATE's WHERE so that, in the same statement, the row is left alone when it is the only
 # enabled admin. Disabling or demoting it would leave nobody able to administer the service.
 _NOT_LAST_ADMIN = (" AND NOT (role = 'admin' AND disabled = 0 AND"

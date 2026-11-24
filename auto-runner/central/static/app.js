@@ -51,7 +51,7 @@
   /* Relative times: <time data-ago datetime="..."> stays "12 min ago" while the page is open. */
   function ago(t) {
     var s = (Date.now() - Date.parse(t)) / 1000;
-    if (isNaN(s)) return null;
+    if (isNaN(s) || s < 0) return null;            /* a future time ("in 3 days") keeps the server's words */
     if (s < 45) return "just now";
     if (s < 3600) return Math.max(1, Math.round(s / 60)) + " min ago";
     if (s < 86400) return Math.round(s / 3600) + " h ago";
@@ -71,6 +71,12 @@
   }
   var loaded = Date.now();
   setInterval(tick, 15000);
+
+  /* Auto-save: a <select data-autosave> posts its form when changed; its Save button is only for pages without JS. */
+  document.documentElement.classList.add("js");
+  document.querySelectorAll("select[data-autosave]").forEach(function (sel) {
+    sel.addEventListener("change", function () { if (sel.form) sel.form.submit(); });
+  });
 
   /* Auto-refresh: <body data-refresh="30"> reloads while the tab is visible and nobody is typing or deciding. */
   var every = parseInt(document.body.getAttribute("data-refresh") || "0", 10);

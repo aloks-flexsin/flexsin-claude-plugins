@@ -99,7 +99,7 @@ def test_home_links_accounts_only_for_admins(as_root, as_bob):
     assert '/admin/accounts' not in as_bob.get('/my').get_data(as_text=True)
 
 
-LINK = re.compile(r'<code>(?:https?://[^/<]+)?(/invite/[A-Za-z0-9_-]+)</code>')
+LINK = re.compile(r'readonly value="(?:https?://[^/"]+)?(/invite/[A-Za-z0-9_-]+)"')
 
 
 def link_in(resp):
@@ -119,7 +119,7 @@ def test_admin_adds_an_account_with_a_link_and_no_password(app, conn, as_root, r
     path = link_in(resp)
     carol = accounts.find_by_email(conn, 'carol@example.com')
     assert carol['role'] == 'user' and carol['password_hash'] == '!'
-    assert 'invited' in as_root.get('/admin/accounts').get_data(as_text=True)
+    assert '</span>Invited</span>' in as_root.get('/admin/accounts').get_data(as_text=True)
     assert path not in as_root.get('/admin/accounts').get_data(as_text=True)          # shown once
     c, done = use_link(app, path)
     assert done.status_code == 302 and c.get('/my').status_code == 200                   # signed in
@@ -281,7 +281,7 @@ def test_own_password_page_needs_a_session(app):
 
 def test_admin_forms_carry_csrf_and_refuse_without_it(conn, as_root, bob):
     page = as_root.get('/admin/accounts').get_data(as_text=True)
-    assert page.count('<form') == page.count('name="csrf_token"') >= 4
+    assert page.count('<form method="post"') == page.count('name="csrf_token"') >= 4      # the search is a GET
     own = as_root.get('/account/password').get_data(as_text=True)
     assert own.count('<form') == own.count('name="csrf_token"')
     assert as_root.post('/admin/accounts/%s/disabled' % bob['id'], data={'disabled': '1'}).status_code == 400

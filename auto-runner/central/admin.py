@@ -32,8 +32,15 @@ def _target(db, account_id):
 
 def _list_page(error=None, status=200, form_email="", link=None):
     """`link`: {'email', 'link', 'kind'} to show a just-made one-time link once."""
-    rows = [dict(a, pending=not invites.has_password(a)) for a in accounts.list_all(get_db())]
-    page = render_template("admin_accounts.html", accounts=rows, roles=accounts.ROLES, error=error,
+    db = get_db()
+    seen, counts = accounts.last_active(db), accounts.project_counts(db)
+    q = (request.args.get("q") or "").strip().lower()[:accounts.MAX_EMAIL]
+    rows = [dict(a, pending=not invites.has_password(a), last_active=seen.get(a["id"]), projects=counts.get(a["id"], 0))
+            for a in accounts.list_all(db)]
+    total = len(rows)
+    if q:
+        rows = [a for a in rows if q in a["email"].lower() or q in (a["name"] or "").lower()]
+    page = render_template("admin_accounts.html", accounts=rows, total=total, q=q, roles=accounts.ROLES, error=error,
                            form_email=form_email, link=link, lifetime_hours=int(invites.LIFETIME.total_seconds() // 3600))
     return page, status
 

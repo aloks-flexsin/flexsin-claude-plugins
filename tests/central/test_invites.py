@@ -11,7 +11,7 @@ from .test_access import PW, new_client, post, signed_in, token
 from .test_repo_url import AT, conn, world  # noqa: F401  (fixtures)
 
 NEW_PW = 'amber-harbour-42-fern'
-LINK = re.compile(r'<code>(?:https?://[^/<]+)?(/invite/[A-Za-z0-9_-]+)</code>')
+LINK = re.compile(r'readonly value="(?:https?://[^/"]+)?(/invite/[A-Za-z0-9_-]+)"')
 
 
 @pytest.fixture
@@ -47,11 +47,11 @@ def test_an_owner_invites_an_email_without_an_account(app, world, conn, clock):
     assert new['password_hash'] == '!' and new['role'] == 'user'
     assert projects.member_role(conn, world['alpha']['id'], new['id']) == 'developer'
     page = owner.get('/projects/alpha/settings/members').get_data(as_text=True)
-    assert 'invited' in page and 'New invite link' in page and path not in page          # the link is shown once
+    assert 'Pending invites' in page and 'New invite link' in page and path not in page          # the link is shown once
     assert new_client(app).get(path).status_code == 200
     c, done = use(app, path)
     assert done.status_code == 302 and c.get('/projects/alpha/settings/members').status_code == 200       # signed in, a member
-    assert 'invited' not in owner.get('/projects/alpha/settings/members').get_data(as_text=True)
+    assert 'Pending invites' not in owner.get('/projects/alpha/settings/members').get_data(as_text=True)
     assert len(audit.rows(conn, 'invite.create')) == 1 and len(audit.rows(conn, 'invite.accept')) == 1
     assert path.rsplit('/', 1)[1] not in str(audit.rows(conn))
 
@@ -120,7 +120,7 @@ def test_only_owners_and_admins_invite(world, conn):
 def test_the_link_uses_public_url_when_set(app, world):
     app.config['PUBLIC_URL'] = 'https://central.example.com/'
     resp = post(world['clients']['owner'], '/projects/alpha/members', email='a@example.com', role='viewer')
-    assert '<code>https://central.example.com/invite/' in resp.get_data(as_text=True)
+    assert 'value="https://central.example.com/invite/' in resp.get_data(as_text=True)
 
 
 def test_unknown_links_get_404(app):

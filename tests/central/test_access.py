@@ -108,7 +108,7 @@ def test_members_page_and_management_by_role(world, conn, who):
         assert page.status_code == 200
         text = page.get_data(as_text=True)
         assert 'owner@example.com' in text and 'viewer@example.com' in text
-        assert ('Invite a member' in text) == (who in ('owner', 'admin'))
+        assert ('Invite people' in text) == (who in ('owner', 'admin'))
     if who == 'anonymous':
         return
     resp = post(c, '/projects/alpha/members', email='stranger@example.com', role='viewer')
@@ -243,7 +243,7 @@ def test_last_owner_cannot_be_removed_or_demoted(world, conn):
 
 def test_membership_forms_carry_csrf_and_refuse_without_it(world, conn):
     page = world['clients']['owner'].get('/projects/alpha/settings/members').get_data(as_text=True)
-    assert page.count('<form') == page.count('name="csrf_token"') >= 9
+    assert page.count('<form method="post"') == page.count('name="csrf_token"') >= 9
     viewer_id = world['accounts']['viewer']['id']
     resp = world['clients']['owner'].post('/projects/alpha/members/%s/remove' % viewer_id)
     assert resp.status_code == 400

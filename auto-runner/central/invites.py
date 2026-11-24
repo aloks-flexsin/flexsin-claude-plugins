@@ -72,6 +72,20 @@ def issue(db, account_id, kind, created_by, moment):
     return raw
 
 
+def open_links(db, moment):
+    """-> {account_id: expires_at} of each account's newest link that still works."""
+    out = {}
+    for r in db.query("SELECT account_id, expires_at FROM invite WHERE used_at IS NULL AND expires_at > ?"
+                      " ORDER BY created_at", (sessions.iso(moment),)):
+        out[r["account_id"]] = r["expires_at"]
+    return out
+
+
+def cancel(db, account_id, moment):
+    """End every unused link of the account at once (no commit). The account stays, with no password."""
+    db.execute("DELETE FROM invite WHERE account_id = ? AND used_at IS NULL", (account_id,))
+
+
 def find(db, raw, moment):
     """-> the link row (with the account's email and disabled flag) while it is unused and not expired, else None."""
     if not raw or len(raw) > 128:
