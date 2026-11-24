@@ -289,4 +289,6 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
+    for s in (sys.stdout, sys.stderr):                    # no import of autosafe: this folder must not be on sys.path
+        getattr(s, 'reconfigure', None) and s.reconfigure(encoding='utf-8', errors='replace')
     sys.exit(main())

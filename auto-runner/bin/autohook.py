@@ -213,4 +213,8 @@ def main(argv=None, stdin=None, stdout=None, env=None, stderr=None, now=None):
 
 
 if __name__ == '__main__':
+    try:                                                  # the hook always exits 0, even if the console cannot be set up
+        _load('autorunner_safe', 'autosafe.py').utf8_console()
+    except Exception:
+        pass
     sys.exit(main())

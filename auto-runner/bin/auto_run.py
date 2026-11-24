@@ -1767,4 +1767,5 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
+    autosafe.utf8_console()
     sys.exit(main())

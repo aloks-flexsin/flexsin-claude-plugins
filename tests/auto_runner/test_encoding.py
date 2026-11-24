@@ -123,6 +123,42 @@ def test_utf8_console_lets_a_cp1252_stream_print_an_arrow():
     assert stream.buffer.getvalue().decode('utf-8').strip() == '→'
 
 
+# --- W2: every bin command sets up a UTF-8 console first ------------------------------------------------------------------
+def main_block(path):
+    src = path.read_text(encoding='utf-8')
+    return src.split("if __name__ == '__main__':", 1)[1].lstrip('\n') if "if __name__ == '__main__':" in src else None
+
+
+def test_every_bin_command_sets_up_utf8_before_anything_else():
+    seen = 0
+    for path in sorted((ROOT / 'auto-runner' / 'bin').glob('*.py')):
+        block = main_block(path)
+        if block is None:
+            continue
+        seen += 1
+        if path.name == 'queue.py':
+            assert block.startswith('    for s in (sys.stdout, sys.stderr):'), path.name
+            assert "reconfigure(encoding='utf-8', errors='replace')" in block.split('sys.exit', 1)[0], path.name
+        elif path.name == 'autohook.py':
+            assert 'utf8_console()' in block.split('sys.exit', 1)[0], path.name        # inside its always-exit-0 guard
+        else:
+            first = block.splitlines()[0].strip()
+            assert first.endswith('.utf8_console()'), path.name
+    assert seen >= 20
+
+
+def test_report_status_prints_a_title_with_an_arrow_on_a_cp1252_console(tmp_path):
+    project = tmp_path / 'proj'
+    (project / '.auto').mkdir(parents=True)
+    (project / '.auto' / 'queue.md').write_text(f'- [ ] **W9 Title.** do it\n  *Status:* blocked {ARROW}\n', encoding='utf-8')
+    env = {k: v for k, v in os.environ.items() if k != 'PYTHONIOENCODING'}
+    env['PYTHONIOENCODING'] = 'cp1252'
+    done = subprocess.run([sys.executable, str(ROOT / 'auto-runner' / 'bin' / 'auto_report.py'), 'status',
+                           '--project', str(project)], capture_output=True, env=env, cwd=tmp_path)
+    assert done.returncode == 0, done.stderr.decode('utf-8', 'replace')
+    assert ARROW in done.stdout.decode('utf-8')
+
+
 def test_utf8_console_ignores_streams_without_reconfigure():
     ar.autosafe.utf8_console([io.StringIO(), object()])
     ar.autosafe.utf8_console()

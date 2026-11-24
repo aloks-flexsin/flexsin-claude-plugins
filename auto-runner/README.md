@@ -301,7 +301,7 @@ such as `₹` never breaks a run on Windows.
 | File | What it does |
 |---|---|
 | `bin/auto_run.py` | The runner (worktree, one ready item per iteration, independent test run, lock, STOP, events, blockers, delivery, `publish` of its own branch). |
-| `bin/queue.py`, `bin/autocfg.py`, `bin/autosafe.py` | Queue grammar and readiness (`*Depends on:*`, `*Slice:*`), config loader (v1 keys + v2 sections, `principles()`), safety preflight; `autosafe.utf8_console()` makes stdout/stderr write UTF-8 (undecodable characters replaced, streams without `reconfigure` skipped, never raises). |
+| `bin/queue.py`, `bin/autocfg.py`, `bin/autosafe.py` | Queue grammar and readiness (`*Depends on:*`, `*Slice:*`), config loader (v1 keys + v2 sections, `principles()`), safety preflight; `autosafe.utf8_console()` makes stdout/stderr write UTF-8 (undecodable characters replaced, streams without `reconfigure` skipped, never raises). Every command in `bin/` calls it first in its `__main__` block (`queue.py` does the same inline, as it must not import from its own folder), so every command writes UTF-8 to its console. |
 | `bin/autoevents.py` | Append-only `.auto/events.jsonl`, schema `event.v1` (`RUN_TYPES` such as `publish` carry no item). |
 | `bin/autoblock.py` | `blocker.v1` / `decision.v1`, lifecycle state machine, local store; `list [--state S]`, `answer ID --option/--text`, `view`. |
 | `bin/autodeliver.py` | `Transport` interface, `LocalTransport`, `HttpTransport` (central service; `project_info()` reads `GET /api/v1/project`), event push to central, inbox writer, resume packets; `resume ID` rebuilds a packet. |
