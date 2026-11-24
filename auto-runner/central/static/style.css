@@ -143,3 +143,70 @@ dialog.confirm-dialog{border:1px solid var(--line);border-radius:14px;padding:22
 dialog.confirm-dialog::backdrop{background:rgba(16,20,27,.45)}
 dialog.confirm-dialog h2{margin:0 0 8px;font-size:18px}
 dialog.confirm-dialog p{color:var(--muted);margin:0}
+
+/* ---------- Shell (audit PR 2): top bar, account menu, project header and tabs, overview, project cards ---------- */
+.nav a[aria-current=page]{background:var(--brand-soft);color:var(--brand);font-weight:600}
+.pill{display:inline-block;min-width:20px;text-align:center;font-size:11px;font-weight:700;line-height:1;padding:3px 7px;border-radius:999px;vertical-align:1px}
+.pill.attention{background:var(--attn-mark);color:#fff}
+.pill.info{background:var(--info-soft);color:var(--info)}
+.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.account-menu{position:relative;margin-left:auto}
+.account-menu summary{list-style:none;display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 10px 4px 4px;border:1px solid var(--line);border-radius:999px;font-size:14px;font-weight:500}
+.account-menu summary::-webkit-details-marker{display:none}
+.account-menu .menu{position:absolute;right:0;top:calc(100% + 6px);min-width:220px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(16,24,40,.14);padding:8px;z-index:20;display:flex;flex-direction:column}
+.account-menu .menu a,.account-menu .menu button{display:block;text-align:left;width:100%;padding:9px 10px;border-radius:8px;color:var(--text);background:none;border:0;font-weight:500;font-size:14px}
+.account-menu .menu a:hover,.account-menu .menu button:hover{background:var(--bg);text-decoration:none;filter:none}
+.account-menu .menu form{margin:0}
+.menu-who{font-size:12px;color:var(--muted);padding:6px 10px 8px;border-bottom:1px solid var(--line);margin-bottom:6px;word-break:break-all}
+.project-head{margin:0 0 22px}
+.project-title{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.project-title h1{margin:0}
+.project-title h1 small{font-size:14px;color:var(--muted);font-weight:500}
+.crumb{font-size:13px;color:var(--muted)}
+.project-meta{display:flex;flex-wrap:wrap;gap:8px;font-size:13px;color:var(--muted);margin-top:6px}
+.project-meta strong{color:var(--text)}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-top:16px;overflow-x:auto}
+.tabs a{padding:10px 14px;color:var(--muted);font-weight:500;border-bottom:2px solid transparent;white-space:nowrap}
+.tabs a:hover{color:var(--text);text-decoration:none}
+.tabs a[aria-current=page]{color:var(--brand);border-bottom-color:var(--brand);font-weight:600}
+.tabs .count{color:var(--muted);font-weight:500}
+.subnav{display:flex;gap:4px;margin:0 0 18px;flex-wrap:wrap}
+.subnav a{padding:7px 12px;border-radius:8px;color:var(--muted);font-weight:500}
+.subnav a[aria-current=page]{background:var(--brand-soft);color:var(--brand);font-weight:600}
+.page-title{font-size:22px;margin:0 0 6px}
+.block{background:transparent;border:0;box-shadow:none;padding:0;margin:0 0 26px}
+.block-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:10px}
+.block-head h2{margin:0;font-size:16px}
+.cards{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+.action-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.action-card.attention{border-color:color-mix(in srgb,var(--attn-mark) 45%,var(--line))}
+.action-card.bad{border-color:color-mix(in srgb,var(--bad-mark) 40%,var(--line))}
+.action-title{font-weight:600;font-size:15px}
+.action-title a{color:var(--text)}
+.list{background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.list-row{display:flex;align-items:center;gap:16px;padding:14px 16px;border-top:1px solid var(--line);flex-wrap:wrap}
+.list-row:first-child{border-top:0}
+.list-row .grow{flex:1;min-width:200px}
+.list-row .progress{width:220px}
+.feed{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.feed li{display:flex;justify-content:space-between;gap:12px;padding:11px 16px;border-top:1px solid var(--line);font-size:14px}
+.feed li:first-child{border-top:0}
+.feed time{color:var(--muted);white-space:nowrap}
+.project-cards{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));margin:0 0 22px}
+.project-card{display:flex;flex-direction:column;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;color:var(--text)}
+.project-card:hover{border-color:var(--brand);text-decoration:none}
+.project-card-name{font-size:17px;font-weight:700}
+.project-card-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;font-size:13px}
+details>summary{cursor:pointer}
+details.card>summary{list-style:none}
+form.stack{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-top:14px}
+input.wide{min-width:min(520px,100%)}
+@media (max-width:720px){
+  .topbar-in{flex-wrap:nowrap;gap:10px;padding:0 12px}
+  .brand span{display:none}
+  .nav{flex-wrap:nowrap;overflow-x:auto;min-width:0}
+  .nav a{white-space:nowrap}
+  .account-name{display:none}
+  .list-row .progress{width:100%}
+  .feed li{flex-direction:column;gap:2px}
+}

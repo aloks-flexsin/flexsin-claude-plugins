@@ -1,8 +1,9 @@
 {% extends "base.html" %}
+{% from "_project.html" import header, settings_nav with context %}
 {% block title %}Task {{ task.number }}{% endblock %}
 {% block content %}
-<h1>#{{ task.number }} {{ task.title }}</h1>
-<p class="crumbs"><a href="{{ url_for('tasks.tasks_page', slug=project.slug) }}">All tasks of {{ project.name }}</a></p>
+{{ header(project, "tasks") }}
+<h2 class="page-title">#{{ task.number }} {{ task.title }}</h2>
 <p class="lead">Assigned to {{ task.assignee_email }} · <span class="badge {{ 'warn' if task.status in ('plan_review', 'changes_requested') else ('ok' if task.status == 'done' else '') }}">{{ describe }}</span>
   {% if live %} · worked by <code>{{ task.claim_runner }}</code>{% elif task.claim_id and task.status in ('planning', 'building', 'approved', 'changes_requested') %} · claim expired (no sign of its runner for {{ ttl_hours }} hours){% endif %}
   {% if task.branch %} · branch <code>{{ task.branch }}</code>{% endif %}

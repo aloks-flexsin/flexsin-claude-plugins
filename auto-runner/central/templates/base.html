@@ -11,18 +11,23 @@
 <header class="topbar"><div class="topbar-in">
   <a class="brand" href="{{ url_for('auth.home') }}">auto-runner <span>central</span></a>
   {% if g.account %}
-  <nav class="nav">
-    <a href="{{ url_for('mywork.my_page') }}">My work</a>
-    <a href="{{ url_for('projects.projects_page') }}">Projects</a>
-    {% if g.account.role == "admin" %}<a href="{{ url_for('admin.accounts_page') }}">Accounts</a>{% endif %}
-    <a href="{{ url_for('personal.tokens_page') }}">My tokens</a>
-    <a href="{{ url_for('admin.own_password') }}">Password</a>
+  {%- set ep = nav_endpoint or "" %}
+  <nav class="nav" aria-label="Main">
+    <a href="{{ url_for('mywork.my_page') }}"{% if ep == "mywork.my_page" %} aria-current="page"{% endif %}>My work{% if nav_badge %} <span class="pill attention" title="decisions waiting for you">{{ nav_badge }}</span>{% endif %}</a>
+    <a href="{{ url_for('projects.projects_page') }}"{% if ep.split(".")[0] in ("projects", "tasks", "runs", "blockers") %} aria-current="page"{% endif %}>Projects</a>
+    {% if g.account.role == "admin" %}<a href="{{ url_for('admin.accounts_page') }}"{% if ep.startswith("admin.account") %} aria-current="page"{% endif %}>Accounts</a>{% endif %}
   </nav>
-  <div class="who">{{ g.account.email }}
-    <form method="post" action="{{ url_for('auth.signout') }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Sign out</button>
-    </form>
-  </div>
+  <details class="account-menu">
+    <summary aria-label="Account menu"><span class="av" aria-hidden="true">{{ g.account | display_name | initials }}</span><span class="account-name">{{ g.account | display_name }}</span></summary>
+    <div class="menu">
+      <div class="menu-who">{{ g.account.email }}</div>
+      <a href="{{ url_for('personal.tokens_page') }}">My tokens</a>
+      <a href="{{ url_for('admin.own_password') }}">Password</a>
+      <form method="post" action="{{ url_for('auth.signout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Sign out</button>
+      </form>
+    </div>
+  </details>
   {% endif %}
 </div></header>
 <main>

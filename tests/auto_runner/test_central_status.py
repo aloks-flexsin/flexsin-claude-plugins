@@ -69,7 +69,7 @@ def test_connected(connected, central):
     p, env = connected
     text, ok = run(p, central, env)
     assert ok and 'Service: CONNECTED' in text and 'Runner identity: alok/bhawish-claude-auto-runner' in text
-    assert f'{BASE}/projects/{SLUG}/blockers' in text and 'owners, managers and admins answer' in text
+    assert f'{BASE}/projects/{SLUG} (overview' in text and f'{BASE}/my' in text and 'owners, managers and admins answer' in text
     assert central.token not in text
     assert [(m, u) for m, u, _ in central.calls] == [('GET', f'{BASE}/api/v1/project')]   # never deliveries, never a POST
 

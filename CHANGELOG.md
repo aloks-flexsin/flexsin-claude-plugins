@@ -5,6 +5,10 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Central service, new frame (UX audit PR 2): sign-in lands on **My work**; a top bar with the number of decisions
+  waiting for you and an account menu; one header and tab bar (Overview · Tasks · Runs · Blockers · Settings, with
+  counts) on every project page; a project now opens on its **Overview** (needs attention, working now, recent activity);
+  members, repository and machine tokens move under **Settings** (old token URL redirects); projects list as cards.
 - Central service, UX foundations (from the UX audit): one status vocabulary with tone and shape, relative times,
   readable names and runners, runner reasons in words, a safe Markdown renderer for plans, copy buttons, live times and
   auto-refresh (`static/app.js`), and **a confirmation before every action that cannot be undone** (a dialog with

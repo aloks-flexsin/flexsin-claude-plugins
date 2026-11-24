@@ -75,7 +75,7 @@ def world(app, conn):
 
 def test_members_page_shows_the_repo_url_and_the_form_only_to_owners(world):
     for who in ('owner', 'admin', 'manager', 'viewer'):
-        page = world['clients'][who].get('/projects/alpha').get_data(as_text=True)
+        page = world['clients'][who].get('/projects/alpha/settings/repository').get_data(as_text=True)
         assert REPO in page
         assert ('/projects/alpha/repo' in page) == (who in ('owner', 'admin'))
 

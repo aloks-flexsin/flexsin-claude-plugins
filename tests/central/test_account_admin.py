@@ -49,7 +49,7 @@ def signin(client, email, password):
 
 
 def post(client, path, **data):
-    data['csrf_token'] = token(client, '/')
+    data['csrf_token'] = token(client, '/my')
     return client.post(path, data=data)
 
 
@@ -95,8 +95,8 @@ def test_non_admins_and_strangers_get_404_on_every_admin_page(app, conn, as_bob,
 
 
 def test_home_links_accounts_only_for_admins(as_root, as_bob):
-    assert '/admin/accounts' in as_root.get('/').get_data(as_text=True)
-    assert '/admin/accounts' not in as_bob.get('/').get_data(as_text=True)
+    assert '/admin/accounts' in as_root.get('/my').get_data(as_text=True)
+    assert '/admin/accounts' not in as_bob.get('/my').get_data(as_text=True)
 
 
 LINK = re.compile(r'<code>(?:https?://[^/<]+)?(/invite/[A-Za-z0-9_-]+)</code>')
@@ -122,7 +122,7 @@ def test_admin_adds_an_account_with_a_link_and_no_password(app, conn, as_root, r
     assert 'invited' in as_root.get('/admin/accounts').get_data(as_text=True)
     assert path not in as_root.get('/admin/accounts').get_data(as_text=True)          # shown once
     c, done = use_link(app, path)
-    assert done.status_code == 302 and c.get('/').status_code == 200                   # signed in
+    assert done.status_code == 302 and c.get('/my').status_code == 200                   # signed in
     assert signin(new_client(app), 'carol@example.com', NEW_PW).status_code == 302
     [row] = audit.rows(conn, 'account.create')
     assert row['account_id'] == root['id']
@@ -146,7 +146,7 @@ def test_disabled_account_cannot_sign_in_and_loses_its_sessions(app, conn, as_ro
     assert post(as_root, '/admin/accounts/%s/disabled' % bob['id'], disabled='1', confirm='1').status_code == 302
     assert accounts.get(conn, bob['id'])['disabled'] == 1
     assert conn.query('SELECT * FROM session WHERE account_id = ?', (bob['id'],)) == []
-    assert as_bob.get('/').status_code == 302
+    assert as_bob.get('/my').status_code == 302
     assert signin(new_client(app), 'bob@example.com', USER_PW).status_code == 401
     assert post(as_root, '/admin/accounts/%s/disabled' % bob['id'], disabled='0').status_code == 302
     assert signin(new_client(app), 'bob@example.com', USER_PW).status_code == 302
@@ -207,8 +207,8 @@ def test_reset_link_signs_the_person_out_and_stops_the_old_password(app, conn, a
     resp = post(as_root, '/admin/accounts/%s/password' % bob['id'])
     assert resp.status_code == 200 and 'Password reset link' in resp.get_data(as_text=True)
     assert conn.query('SELECT * FROM session WHERE account_id = ?', (bob['id'],)) == []
-    assert as_bob.get('/').status_code == 302 and second.get('/').status_code == 302
-    assert as_root.get('/').status_code == 200  # the admin's own session is untouched
+    assert as_bob.get('/my').status_code == 302 and second.get('/my').status_code == 302
+    assert as_root.get('/my').status_code == 200  # the admin's own session is untouched
     assert signin(new_client(app), 'bob@example.com', USER_PW).status_code == 401      # the old password stopped at once
     assert use_link(app, link_in(resp))[1].status_code == 302
     assert signin(new_client(app), 'bob@example.com', NEW_PW).status_code == 302
@@ -257,7 +257,7 @@ def test_own_password_change_needs_the_current_password(app, conn, as_bob, bob):
     assert resp.status_code == 400
     reasons = [r['detail']['reason'] for r in audit.rows(conn, 'account.password_change.refused')]
     assert reasons == ['wrong_current_password', 'mismatch', 'policy']
-    assert as_bob.get('/').status_code == 200  # refused changes leave the session alone
+    assert as_bob.get('/my').status_code == 200  # refused changes leave the session alone
 
 
 def test_own_password_change_signs_out_every_session(app, conn, as_bob, bob):
@@ -268,7 +268,7 @@ def test_own_password_change_signs_out_every_session(app, conn, as_bob, bob):
     assert resp.status_code == 302 and resp.headers['Location'].endswith('/signin')
     assert conn.query('SELECT * FROM session WHERE account_id = ?', (bob['id'],)) == []
     assert as_bob.get_cookie(auth.SESSION_COOKIE) is None
-    assert second.get('/').status_code == 302
+    assert second.get('/my').status_code == 302
     assert signin(new_client(app), 'bob@example.com', NEW_PW).status_code == 302
     [row] = audit.rows(conn, 'account.password_change')
     assert row['account_id'] == bob['id'] and row['detail'] == {'email': 'bob@example.com'}

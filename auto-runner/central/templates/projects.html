@@ -4,24 +4,28 @@
 <h1>Projects</h1>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 {% if projects %}
-<table>
-  <thead><tr><th>Slug</th><th>Name</th><th>Your role</th></tr></thead>
-  <tbody>
+<div class="project-cards">
   {% for p in projects %}
-    <tr>
-      <td><a href="{{ url_for('projects.members_page', slug=p.slug) }}">{{ p.slug }}</a></td>
-      <td>{{ p.name }}</td>
-      <td><span class="badge">{{ p.member_role or "admin" }}</span></td>
-    </tr>
+  <a class="project-card" href="{{ url_for('projects.overview_page', slug=p.slug) }}">
+    <span class="project-card-name">{{ p.name }}</span>
+    <span class="muted">{{ (p.repo_url or "no repository yet") | replace("https://", "") | replace(".git", "") }}</span>
+    <span class="project-card-meta">
+      <span class="chip tone-neutral">{{ p.nav.role }}</span>
+      {% if p.nav.approval %}<span class="chip tone-attention"><span class="mark dot" aria-hidden="true"></span>{{ p.nav.approval }} plan{{ "s" if p.nav.approval != 1 }} to approve</span>{% endif %}
+      {% if p.nav.blockers %}<span class="chip tone-bad"><span class="mark dot" aria-hidden="true"></span>{{ p.nav.blockers }} blocker{{ "s" if p.nav.blockers != 1 }}</span>{% endif %}
+      {% if p.nav.live_runs %}<span class="chip tone-info"><span class="mark dot" aria-hidden="true"></span>{{ p.nav.live_runs }} running</span>{% endif %}
+      <span class="muted">{{ p.nav.open_tasks }} open task{{ "s" if p.nav.open_tasks != 1 }}</span>
+    </span>
+  </a>
   {% endfor %}
-  </tbody>
-</table>
+</div>
 {% else %}
-<p class="card empty">You are not a member of any project yet.</p>
+<div class="empty"><p>You are not a member of any project yet. An owner or admin invites you from the project's Settings.</p></div>
 {% endif %}
 {% if is_admin %}
-<h2>Create a project</h2>
-<form method="post" action="{{ url_for('projects.project_create') }}">
+<details class="card"{% if error %} open{% endif %}>
+<summary><strong>Create a project</strong></summary>
+<form method="post" action="{{ url_for('projects.project_create') }}" class="stack">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <label>Repository URL <input type="text" name="repo_url" maxlength="500" required
     placeholder="https://github.com/owner/repo.git or git@github.com:owner/repo.git"></label>
@@ -29,7 +33,8 @@
     (the repository's name; <code>owner-repo</code> when that slug is taken).</p>
   <label>Slug (optional) <input type="text" name="slug" value="{{ form.slug }}" pattern="[a-z0-9-]+" maxlength="64"></label>
   <label>Name (optional) <input type="text" name="name" value="{{ form.name }}" maxlength="200"></label>
-  <button type="submit">Create project</button>
+  <button type="submit" class="btn primary">Create project</button>
 </form>
+</details>
 {% endif %}
 {% endblock %}

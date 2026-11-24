@@ -128,6 +128,19 @@ may not stick over plain http. The API endpoints do not use the cookie.
   JavaScript a dialog asks instead (`data-confirm` on the form).
 - `account.name` (nullable) is added by `init-db`.
 
+## The frame (UX audit, PR 2; `shell.py`)
+
+- Signed in, `/` goes to **My work**. The top bar: My work (with the number of decisions waiting for you: plans you may
+  approve and blockers you may answer), Projects, Accounts (admins), and an account menu (My tokens, Password, Sign out).
+- Every project page shares one header (name, repository, your role, members, New task for people who run runners) and
+  tabs: **Overview** · Tasks (open, plans waiting) · Runs (live) · Blockers (waiting) · **Settings**. The counts come
+  from `shell.project_nav`, injected into every page that has `g.project`.
+- **Overview** (`/projects/<slug>`): Needs attention (plans waiting, blockers waiting, silent claims; deciders get the
+  action, others "View"), Working now (live claims with progress, and running runs), Recent activity (audit rows in
+  words). Refreshes itself every 30 s while open.
+- **Settings**: Members (`/settings/members`), Repository (`/settings/repository`), Machine tokens (`/settings/tokens`;
+  `/projects/<slug>/tokens` redirects). The projects list is cards with what waits in each.
+
 ## My work and task progress
 
 - `/my` (**My work**, first in the top bar; everyone signed in): across every project the person can see (all for an admin)

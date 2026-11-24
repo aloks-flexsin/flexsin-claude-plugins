@@ -2,8 +2,10 @@
 
 - `/projects` lists the projects the signed-in person may see; admins also get a form to create one, which needs the
   project's repository URL (see projects.normalize_repo_url).
-- `/projects/<slug>` is the members page (any member) and shows the repository URL; owners and admins add, re-role and
-  remove members there and change the repository URL (`POST /projects/<slug>/repo`, audited as `project.repo_url`).
+- `/projects/<slug>` is the project Overview (any member; shell.overview): what needs attention, who is working now,
+  recent activity. Settings: `/projects/<slug>/settings/members` (any member; owners and admins add, re-role and remove
+  members), `/settings/repository` (the repository URL; owners and admins change it with `POST /projects/<slug>/repo`,
+  audited as `project.repo_url`) and `/settings/tokens` (machine tokens, below; `/projects/<slug>/tokens` redirects).
 - The guard answers 404 to anyone signed out, to non-members and to members below `min_role`: never 403.
 - Project creation and every membership change (and refusal) write an audit row with the project's id.
 - `/projects/<slug>/tokens` (managers, owners and admins) creates, revokes and rotates API tokens (see tokens.py);
@@ -46,7 +48,11 @@ def project_access(min_role):
 
 
 def _list_page(error=None, status=200, form=None):
-    page = render_template("projects.html", projects=projects.visible_to(get_db(), g.account),
+    from . import shell                                   # shell imports pages that import this module
+    db, moment = get_db(), auth.now()
+    rows = [dict(p, nav=shell.project_nav(db, p, g.account, projects.effective_role(db, p, g.account), moment))
+            for p in projects.visible_to(db, g.account)]
+    page = render_template("projects.html", projects=rows,
                            is_admin=g.account["role"] == projects.ADMIN, error=error, form=form or {})
     return page, status
 
@@ -73,7 +79,7 @@ def project_create():
     audit.record(db, "project.create", _at(), account_id=account["id"], project_id=project["id"],
                  detail={"slug": project["slug"], "name": project["name"], "repo_url": project["repo_url"]})
     db.commit()
-    return redirect(url_for("projects.members_page", slug=project["slug"]))
+    return redirect(url_for("projects.overview_page", slug=project["slug"]))
 
 
 def _members_page(error=None, status=200, form_email="", invite=None):
@@ -94,8 +100,27 @@ def _record(db, action, detail):
 
 @bp.get("/projects/<slug>")
 @project_access("viewer")
+def overview_page(slug):
+    from . import shell
+    data = shell.overview(get_db(), g.project, g.account, g.project_role, auth.now())
+    return render_template("overview.html", project=g.project, **data)
+
+
+@bp.get("/projects/<slug>/settings/members")
+@project_access("viewer")
 def members_page(slug):
     return _members_page()
+
+
+def _repository_page(error=None, status=200):
+    return render_template("project_repository.html", project=g.project, error=error,
+                           can_manage=projects.allows(g.project_role, "owner")), status
+
+
+@bp.get("/projects/<slug>/settings/repository")
+@project_access("viewer")
+def repository_page(slug):
+    return _repository_page()
 
 
 @bp.post("/projects/<slug>/repo")
@@ -107,10 +132,10 @@ def repo_url_set(slug):
     except projects.ProjectError as exc:
         # Neither the refused value nor any part of it goes in the audit row: it may hold a credential.
         _record(db, "project.repo_url.refused", {"reason": str(exc)})
-        return _members_page(error=str(exc), status=400)
+        return _repository_page(error=str(exc), status=400)
     after = projects.get_by_slug(db, slug)["repo_url"]
     _record(db, "project.repo_url", {"from": before, "to": after})
-    return redirect(url_for("projects.members_page", slug=slug))
+    return redirect(url_for("projects.repository_page", slug=slug))
 
 
 @bp.get("/api/v1/project")
@@ -223,13 +248,19 @@ def _token_detail(row):
     return {"token_id": row["id"], "prefix": row["prefix"], "scopes": row["scopes"]}
 
 
-@bp.get("/projects/<slug>/tokens")
+@bp.get("/projects/<slug>/settings/tokens")
 @project_access("manager")
 def tokens_page(slug):
     return _tokens_page()
 
 
-@bp.post("/projects/<slug>/tokens")
+@bp.get("/projects/<slug>/tokens")
+@project_access("manager")
+def tokens_page_old(slug):
+    return redirect(url_for("projects.tokens_page", slug=slug), code=301)
+
+
+@bp.post("/projects/<slug>/settings/tokens")
 @project_access("manager")
 def token_create(slug):
     db = get_db()

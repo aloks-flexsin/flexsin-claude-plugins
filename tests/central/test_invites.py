@@ -46,12 +46,12 @@ def test_an_owner_invites_an_email_without_an_account(app, world, conn, clock):
     new = accounts.find_by_email(conn, 'alok.sharma.connect@gmail.com')
     assert new['password_hash'] == '!' and new['role'] == 'user'
     assert projects.member_role(conn, world['alpha']['id'], new['id']) == 'developer'
-    page = owner.get('/projects/alpha').get_data(as_text=True)
+    page = owner.get('/projects/alpha/settings/members').get_data(as_text=True)
     assert 'invited' in page and 'New invite link' in page and path not in page          # the link is shown once
     assert new_client(app).get(path).status_code == 200
     c, done = use(app, path)
-    assert done.status_code == 302 and c.get('/projects/alpha').status_code == 200       # signed in, a member
-    assert 'invited' not in owner.get('/projects/alpha').get_data(as_text=True)
+    assert done.status_code == 302 and c.get('/projects/alpha/settings/members').status_code == 200       # signed in, a member
+    assert 'invited' not in owner.get('/projects/alpha/settings/members').get_data(as_text=True)
     assert len(audit.rows(conn, 'invite.create')) == 1 and len(audit.rows(conn, 'invite.accept')) == 1
     assert path.rsplit('/', 1)[1] not in str(audit.rows(conn))
 
