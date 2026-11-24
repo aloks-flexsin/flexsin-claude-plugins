@@ -181,7 +181,7 @@ USAGE_LIMIT_EXIT = 75                      # EX_TEMPFAIL: a wrapper may simply s
 LIMIT_POLL_MINUTES = 25                    # the longest wait before trying again: a stated reset can be too late
 BUDGET_TEXT = re.compile(r'max[_ ]?budget|budget (?:was |has been )?(?:exceeded|exhausted|reached|limit)|exceeded .*budget', re.I)
 MAX_BUDGET_HANDOVERS = 2                   # attempts of one item that may end on the budget before the run stops
-USAGE_LIMIT_DEFAULTS = {'wait': False, 'max_wait_minutes': 360}
+USAGE_LIMIT_DEFAULTS = {'wait': False, 'max_wait_minutes': 360, 'stop_at_percent': 90}
 
 
 def _limit_text(output, soft=False):
@@ -566,6 +566,53 @@ def parse_cost(output):
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 return float(value)
     return None
+
+
+WINDOW_LABELS = {'five_hour': '5-hour', 'seven_day': '7-day'}   # the one table for status, the stop message and the check
+
+
+def window_label(key):
+    return WINDOW_LABELS.get(key) or str(key).replace('_', ' ')
+
+
+def _number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _now_epoch():
+    return time.time()
+
+
+def usage_threshold(usage, percent):
+    """(window, values) of the window with the highest utilization when it is at or over `percent`, else None."""
+    if not usage or percent >= 100:
+        return None
+    window = max(usage, key=lambda k: usage[k]['utilization'])
+    return (window, usage[window]) if usage[window]['utilization'] * 100 >= percent else None
+
+
+def plan_usage(output):
+    """{window: {"utilization": 0-1, "resets_at": epoch}} from the last `rate_limit_event` line, else {}. Numeric values only."""
+    for line in reversed(output.splitlines()):
+        line = line.strip()
+        if not line.startswith('{') or 'rate_limit_event' not in line:
+            continue
+        try:
+            data = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(data, dict) or data.get('type') != 'rate_limit_event':
+            continue
+        info = data.get('rate_limit_info')
+        windows = info.get('unifiedWindows') if isinstance(info, dict) else None
+        if not isinstance(windows, dict):
+            return {}
+        usage = {}
+        for key, w in windows.items():
+            if isinstance(w, dict) and _number(w.get('utilization')) and _number(w.get('resetsAt')):
+                usage[str(key)] = {'utilization': float(w['utilization']), 'resets_at': int(w['resetsAt'])}
+        return usage
+    return {}
 
 
 BLOCKER_PARAGRAPH = (
@@ -1133,6 +1180,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                                      'user': user, 'account': account, 'account_check': account_check,
                                      **({'task': task_number} if task_number is not None else {})})
     exit_code, reason = None, 'error'
+    usage_stop = None                       # {window, utilization, resets_at} when the run stops at the plan-usage threshold
     published = None
     last_suite = ''
     statuses = {}
@@ -1417,7 +1465,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                    '--max-budget-usd', str(max_budget_usd), *model]
             code, out = claude(cmd, wt)
             entry = {'time': datetime.now().isoformat(timespec='seconds'), 'item': item, 'result': None, 'commit': None,
-                     'duration_s': None, 'cost_usd': parse_cost(out)}
+                     'duration_s': None, 'cost_usd': parse_cost(out), 'plan_usage': plan_usage(out)}
             log_text = out + ('' if code == 0 else f'\n--- claude exited with {code} ---\n')
             hit = usage_limit(out)
             if hit is None and git(wt, 'rev-parse', 'HEAD') == head:
@@ -1645,6 +1693,27 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 say('no progress twice in a row: stopping.')
                 exit_code, reason = 1, 'no_progress'
                 return 1
+            if i < budget[0] and queue.open_count(wq.read_text(encoding='utf-8')) > 0:
+                if not entry['plan_usage']:
+                    say('no plan usage in the output: not checking the usage threshold.')
+                crossed = usage_threshold(entry['plan_usage'], limits['stop_at_percent'])
+                if crossed is not None:
+                    window, w = crossed
+                    when = datetime.fromtimestamp(w['resets_at']).strftime('%H:%M')
+                    say(f'plan usage at {round(w["utilization"] * 100)}% of the {window_label(window)} limit (resets {when}): '
+                        f'stopping before the next item')
+                    pause = w['resets_at'] + 60 - _now_epoch()
+                    if limits['wait'] and waited + max(pause, 0) <= limits['max_wait_minutes'] * 60:
+                        say(f'waiting {max(pause, 0) / 60:.0f} minute(s) for the reset (create {stop} to stop instead)')
+                        left = max(pause, 0)
+                        while left > 0 and not stop.exists():
+                            sleep(min(30, left))
+                            left -= min(30, left)
+                        waited += max(pause, 0) - left
+                        continue
+                    usage_stop = {'window': window, 'utilization': w['utilization'], 'resets_at': w['resets_at']}
+                    exit_code, reason = USAGE_LIMIT_EXIT, 'usage_threshold'
+                    return USAGE_LIMIT_EXIT
         else:
             reason = 'max_iterations'
         exit_code = 0
@@ -1661,6 +1730,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 say(f"pushed {branch} to {published['remote']}" + (f" ({published['pr_error']})" if published.get('pr_error') else ''))
     finally:
         ledger.emit('run_end', detail={'exit': exit_code, 'reason': reason,
+                                       **({'usage': usage_stop} if usage_stop else {}),
                                        **({'task': task_number} if task_number is not None else {})})
         push()
         if pusher is not None and autotasks.current(auto) is not None:

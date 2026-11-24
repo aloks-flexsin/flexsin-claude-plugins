@@ -133,12 +133,14 @@ REASONS = {
     "usage_limit": "paused: Claude usage limit", "leftovers": "uncommitted files left", "secret_leak": "a secret was in a commit",
     "stop_file": "stopped by a person", "docs": "docs check failed", "changelog": "no changelog sentence",
     "journey": "a user journey failed", "error": "the runner hit an error",
+    "usage_threshold": "stopped early: plan usage threshold",
 }
 NEXT_STEP = {
     "red": "Fix the failing test, then run again.",
     "no_progress": "Read the last iteration's log (/auto-runner:log), adjust the item, then run again.",
     "claim_lost": "Nothing to do: the task went back to its owner.",
     "usage_limit": "Start the runner again after the usage limit resets.",
+    "usage_threshold": "Start the runner again after the limit resets.",
     "leftovers": "Commit or remove the files left in the worktree, then run again.",
     "secret_leak": "Remove the secret from the commit, rotate it, then run again.",
     "docs": "Update the docs the doc map names, then run again.",

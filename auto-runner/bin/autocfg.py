@@ -70,7 +70,7 @@ DEFAULTS = {
     'enforce_runner': False,
 }
 
-# Nested key -> kind: 'text', 'flag', 'count' (whole number >= 0), 'amount' (number >= 0), 'texts' (list of text).
+# Nested key -> kind: 'text', 'flag', 'count' (whole number >= 0), 'amount' (number >= 0), 'percent' (whole number 1-100), 'texts' (list of text).
 SECTIONS = {
     'models': {r: 'text' for r in ('implementer', 'planner', 'plan_reviewer', 'work_reviewer', 'tester', 'scribe')},
     'lanes': {'protected': 'texts', 'sandbox': 'texts', 'deploy_command': 'text'},
@@ -79,7 +79,7 @@ SECTIONS = {
     'docs': {'adr_dir': 'text', 'required': 'texts', 'map': 'text', 'check': 'flag'},
     'central': {'enabled': 'flag', 'url': 'text', 'project': 'text', 'token_env': 'text'},
     'locks': {'path': 'text', 'stale_after_minutes': 'count'},
-    'usage_limit': {'wait': 'flag', 'max_wait_minutes': 'count'},
+    'usage_limit': {'wait': 'flag', 'max_wait_minutes': 'count', 'stop_at_percent': 'percent'},
     # A dict kind is a nested object (same rules, deeper path); a tuple kind is one of those words.
     'acceptance': {'browser': {'enabled': 'flag', 'base_url': 'text', 'command': 'text', 'headless': 'flag',
                                'exploratory': 'flag',
@@ -97,7 +97,7 @@ CHANGELOG_DEFAULTS = {'enabled': False, 'file': 'CHANGELOG.md', 'versioning': 's
 WATCH_DEFAULTS = {'poll_seconds': 300, 'plan_budget_usd': 2, 'daily_budget_usd': 20}
 DOCS_MAP_DEFAULT = 'docs/doc-map.json'
 KIND_TEXT = {'text': 'text', 'flag': 'true/false', 'count': 'a whole number >= 0',
-             'amount': 'a number >= 0', 'texts': 'a list of text'}
+             'amount': 'a number >= 0', 'texts': 'a list of text', 'percent': 'a whole number from 1 to 100'}
 
 
 class ConfigError(ValueError):
@@ -147,6 +147,8 @@ def _kind_ok(kind, v):
         return isinstance(v, list) and all(isinstance(x, str) for x in v)
     if kind == 'count':
         return isinstance(v, int) and not isinstance(v, bool) and v >= 0
+    if kind == 'percent':
+        return isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 100
     return isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0      # amount
 
 

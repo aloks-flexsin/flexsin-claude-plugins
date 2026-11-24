@@ -55,7 +55,7 @@
       {{ who(r) }}
       <div class="grow">
         <div>{% if r.task %}<a href="{{ url_for('tasks.task_page', slug=project.slug, number=r.task) }}">#{{ r.task }}</a> {% endif %}<code title="{{ r.branch or '' }}">{{ r.branch_short or "(branch not sent)" }}</code>
-          {{ ui.status("run", r.state) }}{% if r.state == "stopped" %} <span class="muted">{{ r.reason | reason_text }}</span>{% endif %}</div>
+          {{ ui.status("run", r.state) }}{% if r.state == "stopped" %} <span class="muted">{{ r.reason | reason_text }}</span>{% if r.usage_stop %} <span class="muted">· {{ r.usage_stop }}</span>{% endif %}{% endif %}</div>
         <div class="row-sub muted">{{ r.done }} done{% if r.blocked %}, {{ r.blocked }} blocked{% endif %}{% if r.blockers %} · {{ r.blockers }} blocker{{ "s" if r.blockers != 1 }} raised{% endif %}{% if r.tests %} · tests {{ r.tests }}{% endif %}
           {% if r.ended %} · took {{ ui_duration(r.started, r.ended) }}{% endif %}
           {% if r.pr_url %} · <a href="{{ r.pr_url }}" title="{{ r.pr_url }}" rel="noopener noreferrer">PR {{ r.pr_label }}</a>{% elif r.pushed %} · pushed{% if r.publish_error %} ({{ r.publish_error }}){% endif %}{% elif r.publish_error %} · {{ r.publish_error }}{% endif %}

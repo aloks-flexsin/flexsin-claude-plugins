@@ -91,3 +91,47 @@ def test_strangers_get_404_and_other_projects_runs_never_show(world, conn, tmp_p
     viewer = _member(world['app'], conn, world['alpha'], 'viewer')
     page = viewer.get('/projects/alpha/runs').get_data(as_text=True)
     assert 'zed' not in page and 'No runs yet' in page
+
+
+# ---------- the usage stop ----------
+
+USAGE = {'window': 'five_hour', 'utilization': 0.91, 'resets_at': 1795530600}    # 2026-11-24 14:30 UTC
+
+
+def _stopped(run, usage, end='2026-11-24T10:30:00+00:00', reason='usage_threshold'):
+    detail = {'exit': 75, 'reason': reason}
+    if usage is not None:
+        detail['usage'] = usage
+    return [ev(run, 'run_start', '2026-11-24T10:00:00+00:00', user='alok', account='bhawish'),
+            ev(run, 'run_end', end, **detail)]
+
+
+def test_summarise_formats_the_usage_stop_in_utc():
+    same_day = runs.summarise(_stopped('r1', USAGE), NOW)[0]
+    assert same_day['usage_stop'] == 'Stopped at 91% of the 5-hour limit (resets 14:30 UTC)'
+    other_day = runs.summarise(_stopped('r2', {'window': 'seven_day', 'utilization': 0.5, 'resets_at': 1796086800}), NOW)[0]
+    assert other_day['usage_stop'] == 'Stopped at 50% of the 7-day limit (resets 1 Dec 01:00 UTC)'
+
+
+def test_summarise_ignores_a_malformed_usage():
+    bad = [{'window': 'monthly', 'utilization': 0.9, 'resets_at': 1795530600},
+           {'window': 'five_hour', 'utilization': 1.5, 'resets_at': 1795530600},
+           {'window': 'five_hour', 'utilization': '0.9', 'resets_at': 1795530600},
+           {'window': 'five_hour', 'utilization': True, 'resets_at': 1795530600},
+           {'window': 'five_hour', 'utilization': 0.9, 'resets_at': 'soon'},
+           {'window': 'five_hour', 'utilization': 0.9}, 'five_hour', [1], None]
+    for n, usage in enumerate(bad):
+        r = runs.summarise(_stopped('r%d' % n, usage), NOW)[0]
+        assert r['usage_stop'] is None and r['reason'] == 'usage_threshold'
+
+
+def test_the_page_shows_the_usage_stop(world, conn):
+    sent = _stopped('r1', USAGE) + _stopped('bad', {'window': 'five_hour', 'utilization': 'x', 'resets_at': 1}) \
+        + _stopped('other', None, reason='red')
+    assert send(world['app'], world['token'], sent).status_code == 200
+    viewer = _member(world['app'], conn, world['alpha'], 'viewer')
+    page = viewer.get('/projects/alpha/runs').get_data(as_text=True)
+    assert 'stopped early: plan usage threshold' in page
+    assert 'Stopped at 91% of the 5-hour limit (resets 14:30 UTC)' in page
+    assert page.count('Stopped at ') == 1                       # malformed usage and other reasons show no percentage
+    assert 'Start the runner again after the limit resets.' in page and 'tests failing' in page

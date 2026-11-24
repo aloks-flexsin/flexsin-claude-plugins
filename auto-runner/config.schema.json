@@ -10,7 +10,8 @@
     "texts": {"type": "array", "items": {"type": "string"}},
     "flag": {"type": "boolean"},
     "count": {"type": "integer", "minimum": 0},
-    "amount": {"type": "number", "minimum": 0}
+    "amount": {"type": "number", "minimum": 0},
+    "percent": {"type": "integer", "minimum": 1, "maximum": 100}
   },
   "properties": {
     "check_command": {"$ref": "#/$defs/text"},
@@ -127,10 +128,11 @@
     },
     "usage_limit": {
       "type": "object", "additionalProperties": false,
-      "description": "When Claude's usage limit stops an item: wait for the reset (up to max_wait_minutes, default 360) and continue, instead of stopping. Off by default.",
+      "description": "When Claude's usage limit stops an item: wait for the reset (up to max_wait_minutes, default 360) and continue, instead of stopping. Off by default. stop_at_percent (1-100, default 90; 100 = never) stops the run between items when a plan-usage window reaches it.",
       "properties": {
         "wait": {"$ref": "#/$defs/flag"},
-        "max_wait_minutes": {"$ref": "#/$defs/count"}
+        "max_wait_minutes": {"$ref": "#/$defs/count"},
+        "stop_at_percent": {"$ref": "#/$defs/percent"}
       }
     },
     "acceptance": {

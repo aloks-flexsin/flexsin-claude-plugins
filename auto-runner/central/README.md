@@ -365,6 +365,14 @@ delivered, the pair is also recorded as a Claude identity of the approving accou
 else, or a missing field from an older runner, is ignored). The Runs page shows "Claude account not confirmed" beside the
 Claude account for `mismatch` only (the runner's own report, unverified).
 
+**Usage stop (unverified until seen live).** A runner that stops between items at its plan usage threshold ends with reason
+`usage_threshold` (shown as "stopped early: plan usage threshold", next step "Start the runner again after the limit
+resets.") and a `usage` object in the `run_end` detail. `runs.summarise()` reads it only when `window` is `five_hour` or
+`seven_day` (the service's own copy of the runner's `WINDOW_LABELS`: "5-hour", "7-day"), `utilization` is a number from 0
+to 1 and `resets_at` an epoch integer; anything else is ignored, and the page then shows the reason without a percentage.
+The Runs page shows "Stopped at 91% of the 5-hour limit (resets 14:30 UTC)": the reset is in UTC, with `D Mon` added when
+it falls on a different day than the run's end.
+
 **Who is identified how.** The person is verified: the personal token says whose account it is. The username and Claude
 account are only what the runner reports (unverified). A task call (`next`, `record`, or `plan` with a `runner` field) made
 with a personal token whose `runner` is `<user>/<account>-claude-auto-runner` (`identities.split_runner`, also used by

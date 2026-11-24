@@ -308,7 +308,7 @@ def test_runs_jsonl_keeps_its_old_shape_with_the_ledger(project):
     ar.run(project, max_iterations=5, claude=fake_agent(), tests=scripted_tests(0, 1))
     r = runs(project)
     assert [x['item'] for x in r] == ['A1', 'A2'] and [x['result'] for x in r] == ['done', 'red']
-    assert all(set(x) == {'time', 'item', 'result', 'commit', 'duration_s', 'cost_usd'} for x in r)
+    assert all(set(x) == {'time', 'item', 'result', 'commit', 'duration_s', 'cost_usd', 'plan_usage'} for x in r)
     assert not any('schema' in x or 'evidence_class' in x for x in r)
 
 
@@ -789,3 +789,154 @@ def test_two_early_exits_in_a_row_stop_by_the_no_progress_rule(project):
     assert seen == ['A1', 'A1']
     assert [r['result'] for r in runs(project)] == ['no_progress', 'no_progress']
     assert project_statuses(project)['A1'] == ('queued', 'agent exited with 1; retried next iteration')
+
+
+MEASURED = ('{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":1795530600,"rateLimitType":"five_hour",'
+            '"overageStatus":"rejected","overageDisabledReason":"org_level_disabled","isUsingOverage":false,"unifiedWindows":'
+            '{"five_hour":{"utilization":0.16,"resetsAt":1795530600},"seven_day":{"utilization":0.03,"resetsAt":1796086800}}},'
+            '"uuid":"8123a927-d088-4980-a417-1927fefdcf23","session_id":"929ab07b-4492-4c23-9c3c-da3e9fbd1dfd"}')
+
+
+def test_plan_usage_reads_the_measured_line():
+    assert ar.plan_usage('noise\n' + MEASURED + '\n{"type":"result"}') == {
+        'five_hour': {'utilization': 0.16, 'resets_at': 1795530600},
+        'seven_day': {'utilization': 0.03, 'resets_at': 1796086800}}
+
+
+def test_plan_usage_last_event_wins_and_none_gives_empty():
+    later = MEASURED.replace('0.16', '0.5')
+    assert ar.plan_usage(MEASURED + '\n' + later)['five_hour']['utilization'] == 0.5
+    assert ar.plan_usage('just text\n{"type":"result","total_cost_usd":1}') == {}
+    assert ar.plan_usage('') == {}
+
+
+def test_plan_usage_skips_malformed_lines_and_non_numeric_values():
+    bad = ('{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"utilization":"high","resetsAt":5},'
+           '"seven_day":{"utilization":true,"resetsAt":5},"other_window":{"utilization":0.2,"resetsAt":7}}}}')
+    assert ar.plan_usage(MEASURED + '\n{"type":"rate_limit_event", broken\n{"type":"rate_limit_event"') == ar.plan_usage(MEASURED)
+    assert ar.plan_usage(bad) == {'other_window': {'utilization': 0.2, 'resets_at': 7}}
+    assert ar.window_label('five_hour') == '5-hour' and ar.window_label('other_window') == 'other window'
+
+
+def test_iteration_entry_carries_plan_usage(project):
+    ar.run(project, max_iterations=1, claude=fake_agent(output=MEASURED), allow_dirty=True)
+    assert runs(project)[0]['plan_usage']['five_hour'] == {'utilization': 0.16, 'resets_at': 1795530600}
+
+
+# --- U2: stop between items at the plan-usage threshold -----------------------------------------------------------------
+
+def usage_line(five=0.5, seven=0.03):
+    return json.dumps({'type': 'rate_limit_event', 'rate_limit_info': {'unifiedWindows': {
+        'five_hour': {'utilization': five, 'resetsAt': 1795530600}, 'seven_day': {'utilization': seven, 'resetsAt': 1796086800}}}})
+
+
+def test_usage_threshold_stops_before_the_next_item(project, capsys):
+    calls = []
+    code = ar.run(project, max_iterations=2, claude=fake_agent(output=usage_line(0.91), calls=calls), allow_dirty=True)
+    assert code == ar.USAGE_LIMIT_EXIT == 75 and len(calls) == 1
+    assert project_statuses(project)['A1'][0] == 'done' and project_statuses(project)['A2'][0] == 'queued'
+    end = events(project)[-1]
+    assert end['type'] == 'run_end' and end['detail']['reason'] == 'usage_threshold' and end['detail']['exit'] == 75
+    assert end['detail']['usage'] == {'window': 'five_hour', 'utilization': 0.91, 'resets_at': 1795530600}
+    assert 'plan usage at 91% of the 5-hour limit (resets ' in capsys.readouterr().out
+
+
+def test_usage_below_the_threshold_runs_both_items(project):
+    calls = []
+    assert ar.run(project, max_iterations=2, claude=fake_agent(output=usage_line(0.89), calls=calls), allow_dirty=True) == 0
+    assert len(calls) == 2
+
+
+def test_stop_at_percent_100_never_stops_early(project):
+    set_cfg(project, usage_limit={'stop_at_percent': 100})
+    calls = []
+    assert ar.run(project, max_iterations=2, claude=fake_agent(output=usage_line(0.99), calls=calls), allow_dirty=True) == 0
+    assert len(calls) == 2
+
+
+def test_the_highest_window_decides(project):
+    calls = []
+    assert ar.run(project, max_iterations=2, claude=fake_agent(output=usage_line(0.2, 0.95), calls=calls), allow_dirty=True) == 75
+    assert events(project)[-1]['detail']['usage']['window'] == 'seven_day' and len(calls) == 1
+
+
+def test_no_usage_in_the_output_stops_nothing(project, capsys):
+    calls = []
+    assert ar.run(project, max_iterations=2, claude=fake_agent(output='done', calls=calls), allow_dirty=True) == 0
+    assert len(calls) == 2 and 'no plan usage in the output' in capsys.readouterr().out
+
+
+def test_the_last_item_done_over_the_threshold_finishes_normally(project):
+    write_queue(project, QUEUE.split('- [ ] **A2')[0] + '## Needs a person\n- nothing\n')
+    code = ar.run(project, max_iterations=2, claude=fake_agent(output=usage_line(0.95)), allow_dirty=True)
+    assert code == 0 and events(project)[-1]['detail']['reason'] != 'usage_threshold'
+    assert 'usage' not in events(project)[-1]['detail']
+
+
+def test_with_wait_on_the_run_sleeps_until_the_reset_then_runs_the_next_item(project, monkeypatch):
+    set_cfg(project, usage_limit={'wait': True, 'max_wait_minutes': 30})
+    monkeypatch.setattr(ar, '_now_epoch', lambda: 1795530600 - 300)
+    calls, slept = [], []
+    outputs = iter([usage_line(0.95), usage_line(0.1)])
+    agent = fake_agent(calls=calls)
+
+    def claude(cmd, cwd):
+        code, _ = agent(cmd, cwd)
+        return code, next(outputs)
+    assert ar.run(project, max_iterations=2, claude=claude, sleep=slept.append, allow_dirty=True) == 0
+    assert len(calls) == 2 and 355 <= sum(slept) <= 365 and max(slept) <= 30   # 5 minutes to the reset, plus 60 s
+
+
+def test_with_wait_on_a_far_reset_does_not_wait(project, monkeypatch):
+    set_cfg(project, usage_limit={'wait': True, 'max_wait_minutes': 30})
+    monkeypatch.setattr(ar, '_now_epoch', lambda: 1795530600 - 3 * 3600)
+    slept, calls = [], []
+    code = ar.run(project, max_iterations=2, claude=fake_agent(output=usage_line(0.95), calls=calls),
+                  sleep=slept.append, allow_dirty=True)
+    assert code == 75 and slept == [] and len(calls) == 1
+    assert events(project)[-1]['detail']['reason'] == 'usage_threshold'
+
+
+def test_a_stop_file_ends_the_threshold_wait(project, monkeypatch):
+    set_cfg(project, usage_limit={'wait': True})
+    monkeypatch.setattr(ar, '_now_epoch', lambda: 1795530600 - 600)
+    stop = project / '.auto' / 'STOP'
+    calls = []
+    assert ar.run(project, max_iterations=2, claude=fake_agent(output=usage_line(0.95), calls=calls),
+                  sleep=lambda s: stop.write_text('', encoding='utf-8'), allow_dirty=True) == 0
+    assert len(calls) == 1 and events(project)[-1]['detail']['reason'] == 'stop_file'
+
+
+def test_the_stop_event_reads_the_same_on_the_central_page(project):
+    from datetime import datetime, timezone
+    root = str(BIN.parent)
+    sys.path.insert(0, root)
+    try:
+        from central import runs as central_runs
+    finally:
+        sys.path.remove(root)
+    ar.run(project, max_iterations=2, claude=fake_agent(output=usage_line(0.91)), allow_dirty=True)
+    summary = central_runs.summarise(events(project), datetime.now(timezone.utc))
+    assert [r['reason'] for r in summary] == ['usage_threshold']
+    assert events(project)[-1]['detail']['usage']['window'] == 'five_hour'
+
+
+def test_status_after_the_stopped_run_prints_the_plan_usage(project):
+    ar.run(project, max_iterations=2, claude=fake_agent(output=usage_line(0.91)), allow_dirty=True)
+    spec2 = importlib.util.spec_from_file_location('autoreport_u2', BIN / 'auto_report.py')
+    rep = importlib.util.module_from_spec(spec2)
+    spec2.loader.exec_module(rep)
+    assert 'Plan usage (last iteration): 5-hour 91%' in rep.status(project)
+
+
+def test_stop_at_percent_is_validated(project):
+    for good in (90, 1, 100):
+        set_cfg(project, usage_limit={'stop_at_percent': good})
+        assert ar.autocfg.load(project)['usage_limit']['stop_at_percent'] == good
+    schema = json.loads((BIN.parent / 'config.schema.json').read_text(encoding='utf-8'))
+    assert schema['$defs']['percent'] == {'type': 'integer', 'minimum': 1, 'maximum': 100}
+    for bad in (0, 101, 90.5, True, '90'):
+        (project / '.claude' / 'auto.json').write_text(json.dumps({'usage_limit': {'stop_at_percent': bad}}), encoding='utf-8')
+        with pytest.raises(ar.autocfg.ConfigError):
+            ar.autocfg.load(project)
+    assert ar.USAGE_LIMIT_DEFAULTS['stop_at_percent'] == 90
