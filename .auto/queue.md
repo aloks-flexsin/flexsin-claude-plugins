@@ -204,6 +204,15 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Slice:* 3 The runner sees the screenshots
   *Kind:* feature
 
+- [ ] **P1 Decide a plan through the API.** In `auto-runner/central/tasks.py` add `POST /api/v1/tasks/<N>/decide` (`tokens.bearer_token("ingest")`, `_api_account()`, `_api`): body `{"decision": "approve"|"changes"|"reject", "comment": "..."}`, calls `tasks.decide` with the token's account, records `audit` `task.plan.<decision>` with detail `{"number": N, "via": "api"}`, returns `{"task": public(row)}`; 404 for an unknown task. In `shell._sentence`, append " (through the API)" when the detail has `"via": "api"`. Update `auto-runner/central/README.md`.
+  *Acceptance:* `tests/central/test_tasks_decide_api.py`: the assignee's personal token approves a waiting plan (status approved, audit row with `via: api`, Activity text ends "(through the API)"); a viewer's personal token gets 403; a task not waiting gets 409; "changes" without a comment gets 400; reject ends the claim; a project token (not personal) is refused; an unknown task gets 404.
+  *Slice:* 1 Decide through the API
+  *Kind:* feature
+- [ ] **P2 `autotasks.py decide`.** Add `decide N approve|changes|reject [--comment TEXT]` to `auto-runner/bin/autotasks.py` (POST to the new route; prints "Task N: approved" / "changes requested" / "rejected", or "Not done: <reason>"), and the fake route in `tests/auto_runner/fake_central.py`. Update `auto-runner/README.md`, `auto-runner/docs/central-guide.md` (tasks section) and the root `CHANGELOG.md`, marked unverified until used live.
+  *Acceptance:* tests in `tests/auto_runner/test_central_tasks.py` with `fake_central.py`: `decide N approve` prints approved and the fake task is approved; `changes` without `--comment` prints the refusal; an unknown decision word is refused by the argument parser; `python -m pytest -q` passes.
+  *Slice:* 2 Decide from the terminal
+  *Kind:* feature
+
 ## Needs a person (the runner never does these)
 - Push, merge, deploy, or anything outside this repository.
 - Decisions about what the product should do.
