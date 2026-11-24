@@ -398,6 +398,28 @@ def api_report(number):
     return _api(run)
 
 
+@bp.post("/api/v1/tasks/<int:number>/decide")
+@tokens.bearer_token("ingest")
+def api_decide(number):
+    """A person decides on a waiting plan from the terminal: the same rules as the task page's buttons."""
+    account, body = _api_account(), _body()
+
+    def run():
+        db, moment = get_db(), auth.now()
+        row = get(db, g.token_project["id"], number)
+        if row is None:
+            raise TaskError("no such task", 404)
+        decision = body.get("decision")
+        if decision not in ("approve", "changes", "reject"):
+            raise TaskError('decision is "approve", "changes" or "reject"')
+        row = decide(db, g.token_project, row, account, decision, body.get("comment"), moment)
+        audit.record(db, "task.plan.%s" % decision, _at(moment), account_id=account["id"],
+                     project_id=g.token_project["id"], detail={"number": number, "via": "api"})
+        db.commit()
+        return jsonify(task=public(row, moment))
+    return _api(run)
+
+
 # ---------- pages ----------
 
 def _runners(db, project):

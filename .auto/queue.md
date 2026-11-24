@@ -204,7 +204,7 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Slice:* 3 The runner sees the screenshots
   *Kind:* feature
 
-- [ ] **P1 Decide a plan through the API.** In `auto-runner/central/tasks.py` add `POST /api/v1/tasks/<N>/decide` (`tokens.bearer_token("ingest")`, `_api_account()`, `_api`): body `{"decision": "approve"|"changes"|"reject", "comment": "..."}`, calls `tasks.decide` with the token's account, records `audit` `task.plan.<decision>` with detail `{"number": N, "via": "api"}`, returns `{"task": public(row)}`; 404 for an unknown task. In `shell._sentence`, append " (through the API)" when the detail has `"via": "api"`. Update `auto-runner/central/README.md`.
+- [x] **P1 Decide a plan through the API.** In `auto-runner/central/tasks.py` add `POST /api/v1/tasks/<N>/decide` (`tokens.bearer_token("ingest")`, `_api_account()`, `_api`): body `{"decision": "approve"|"changes"|"reject", "comment": "..."}`, calls `tasks.decide` with the token's account, records `audit` `task.plan.<decision>` with detail `{"number": N, "via": "api"}`, returns `{"task": public(row)}`; 404 for an unknown task. In `shell._sentence`, append " (through the API)" when the detail has `"via": "api"`. Update `auto-runner/central/README.md`.
   *Acceptance:* `tests/central/test_tasks_decide_api.py`: the assignee's personal token approves a waiting plan (status approved, audit row with `via: api`, Activity text ends "(through the API)"); a viewer's personal token gets 403; a task not waiting gets 409; "changes" without a comment gets 400; reject ends the claim; a project token (not personal) is refused; an unknown task gets 404.
   *Slice:* 1 Decide through the API
   *Kind:* feature
