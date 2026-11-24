@@ -149,7 +149,7 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Slice:* 3 Notification log
   *Kind:* feature
 
-- [ ] **F1 A resumed run keeps its task's newest claim.** In `auto-runner/bin/autotasks.py`, `current(auto_dir)` returns the claim from `.auto/run/tasks/<N>.json` when it differs from the one in `current-task.json` and rewrites `current-task.json` with it; when `current-task.json` is missing it stays missing. Update `auto-runner/README.md`.
+- [x] **F1 A resumed run keeps its task's newest claim.** In `auto-runner/bin/autotasks.py`, `current(auto_dir)` returns the claim from `.auto/run/tasks/<N>.json` when it differs from the one in `current-task.json` and rewrites `current-task.json` with it; when `current-task.json` is missing it stays missing. Update `auto-runner/README.md`.
   *Acceptance:* tests in `tests/auto_runner/test_central_tasks.py` with `fake_central.py`: after `next` gives a new claim, `beat` uses the new claim and gets `ok`; with matching claims nothing changes; with no `current-task.json`, `current` returns None.
   *Slice:* 1 A resumed run keeps its task
   *Kind:* fix
