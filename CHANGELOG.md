@@ -4,6 +4,10 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+### Fixed
+- Tests no longer read a signed-in computer's real personal token: tests that pass their own `env` fell back to
+  `~/.config/auto-runner/credentials`, so 36 tests failed (and sent the token to a fake service) on a signed-in machine.
+
 ### Added
 - Central service, sign-in and account (UX audit PR 6): a focused **sign-in** with Show and a lockout explanation that
   never reveals whether an email exists; **invite** links ask for your name and show a live password checklist; the

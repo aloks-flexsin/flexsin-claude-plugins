@@ -32,3 +32,9 @@ def _no_real_credentials(tmp_path_factory, monkeypatch):
     """Tests never see a real personal token: AUTO_RUNNER_TOKEN is unset and the credentials file points to an empty folder."""
     monkeypatch.delenv('AUTO_RUNNER_TOKEN', raising=False)
     monkeypatch.setenv('AUTO_RUNNER_CREDENTIALS', str(tmp_path_factory.mktemp('credentials') / 'credentials'))
+    # Many tests pass their own `env` dict, which has no AUTO_RUNNER_CREDENTIALS: credentials_path then falls back to
+    # ~/.config/auto-runner/credentials. Point the home folder somewhere empty so a signed-in machine's token is never
+    # read (and never sent to a fake service or printed in a failure).
+    home = tmp_path_factory.mktemp('home')
+    monkeypatch.setenv('HOME', str(home))
+    monkeypatch.setenv('USERPROFILE', str(home))
