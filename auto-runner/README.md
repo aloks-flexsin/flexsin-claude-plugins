@@ -164,7 +164,7 @@ Schema v2 sections (objects, every nested key optional, unknown nested keys and 
 | `usage_limit` | `wait` (default false), `max_wait_minutes` (default 360): wait for Claude's usage limit to reset and continue, instead of stopping |
 | `acceptance` | `browser`: `enabled`, `base_url`, `command`, `headless`, `exploratory`, `accounts`: `method` (`seed_command` or `signup`), `seed_command` |
 | `changelog` | `enabled` (default off), `file` (default `CHANGELOG.md`), `versioning` (only `semver`) |
-| `watch` | `poll_seconds` (default 300), `plan_budget_usd` (default 2), `daily_budget_usd` (default 20); read with `autocfg.watch()`. Settings for watch mode, which is still being built (not used by any command yet). The headless planner's instructions are in `docs/planner-prompt.md` (the plan sections of `/auto-runner:auto` step 1) |
+| `watch` | `poll_seconds` (default 300), `plan_budget_usd` (default 2), `daily_budget_usd` (default 20); read with `autocfg.watch()`. Settings for watch mode, which is still being built. `plan_budget_usd` caps one headless plan (`bin/autoplan.py`: planner and spec check together); the others are not used yet. The headless planner's instructions are in `docs/planner-prompt.md` (the plan sections of `/auto-runner:auto` step 1) |
 
 Besides `models.implementer`, three sections act: `acceptance.browser` (the browser stage below), `changelog` (the changelog step) and
 `docs.map`/`docs.check` (the docs gate). Each does nothing when the file does not turn it on.
@@ -279,6 +279,7 @@ such as `₹` never breaks a run on Windows.
 | `bin/auto_join.py` | Join: repository URL from the central service, `git clone` into a folder you confirm, then init's preview. |
 | `bin/autojourney.py` | Journey check: parses journeys, starts and stops the app, runs the click-through agent, validates `journey.v1`, writes fix items. |
 | `bin/autodeck.py` | Journey deck: after each journey check, the passing journeys' screenshots replace their slides in `.auto/journeys/deck.html` (`deck.v1` in `deck.json`). |
+| `bin/autoplan.py` | Headless planner (watch mode): `plan N` plans a central task this computer claimed. Prompt = `docs/planner-prompt.md` + principles + the task text (and the sent-back comment); `claude -p` read-only with `models.planner`; a reply without Queue items is refused; spec check with one revision at most, findings still open go under **Needs a person**; then `autotasks.post_plan`. Planner and spec-check costs count against `watch.plan_budget_usd`: at the cap nothing is posted, the local claim file is dropped (the claim lapses after 2 hours) and the reason goes to `.auto/run/watch.json`. Tested with a fake claude and `fake_central.FakeTasks`; never against the live CLI (unverified). |
 | `bin/autospec.py` | Spec check: a read-only reviewer `claude -p` checks a plan's queue items against the code and answers `spec.v1` findings. |
 | `bin/autoupdate.py` | Update: `check` refreshes the marketplace and lists the changelog between the installed and the available version; `apply` runs `claude plugin update`. |
 | `bin/autosetup.py` | Capability registry and `doctor` (read-only), `plan` / `apply` / `remove` for setup. |

@@ -9,6 +9,9 @@ nothing), `lose_next` (the next N
 hand-overs are counted and marked failed, but the reply never reaches the runner) and `duplicate` (each row is sent twice in one reply).
 """
 import copy
+import json
+import re
+from urllib.parse import urlparse
 
 from tests.auto_runner.test_runner import ar
 
@@ -83,3 +86,39 @@ class CentralTransport(ad.Transport):
 
     def ack(self, did):
         return self.central.ack(did)
+
+
+class FakeTasks:
+    """In-memory fake of the central task API (personal token) for the planner and watch tests: a `send` for
+    autodeliver.HttpTransport that answers GET /api/v1/tasks/N and POST /api/v1/tasks/N/plan (the claim must match;
+    the task then waits in plan_review). `posted` keeps every plan the runner posted."""
+
+    def __init__(self):
+        self.tasks = {}                           # number -> task dict (number, title, description, comment, status, claim)
+        self.posted = []
+
+    def add(self, number, title, description='', comment='', claim='claim-1'):
+        self.tasks[number] = {'number': number, 'title': title, 'description': description, 'comment': comment,
+                              'status': 'planning', 'plan': '', 'items': '', 'claim': claim}
+        return self.tasks[number]
+
+    @staticmethod
+    def _reply(status, data):
+        return status, json.dumps(data).encode('utf-8')
+
+    def send(self, method, url, headers, body, timeout):
+        m = re.fullmatch(r'/api/v1/tasks/(\d+)(/plan)?', urlparse(url).path)
+        task = self.tasks.get(int(m.group(1))) if m else None
+        if task is None:
+            return self._reply(404, {'error': 'no such task'})
+        public = {k: v for k, v in task.items() if k != 'claim'}
+        if method == 'GET' and not m.group(2):
+            return self._reply(200, {'task': public})
+        if method == 'POST' and m.group(2):
+            data = json.loads(body.decode('utf-8'))
+            if data.get('claim') != task['claim']:
+                return self._reply(409, {'error': 'the claim is not yours'})
+            task.update(status='plan_review', plan=data['plan'], items=data['items'])
+            self.posted.append({'number': task['number'], 'plan': data['plan'], 'items': data['items']})
+            return self._reply(200, {'task': {k: v for k, v in task.items() if k != 'claim'}})
+        return self._reply(405, {'error': 'not allowed'})
