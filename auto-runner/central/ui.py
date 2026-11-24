@@ -17,7 +17,7 @@ import re
 
 from flask import render_template, request
 
-from . import auth
+from . import auth, identities
 
 # ---------- time ----------
 
@@ -175,10 +175,10 @@ def initials(text):
 
 def runner_label(label):
     """'alok/bhawish-claude-auto-runner' -> 'Alok (bhawish account)'; anything else unchanged."""
-    m = re.fullmatch(r"([a-z0-9._-]+)/([a-z0-9._-]+)-claude-auto-runner", label or "")
-    if not m:
+    pair = identities.split_runner(label)
+    if not pair:
         return label or ""
-    return "%s (%s account)" % (display_name(m.group(1)), m.group(2))
+    return "%s (%s account)" % (display_name(pair[0]), pair[1])
 
 
 # ---------- Markdown subset ----------

@@ -169,6 +169,32 @@ def test_a_terminal_task_is_recorded_as_building(app, team, conn):
                {'claim': body['claim']}).status_code == 200
 
 
+def test_task_claims_record_the_claude_identity(app, team, conn):
+    from central import identities
+    dev_id = team['accounts']['dev']['id']
+    add(team)
+    take(app, team, runner='alok/bhawish-claude-auto-runner')
+    [row] = identities.of_account(conn, dev_id)
+    assert (row['username'], row['claude_account']) == ('alok', 'bhawish')
+    assert 'bhawish' in team['clients']['dev'].get('/account').get_data(as_text=True)
+    assert any(r['account_id'] == dev_id for r in identities.of_project(conn, team['alpha']['id']))
+
+
+def test_terminal_tasks_and_plans_record_the_identity_and_odd_runners_record_nothing(app, team, conn):
+    from central import identities
+    dev_id = team['accounts']['dev']['id']
+    resp = api(app, 'POST', '/api/v1/tasks', team['token']['dev'],
+               {'runner': 'sam/work-claude-auto-runner', 'title': 'Fix', 'plan': 'p', 'items': '- [ ] **F1 Fix.**'})
+    assert resp.status_code == 200
+    n = add(team, title='Other')
+    claim = take(app, team, runner='laptop')
+    assert [(r['username'], r['claude_account']) for r in identities.of_account(conn, dev_id)] == [('sam', 'work')]
+    api(app, 'POST', '/api/v1/tasks/%d/plan' % claim['task']['number'], team['token']['dev'],
+        {'claim': claim['claim'], 'plan': 'p', 'items': '- [ ] **E1 x.**', 'runner': 'kim/third-claude-auto-runner'})
+    assert [r['username'] for r in identities.of_account(conn, dev_id)] == ['kim', 'sam']
+    assert n
+
+
 def test_the_task_api_needs_a_personal_token_of_a_runner(app, team, conn):
     raw, _ = tokens.create(conn, team['alpha']['id'], ['pull', 'ingest'], None, AT)
     assert api(app, 'POST', '/api/v1/tasks/next', raw, {'runner': 'ci'}).status_code == 403

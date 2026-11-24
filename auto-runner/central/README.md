@@ -249,6 +249,12 @@ stored only as SHA-256 (table `device_login`), and a request gives a token once.
 (`identities.NAME`) and is shown on `/device` and on **My tokens** ("not reported" when absent). When the token is
 delivered, the pair is also recorded as a Claude identity of the approving account (shown under "Your Claude accounts").
 
+**Who is identified how.** The person is verified: the personal token says whose account it is. The username and Claude
+account are only what the runner reports (unverified). A task call (`next`, `record`, or `plan` with a `runner` field) made
+with a personal token whose `runner` is `<user>/<account>-claude-auto-runner` (`identities.split_runner`, also used by
+`ui.runner_label`) records that pair as a Claude identity of the signed-in account; any other `runner` text records nothing.
+The task page shows the claim through the `ui.runner` macro.
+
 | Endpoint | Scope | What it does |
 | --- | --- | --- |
 | `POST /api/v1/events` | `ingest` | One `event.v1` object or a list. Replies `accepted`, `duplicates`, `ids`, `duplicate_ids`. The same id with a different body gets 409, an unknown schema or bad event 400, a body over 256 KB 413, more than 120 requests a minute per token 429 (counted per process). The event's `project` must be the token's project. Run-level events (`run_start`, `run_end`, `publish`) have no item. Secrets in `detail` are redacted before storing. |

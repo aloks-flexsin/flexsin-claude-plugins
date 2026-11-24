@@ -7,6 +7,15 @@ from . import audit
 NAME = re.compile(r'[a-z0-9][a-z0-9._-]{0,63}')
 
 
+RUNNER = re.compile(r"([a-z0-9._-]+)/([a-z0-9._-]+)-claude-auto-runner")
+
+
+def split_runner(label):
+    """'alok/bhawish-claude-auto-runner' -> ('alok', 'bhawish'); None for any other label."""
+    m = RUNNER.fullmatch(label or "")
+    return (m.group(1), m.group(2)) if m else None   # `record` still checks both values with `valid`
+
+
 def valid(value):
     return (isinstance(value, str) and bool(NAME.fullmatch(value)) and '..' not in value
             and not value.endswith(('.', '.lock')))
