@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}Notifications{% endblock %}
+{% macro row(n, done) -%}
+<div class="list-row notif-row{% if done %} notif-done{% elif not n.read_at %} notif-unread{% endif %}">
+  <div class="grow">
+    <form method="post" action="{{ url_for('notifications.notification_open', notification_id=n.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="link-button">{{ n.text }}</button>
+    </form>
+    <div class="row-sub muted"><span>{{ n.project_name }}</span> · {{ ui.when(n.created_at) }}</div>
+  </div>
+  {% if done %}<span class="badge off">Done</span>{% elif not n.read_at %}<span class="badge warn">New</span>{% endif %}
+</div>
+{%- endmacro %}
+{% block content %}
+<div class="notif-head">
+  <h1>Notifications</h1>
+  {% if notif_count %}
+  <form method="post" action="{{ url_for('notifications.notifications_read_all') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn">Mark all as read</button>
+  </form>
+  {% endif %}
+</div>
+<p class="lead">Plans to approve, changes asked of you, tasks given to you and blockers to answer, in every project you are a member of.</p>
+<h2>Waiting</h2>
+{% if waiting %}
+<div class="list">{% for n in waiting %}{{ row(n, False) }}{% endfor %}</div>
+{% else %}
+{{ ui.empty("Nothing is waiting on you.") }}
+{% endif %}
+{% if done %}
+<h2>Done</h2>
+<div class="list">{% for n in done %}{{ row(n, True) }}{% endfor %}</div>
+{% endif %}
+{% endblock %}

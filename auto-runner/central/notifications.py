@@ -6,6 +6,10 @@ member gets none; they still see everything on My work). A notification is ident
 while one with the same key is still unresolved, the same event again adds nothing. `resolve` closes every unresolved
 notification with a key once the thing no longer waits (the plan is decided, the blocker answered).
 
+Pages (queue item N2): the top bar's bell carries `unread_count` (from `shell`'s context processor);
+`GET /notifications` lists the person's own, waiting ones first, then resolved ones marked "Done";
+`POST /notifications/<id>/open` marks one read and goes to its link (same-site only); `POST /notifications/read-all`.
+
 Neither function commits: the caller commits with the change that caused the notification, so both land together.
 
 Keys used by the service:
@@ -16,7 +20,12 @@ Keys used by the service:
 """
 import secrets
 
-from . import projects, sessions
+from flask import Blueprint, abort, g, redirect, render_template, url_for
+
+from . import auth, projects, sessions, ui
+from .db import get_db
+
+bp = Blueprint("notifications", __name__)
 
 KINDS = ("plan", "changes", "assigned", "blocker")
 MAX_TEXT, MAX_LINK = 500, 500
@@ -97,3 +106,52 @@ def for_account(db, account_id, limit=200):
                     " JOIN project p ON p.id = n.project_id WHERE n.account_id = ?"
                     " ORDER BY CASE WHEN n.resolved_at IS NULL THEN 0 ELSE 1 END, n.created_at DESC, n.id DESC"
                     " LIMIT %d" % int(limit), (account_id,))
+
+
+def find_own(db, account_id, notification_id):
+    """The person's notification with this id, else None (another person's id is treated as unknown)."""
+    return db.query_one("SELECT * FROM notification WHERE id = ? AND account_id = ?", (notification_id, account_id))
+
+
+def mark_read(db, account_id, notification_id, now):
+    """Mark one of the person's notifications read (once; the first read time is kept). Does not commit."""
+    db.execute("UPDATE notification SET read_at = ? WHERE id = ? AND account_id = ? AND read_at IS NULL",
+               (_at(now), notification_id, account_id))
+
+
+def mark_all_read(db, account_id, now):
+    """Mark every unread notification of the person read; -> how many. Does not commit."""
+    cur = db.execute("UPDATE notification SET read_at = ? WHERE account_id = ? AND read_at IS NULL",
+                     (_at(now), account_id))
+    return cur.rowcount
+
+
+# ---------- pages ----------
+
+@bp.get("/notifications")
+@auth.login_required
+def notifications_page():
+    rows = [dict(r) for r in for_account(get_db(), g.account["id"])]
+    return render_template("notifications.html", waiting=[r for r in rows if r["resolved_at"] is None],
+                           done=[r for r in rows if r["resolved_at"] is not None])
+
+
+@bp.post("/notifications/<notification_id>/open")
+@auth.login_required
+def notification_open(notification_id):
+    db = get_db()
+    row = find_own(db, g.account["id"], notification_id)
+    if row is None:
+        abort(404)
+    mark_read(db, g.account["id"], notification_id, auth.now())
+    db.commit()
+    return redirect(ui.safe_next(row["link"]) or url_for("notifications.notifications_page"))
+
+
+@bp.post("/notifications/read-all")
+@auth.login_required
+def notifications_read_all():
+    db = get_db()
+    mark_all_read(db, g.account["id"], auth.now())
+    db.commit()
+    return redirect(url_for("notifications.notifications_page"))
