@@ -207,6 +207,12 @@ a repository with no remote simply is not published; `"push": true` written out 
 - Then `gh pr create --head <branch> --base <base>` with the title `<type>: <brief> (<user> via <account>-claude-auto-runner)` and the commit
   list as the body. A second clean run on the same unmerged branch pushes again; `gh` then reports that the pull request
   exists, which is recorded as `pr_error` and is harmless.
+- When `gh pr create` fails and its output mentions GraphQL (blocked by a proxy, as in some cloud sessions), the runner opens
+  the pull request with the REST API instead: `gh api repos/<owner>/<repo>/pulls -X POST -f title=... -f head=... -f base=...
+  -f body=... --jq .html_url` through the same `pr_runner`, with owner and repository from `autocentral.repo_key` on
+  `git remote get-url <remote>` (https and ssh forms; `--hostname <host>` for a host other than github.com). Its URL is
+  recorded as `pr_url`; when it fails too (or the remote names no owner/repository), `pr_error` holds both errors. Any
+  other `gh pr create` failure makes no REST call.
 - The outcome is a `publish` event (`pushed`, `commits`, `pr_url` or `pr_error`, or `error`) in `.auto/events.jsonl` and,
   with central on, on the central service. A failed push or pull request is reported and never fails the run.
 - A red run, or one stopped on a problem, publishes nothing. Merging, tagging and deploying stay with a person.

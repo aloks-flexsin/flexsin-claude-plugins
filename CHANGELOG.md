@@ -5,6 +5,9 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Fixed
+- Runner publishing: when `gh pr create` fails because GraphQL is blocked (as behind the cloud-session proxy), the runner
+  opens the pull request with the REST API (`gh api repos/<owner>/<repo>/pulls -X POST`), owner and repository taken from
+  the push remote's URL; the `publish` event records the REST URL, or both errors when that fails too.
 - Central service: a page that needs a table or column `init-db` has not added yet answers 503 "This page needs a
   database update" with the command to run, instead of crashing (the live site broke this way after the runner table).
 
