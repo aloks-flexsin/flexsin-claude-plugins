@@ -116,7 +116,8 @@ may not stick over plain http. The API endpoints do not use the cookie.
 - **API** (personal tokens only, the project named as for every call): `GET /api/v1/tasks` (every task, with the runner
   working on each, never a claim id), `GET /api/v1/tasks/<N>`, `POST /api/v1/tasks/next` (`{runner}` → claims the account's
   next task: approved, building, changes requested, planning, then open; returns the task, the claim and `action`
-  plan|build), `POST /api/v1/tasks` (record a terminal task), `POST /api/v1/tasks/<N>/plan` (`{claim, plan, items}`),
+  plan|build), `POST /api/v1/tasks` (record a terminal task as `building`; with `"approval": "page"`
+  it is proposed instead: stored as `plan_review` with its plan and items, claimed by the runner, approved on the page), `POST /api/v1/tasks/<N>/plan` (`{claim, plan, items}`),
   `.../heartbeat` (`{claim}`), `.../report` (`{claim, result: done|stopped, branch, pr_url, note}`). 409 = this runner no
   longer holds the task.
 - Table `project_task` (init-db creates it).

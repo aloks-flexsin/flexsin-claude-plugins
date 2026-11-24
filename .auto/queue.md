@@ -52,7 +52,7 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Acceptance:* new tests in `tests/auto_runner/test_init_rule.py` (preview, apply, idempotent, remove, untouched content) pass.
   *Slice:* 1 Prompt routing reminder
   *Kind:* feature
-- [ ] **H3 Propose a planned task for approval on the page.** Central: `POST /api/v1/tasks` accepts `"approval": "page"`, storing the task as `plan_review` (plan and items kept, claim held by the runner label) instead of `building`; default unchanged. Plugin: `autotasks.py propose --title T --plan FILE --items FILE` uses it.
+- [x] **H3 Propose a planned task for approval on the page.** Central: `POST /api/v1/tasks` accepts `"approval": "page"`, storing the task as `plan_review` (plan and items kept, claim held by the runner label) instead of `building`; default unchanged. Plugin: `autotasks.py propose --title T --plan FILE --items FILE` uses it.
   *Acceptance:* `tests/central/test_tasks_propose.py` (stored as plan_review, then approve works, default still building) and a test in `tests/auto_runner/test_central_tasks.py` with `fake_central.py` showing `propose` makes a task that `list` shows as waiting for approval.
   *Slice:* 1 Prompt routing reminder
   *Kind:* feature

@@ -119,3 +119,57 @@ def test_run_start_and_end_name_the_task(project, central, team, env, monkeypatc
     start, end = events[0], events[-1]
     assert start['type'] == 'run_start' and start['detail']['task'] == n
     assert end['type'] == 'run_end' and end['detail']['task'] == n
+
+
+# ---------- propose: a terminal plan approved on the page (against fake_central.FakeTasks) ----------
+
+FAKE_ENV = {'AUTO_RUNNER_TOKEN': 'arp_test-token', 'AUTO_RUNNER_USER': 'alok', 'AUTO_RUNNER_ACCOUNT': 'bhawish'}
+
+
+def test_propose_sends_the_plan_for_approval_on_the_page(project):
+    """`propose` records the task as plan_review, keeps the claim on this computer, and `list` shows it as waiting
+    for approval."""
+    from tests.auto_runner.fake_central import FakeTasks
+    connect(project)
+    svc = FakeTasks()
+    n = at.propose(project, 'CSV export', '## Intent\nCSV.', ITEMS, FAKE_ENV, svc.send)
+    task = svc.tasks[n]
+    assert task['status'] == 'plan_review' and task['items'] == ITEMS
+    assert task['runner'] == 'alok/bhawish-claude-auto-runner'
+    assert json.loads((project / '.auto' / 'run' / 'tasks' / f'{n}.json').read_text())['claim'] == task['claim']
+    lines = [at.line(t) for t in at.listing(project, FAKE_ENV, svc.send)]
+    assert lines == [f'#{n} [waiting for approval] CSV export - dev@example.com (worked by alok/bhawish-claude-auto-runner)']
+    with pytest.raises(at.TaskError, match='--items'):
+        at.propose(project, 'Empty', 'plan', '  ', FAKE_ENV, svc.send)
+    assert len(svc.tasks) == 1
+    n2 = at.record(project, 'csv-import', 'CSV import', 'plan', ITEMS, FAKE_ENV, svc.send)
+    assert svc.tasks[n2]['status'] == 'building'                       # record (the default) is unchanged
+
+
+def test_propose_approve_then_build_against_the_real_service(project, central, team, env):
+    connect(project)
+    n = at.propose(project, 'CSV export', '## Intent\nCSV.', ITEMS, env, central.send)
+    assert server_task(central, n)['status'] == 'plan_review'
+    assert at.take_next(project, env, central.send) == {'task': None}         # waits for a person
+    from central import tasks
+    tasks.decide(central.conn, central.project, server_task(central, n), team['dev'], 'approve', '', team['now'])
+    assert at.take_next(project, env, central.send)['action'] == 'build'
+    slug = at.start(project, n, env, central.send)
+    assert (project / '.auto' / 'pending' / slug / 'items.md').read_text() == ITEMS
+
+
+def test_propose_and_list_from_the_command_line(project, monkeypatch, capsys):
+    from tests.auto_runner.fake_central import FakeTasks
+    connect(project)
+    svc = FakeTasks()
+    real = ar.autodeliver.HttpTransport
+    monkeypatch.setattr(at.autodeliver, 'HttpTransport', lambda *a, **k: real(*a, **dict(k, send=svc.send)))
+    for k, v in FAKE_ENV.items():
+        monkeypatch.setenv(k, v)
+    (project / 'plan.md').write_text('## Intent\nCSV.', encoding='utf-8')
+    (project / 'items.md').write_text(ITEMS, encoding='utf-8')
+    assert at.main(['propose', '--project', str(project), '--title', 'CSV export',
+                    '--plan', str(project / 'plan.md'), '--items', str(project / 'items.md')]) == 0
+    assert 'waits for approval' in capsys.readouterr().out and svc.tasks[1]['status'] == 'plan_review'
+    assert at.main(['list', '--project', str(project)]) == 0
+    assert '#1 [waiting for approval] CSV export' in capsys.readouterr().out

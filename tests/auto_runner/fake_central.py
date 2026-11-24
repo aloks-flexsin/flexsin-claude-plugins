@@ -135,6 +135,8 @@ class FakeTasks:
         return status, json.dumps(data).encode('utf-8')
 
     def send(self, method, url, headers, body, timeout):
+        if urlparse(url).path == '/api/v1/tasks':
+            return self._collection(method, body)
         m = re.fullmatch(r'/api/v1/tasks/(\d+)(/plan)?', urlparse(url).path)
         task = self.tasks.get(int(m.group(1))) if m else None
         if task is None:
@@ -150,3 +152,21 @@ class FakeTasks:
             self.posted.append({'number': task['number'], 'plan': data['plan'], 'items': data['items']})
             return self._reply(200, {'task': {k: v for k, v in task.items() if k != 'claim'}})
         return self._reply(405, {'error': 'not allowed'})
+
+    def _collection(self, method, body):
+        """GET /api/v1/tasks lists every task; POST /api/v1/tasks records one as the service does (building, or
+        plan_review with `"approval": "page"`), claimed by the runner."""
+        if method == 'GET':
+            return self._reply(200, {'tasks': [
+                {'number': t['number'], 'title': t['title'], 'status': t['status'], 'assignee': 'dev@example.com',
+                 'runner': t.get('runner')} for t in sorted(self.tasks.values(), key=lambda t: t['number'])]})
+        if method != 'POST':
+            return self._reply(405, {'error': 'not allowed'})
+        data = json.loads(body.decode('utf-8'))
+        if data.get('approval') not in (None, 'terminal', 'page'):
+            return self._reply(400, {'error': 'unknown approval'})
+        number = max(self.tasks, default=0) + 1
+        task = self.add(number, data['title'], data.get('description', ''), claim=f'claim-{number}')
+        task.update(status='plan_review' if data.get('approval') == 'page' else 'building', plan=data.get('plan', ''),
+                    items=data.get('items', ''), runner=data.get('runner'))
+        return self._reply(200, {'task': {k: v for k, v in task.items() if k != 'claim'}, 'claim': task['claim']})

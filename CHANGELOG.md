@@ -5,6 +5,10 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Propose a terminal plan for approval on the page: `POST /api/v1/tasks` accepts `"approval": "page"` and stores the
+  task as `plan_review` (plan and items kept, claim held by the runner) instead of `building`; the default is unchanged.
+  `autotasks.py propose --title T --plan FILE --items FILE` uses it, and `autotasks.py list` shows such a task as
+  "waiting for approval". Unverified against the live service.
 - Auto-runner watch mode from setup: `/auto-runner:central` offers to start the watcher as its optional last step once
   the checkout is connected and signed in; the central guide gains a "Hands-free work" section (starting it, limits,
   runners on the pages, Pause, Resume and Stop), and the plugin and central READMEs say so. Unverified against the live
