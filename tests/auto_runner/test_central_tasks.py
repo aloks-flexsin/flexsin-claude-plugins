@@ -289,3 +289,64 @@ def test_no_current_task_stays_missing(tmp_path):
     _write(auto / 'run' / 'tasks' / '4.json', {'number': 4, 'claim': 'c-2'})
     assert at.current(auto) is None
     assert not (auto / 'run' / 'current-task.json').exists()
+
+
+# ---------- queued while it waits, building when the run starts (Q2) ----------
+
+def _spy(central):
+    """A send that keeps the heartbeat bodies of the real central app."""
+    beats = []
+
+    def send(method, url, headers, body, timeout):
+        if url.split('?')[0].endswith('/heartbeat'):
+            beats.append(json.loads(body.decode('utf-8')))
+        return central.send(method, url, headers, body, timeout)
+    return beats, send
+
+
+def _approved_task(project, central, team, env):
+    from central import tasks
+    connect(project)
+    n = add_task(central, team)['number']
+    at.take_next(project, env, central.send)
+    at.post_plan(project, n, '## Intent\nCSV.', ITEMS, env, central.send)
+    tasks.decide(central.conn, central.project, server_task(central, n), team['dev'], 'approve', '', team['now'])
+    at.take_next(project, env, central.send)
+    return n
+
+
+def test_start_marks_the_task_queued(project, central, team, env):
+    n = _approved_task(project, central, team, env)
+    assert server_task(central, n)['status'] == 'building'
+    beats, send = _spy(central)
+    at.start(project, n, env, send)
+    assert beats == [{'claim': server_task(central, n)['claim_id'], 'state': 'queued'}]
+    assert server_task(central, n)['status'] == 'queued'
+
+
+def test_a_run_taking_the_request_makes_the_task_building(project, central, team, env, monkeypatch):
+    n = _approved_task(project, central, team, env)
+    slug = at.start(project, n, env, central.send)
+    assert server_task(central, n)['status'] == 'queued'
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    beats, send = _spy(central)
+    transport = ar.autodeliver.HttpTransport(BASE, team['token'], send=send, project=SLUG)
+    assert ar.run(project, max_iterations=5, claude=picking_agent(), transport=transport, enqueue=slug,
+                  allow_dirty=True) == 0
+    assert beats[0]['state'] == 'building'
+    assert server_task(central, n)['status'] == 'done'
+
+
+def test_a_lost_claim_on_the_first_heartbeat_does_not_stop_the_run(project, central, team, env, monkeypatch, capsys):
+    from central import tasks
+    n = _approved_task(project, central, team, env)
+    slug = at.start(project, n, env, central.send)
+    tasks.release(central.conn, central.project, server_task(central, n), None, team['now'])
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    transport = ar.autodeliver.HttpTransport(BASE, team['token'], send=central.send, project=SLUG)
+    assert ar.run(project, max_iterations=5, claude=picking_agent(), transport=transport, enqueue=slug,
+                  allow_dirty=True) == 0
+    assert 'claim lost' in capsys.readouterr().out
+    assert server_task(central, n)['status'] == 'approved'

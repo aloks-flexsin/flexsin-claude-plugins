@@ -49,7 +49,9 @@ Check the manifest with `claude plugin validate ./auto-runner` (needs the `claud
    approved, `next` hands it back to build; `list` shows it as "waiting for approval"). While a run works on a task it beats the claim before every iteration, stops
    (reason `claim_lost`, exit 1) if an admin released or reassigned it, and reports it done (clean run, queue empty) or
    stopped at the end. Its `run_start` and `run_end` events name the task (`task`, 0.21.0), so the central task page and
-   **My work** show the build's progress live. Tested against the real central app through its test client.
+   **My work** show the build's progress live. `autotasks.py start` marks the task **Queued** (a heartbeat with
+   `"state": "queued"`) while its request waits; when a run takes the request on a new branch it sends `"state": "building"`
+   before the first iteration, and a 409 there prints "claim lost" and the run carries on without a central task. Tested against the real central app through its test client.
    `/auto-runner:update` checks the marketplace for a newer auto-runner, shows the changelog entries in between and, after you
    agree, installs it (`bin/autoupdate.py check` / `apply`, both through the `claude plugin` command line); restart Claude to load it.
    `/auto-runner:central` checks whether the project is connected to the central service (config, token variable,

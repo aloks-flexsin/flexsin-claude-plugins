@@ -165,7 +165,7 @@ def start(project, number, env=None, send=None):
     approved items, the plan and task.json, ready for `auto_run.py --enqueue <slug>`."""
     claim = _claim(project, number)
     task = _call(transport(project, env, send), 'GET', f'/api/v1/tasks/{int(number)}')['task']
-    if task['status'] != 'building' or not task['items'].strip():
+    if task['status'] not in ('building', 'queued') or not task['items'].strip():
         raise TaskError(f'task {number} is {task["status"]}, not approved for building')
     slug = f'task-{int(number)}-{brief(task["title"])}'
     folder = _auto(project) / 'pending' / slug
@@ -173,6 +173,8 @@ def start(project, number, env=None, send=None):
     (folder / 'items.md').write_text(task['items'].rstrip() + '\n', encoding='utf-8')
     (folder / 'plan.md').write_text(task['plan'].rstrip() + '\n', encoding='utf-8')
     _save(folder / 'task.json', {'number': int(number), 'claim': claim})
+    _call(transport(project, env, send), 'POST', f'/api/v1/tasks/{int(number)}/heartbeat',
+          {'claim': claim, 'state': 'queued'})          # the request waits for its run: the page says Queued
     return slug
 
 
@@ -257,13 +259,15 @@ def current(auto_dir):
     return data
 
 
-def beat(t, auto_dir):
-    """-> 'none' (no current task), 'ok', 'lost' (released, reassigned or expired: stop) or 'unavailable'."""
+def beat(t, auto_dir, state=None):
+    """-> 'none' (no current task), 'ok', 'lost' (released, reassigned or expired: stop) or 'unavailable'.
+    `state` ('queued' or 'building') is sent along when given, so the task page says what the claim is doing."""
     task = current(auto_dir)
     if task is None:
         return 'none'
     try:
-        t.request('POST', f'/api/v1/tasks/{task["number"]}/heartbeat', {'claim': task['claim']})
+        t.request('POST', f'/api/v1/tasks/{task["number"]}/heartbeat',
+                  {'claim': task['claim'], **({'state': state} if state else {})})
         return 'ok'
     except (RuntimeError, ConnectionError) as e:        # TransportRefused / TransportUnavailable, whichever module copy
         if getattr(e, 'status', None) == 409:
