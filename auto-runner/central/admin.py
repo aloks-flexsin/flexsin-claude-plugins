@@ -120,7 +120,7 @@ def account_reset_password(account_id):
     db = get_db()
     target = _target(db, account_id)
     if target["id"] == g.account["id"]:
-        return _refused(db, "account.password_reset", target, "use the Password page to change your own password")
+        return _refused(db, "account.password_reset", target, "use the Account page to change your own password")
     kind = "reset" if invites.has_password(target) else "invite"
     raw = invites.issue(db, target["id"], kind, g.account["id"], auth.now())
     audit.record(db, "account.password_reset" if kind == "reset" else "invite.create", _at(), account_id=g.account["id"],
@@ -146,10 +146,49 @@ def account_tokens_revoke(account_id):
     return redirect(url_for("admin.accounts_page"))
 
 
+def _account_page(error=None, status=200, name_error=None, saved=None):
+    return render_template("account.html", error=error, name_error=name_error, saved=saved), status
+
+
+@bp.get("/account")
+@auth.login_required
+def account_page():
+    return _account_page(saved=request.args.get("saved"))
+
+
 @bp.get("/account/password")
 @auth.login_required
 def own_password():
-    return render_template("own_password.html", error=None)
+    return redirect(url_for("admin.account_page") + "#password")
+
+
+@bp.post("/account/name")
+@auth.login_required
+def own_name_post():
+    db = get_db()
+    try:
+        name = accounts.set_name(db, g.account["id"], request.form.get("name"))
+    except accounts.AccountError as exc:
+        return _account_page(name_error=str(exc), status=400)
+    audit.record(db, "account.name", _at(), account_id=g.account["id"], detail={"name": name})
+    db.commit()
+    return redirect(url_for("admin.account_page", saved="name"))
+
+
+@bp.post("/admin/accounts/<account_id>/name")
+def account_name(account_id):
+    """Admins only: set someone's display name (people set their own on Account)."""
+    _require_admin()
+    db = get_db()
+    target = _target(db, account_id)
+    try:
+        name = accounts.set_name(db, target["id"], request.form.get("name"))
+    except accounts.AccountError as exc:
+        return _list_page(error=str(exc), status=400)
+    audit.record(db, "account.name", _at(), account_id=g.account["id"],
+                 detail={"target_id": target["id"], "email": target["email"], "name": name})
+    db.commit()
+    return redirect(url_for("admin.accounts_page"))
 
 
 @bp.post("/account/password")
@@ -173,7 +212,7 @@ def own_password_post():
         audit.record(db, "account.password_change.refused", _at(), account_id=me["id"],
                      detail={"email": me["email"], "reason": reason})
         db.commit()
-        return render_template("own_password.html", error=error), 400
+        return _account_page(error=error, status=400)
     audit.record(db, "account.password_change", _at(), account_id=me["id"], detail={"email": me["email"]})
     db.commit()
     g.clear_session_cookie = True

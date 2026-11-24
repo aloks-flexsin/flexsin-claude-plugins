@@ -31,7 +31,7 @@ one-time link. Someone who is not a member of a project gets "not found" on its 
    URL form, is refused and names the existing one.
 2. On the project's **Settings › Members** (`<service>/projects/<slug>/settings/members`), **invite** each teammate: their email and a role (see the table). Someone who
    already has an account is added at once. Someone new gets an account and you get a **one-time link**, shown only then:
-   send it to them (chat or email). It works once and expires after 72 hours; they open it, set their own password and
+   send it to them (chat or email). It works once and expires after 72 hours; they open it, give their name, set their own password and
    are signed in. The member waits under **Pending invites** until then; **New invite link** makes a fresh one (the old one stops) and
    **Cancel invite** takes it back.
    Owners can invite to their own project; admins to any. Forgotten password: an admin presses **Send reset link** on

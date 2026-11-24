@@ -54,6 +54,12 @@
     <details class="pop row-menu">
       <summary class="btn" aria-label="More for {{ a.email }}">⋯</summary>
       <div class="pop-body">
+        <form method="post" action="{{ url_for('admin.account_name', account_id=a.id) }}" class="name-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label for="n-{{ a.id }}">Name</label>
+          <input id="n-{{ a.id }}" type="text" name="name" value="{{ a.name or '' }}" maxlength="100" placeholder="{{ a.email | display_name }}">
+          <button type="submit" class="btn">Save name</button>
+        </form>
         <form method="post" action="{{ url_for('admin.account_reset_password', account_id=a.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn">{{ "New invite link" if a.pending else "Send reset link" }}</button>

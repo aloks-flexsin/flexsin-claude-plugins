@@ -1,21 +1,37 @@
 {% extends "base.html" %}
-{% block title %}Set your password{% endblock %}
+{% block title %}{{ "Welcome" if row and row.kind == "invite" else "Set your password" }}{% endblock %}
 {% block content %}
+<div class="auth">
 {% if row %}
 <h1>{{ "Welcome" if row.kind == "invite" else "Reset your password" }}</h1>
-<p>Set a password for <strong>{{ row.email }}</strong>. At least 12 characters; common passwords are refused.
-  This link works once and expires at {{ row.expires_at }}.</p>
-{% if error %}<p role="alert">{{ error }}</p>{% endif %}
-<form method="post">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <label>New password <input type="password" name="password" autocomplete="new-password" minlength="12" required></label>
-  <label>The same again <input type="password" name="password_again" autocomplete="new-password" minlength="12" required></label>
-  <button type="submit">Set password and sign in</button>
-</form>
+<div class="form-card">
+  <p>Set a password for <strong>{{ row.email }}</strong>. This link works once and expires <time datetime="{{ row.expires_at | iso }}" title="{{ row.expires_at | when_abs }} UTC">{{ row.expires_at | ago }}</time>.</p>
+  {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+  <form method="post" class="stack-form" data-pw-form>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if row.kind == "invite" %}
+    <label for="inv-name">Your name <span class="optional">optional, shown to your team</span></label>
+    <input id="inv-name" type="text" name="name" value="{{ form.name if form else '' }}" maxlength="100" autocomplete="name">
+    {% endif %}
+    <label for="inv-pw">New password</label>
+    <div class="pw-field"><input id="inv-pw" type="password" name="password" autocomplete="new-password" minlength="12" required data-pw-new><button type="button" class="btn" data-show-password="inv-pw">Show</button></div>
+    <label for="inv-again">The same again</label>
+    <input id="inv-again" type="password" name="password_again" autocomplete="new-password" minlength="12" required data-pw-again>
+    <ul class="pw-checks" aria-live="polite">
+      <li data-rule="length">At least 12 characters</li>
+      <li data-rule="match">Both the same</li>
+      <li>Not a common password (checked when you save)</li>
+    </ul>
+    <button type="submit" class="btn primary wide-btn">Set password and sign in</button>
+  </form>
+</div>
 {% else %}
 <h1>This link no longer works</h1>
-<p class="card empty">It was already used, it expired (links last 72 hours), a newer link replaced it, or the account is
-  disabled. Ask the person who sent it for a new one.</p>
-<p><a href="{{ url_for('auth.signin') }}">Sign in</a></p>
+<div class="form-card">
+  <p>It was already used, it expired (links last 72 hours), a newer link replaced it, or the account is disabled. Ask the
+    person who sent it for a new one.</p>
+  <a class="btn primary" href="{{ url_for('auth.signin') }}">Sign in</a>
+</div>
 {% endif %}
+</div>
 {% endblock %}
