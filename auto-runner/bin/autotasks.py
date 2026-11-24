@@ -187,11 +187,23 @@ def run_task(auto_dir, request_dir, new_branch):
 
 
 def current(auto_dir):
+    """The run's current task ({'number', 'claim', ...}) or None. When `next` has since re-claimed the task (a resumed
+    run gets a new claim, saved in `run/tasks/<N>.json`), that newest claim wins and `current-task.json` is rewritten
+    with it, so `beat` and `finish` do not send a stale claim. No `current-task.json` means no current task."""
     try:
         data = json.loads((Path(auto_dir) / CURRENT).read_text(encoding='utf-8'))
-        return data if isinstance(data.get('number'), int) and data.get('claim') else None
+        if not (isinstance(data.get('number'), int) and data.get('claim')):
+            return None
     except (OSError, ValueError, AttributeError):
         return None
+    try:
+        newest = json.loads((Path(auto_dir) / CLAIMS / f'{data["number"]}.json').read_text(encoding='utf-8')).get('claim')
+    except (OSError, ValueError, AttributeError):
+        newest = None
+    if isinstance(newest, str) and newest and newest != data['claim']:
+        data = {**data, 'claim': newest}
+        _save(Path(auto_dir) / CURRENT, data)
+    return data
 
 
 def beat(t, auto_dir):
