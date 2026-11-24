@@ -398,6 +398,12 @@ doc stale until `python bin/autostale.py revalidate DOC --from a.py,b.py` is com
 changelog step, the runner runs this gate on the item's commits; a failure stops with reason `docs`. No map or `docs.check: false` = no gate.
 This repository's own `docs/doc-map.json` is the working example: it maps the plugin's code to this README.
 
+## Continuous integration (unverified until a pull request shows the check)
+`.github/workflows/tests.yml` (workflow `tests`, job `tests`) runs `python -m pytest -q` on Ubuntu with Python 3.12 for every pull request
+to `main` and every push to `main`. It installs `requirements-dev.txt` and `auto-runner/central/requirements.txt`, has read-only
+permissions, uses no secrets and cancels an older run of the same ref. No test launches a real browser, so it installs none.
+`tests/auto_runner/test_ci_workflow.py` checks the file's text; whether GitHub runs it green has not been checked.
+
 ## Blocker file contract (unverified with a real agent)
 Instead of guessing, the agent writes one JSON object per question to `.auto/blockers/new/<name>.json` with the `blocker.v1` content fields:
 `question`, `why_needed`, `prevents`, `impact_if_delayed`, `impact_if_wrong`, `owner_role`, `class` (B1-B5), `options` (`[{label, tradeoffs}]`),
