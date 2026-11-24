@@ -12,6 +12,11 @@ All notable changes to this project are written here (Keep a Changelog).
   database update" with the command to run, instead of crashing (the live site broke this way after the runner table).
 
 ### Added
+- The runner gets a task's screenshots: `GET /api/v1/tasks/<N>` lists `attachments` (id, filename, content type,
+  size) and `GET /api/v1/tasks/<N>/attachments/<id>` returns the bytes (personal token, same project rules as the task
+  API). `autotasks.py next` downloads them to `.auto/run/tasks/<N>/attachments/<id>-<safe name>` (once; a name can
+  never leave the folder) and prints their paths under "Screenshots"; `/auto-runner:auto` opens them before planning.
+  Unverified until used against the live service.
 - Central notifications: each notification on `/notifications` says how it was delivered ("in-app", "push sent",
   "push failed: <reason>", "push off"), and admins get a **Notification log** (`GET /admin/notifications`, linked from
   Accounts) of recent notifications across everyone with recipient, project, kind, delivery and time, filterable by

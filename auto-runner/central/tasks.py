@@ -305,7 +305,11 @@ def api_get(number):
         response = jsonify(error="no such task")
         response.status_code = 404
         return response
-    return jsonify(task=public(row, auth.now(), full=True))
+    from . import attachments                              # attachments imports this module
+    task = public(row, auth.now(), full=True)
+    task["attachments"] = [{"id": a["id"], "filename": a["filename"], "content_type": a["content_type"],
+                            "size": a["size"]} for a in attachments.for_task(get_db(), g.token_project["id"], number)]
+    return jsonify(task=task)
 
 
 @bp.post("/api/v1/tasks/next")

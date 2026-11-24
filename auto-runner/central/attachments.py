@@ -12,7 +12,7 @@ import secrets
 
 from flask import Blueprint, Response, abort, current_app, g, jsonify, redirect, request, url_for
 
-from . import audit, auth, projects, sessions, tasks, ui
+from . import audit, auth, projects, sessions, tasks, tokens, ui
 from .access import project_access
 from .db import get_db
 
@@ -118,6 +118,31 @@ def delete(db, project, number, attachment_id, account):
     db.execute("DELETE FROM task_attachment WHERE id = ?", (row["id"],))
     db.commit()
     return row
+
+
+# ---------- the runner's download (task API, personal tokens) ----------
+
+def _image(row):
+    """The stored bytes as the browser and the runner get them: stored type, nosniff, inline, private."""
+    response = Response(row["data"], mimetype=row["content_type"])
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Content-Disposition"] = "inline"
+    response.headers["Cache-Control"] = "private"
+    return response
+
+
+@bp.get("/api/v1/tasks/<int:number>/attachments/<attachment_id>")
+@tokens.bearer_token("pull")
+def api_attachment(number, attachment_id):
+    """One screenshot of a task of the token's project (personal token, developer or above, like the rest of the task
+    API); `GET /api/v1/tasks/<N>` lists them."""
+    tasks._api_account()
+    row = get(get_db(), g.token_project["id"], number, attachment_id, with_data=True)
+    if row is None:
+        response = jsonify(error="no such screenshot")
+        response.status_code = 404
+        return response
+    return _image(row)
 
 
 # ---------- the request size limit ----------
@@ -240,11 +265,7 @@ def attachment_get(slug, number, attachment_id):
     row = get(get_db(), g.project["id"], number, attachment_id, with_data=True)
     if row is None:
         abort(404)
-    response = Response(row["data"], mimetype=row["content_type"])
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Content-Disposition"] = "inline"
-    response.headers["Cache-Control"] = "private"
-    return response
+    return _image(row)
 
 
 @bp.post("/projects/<slug>/tasks/<int:number>/attachments/<attachment_id>/delete")

@@ -175,6 +175,82 @@ def test_propose_and_list_from_the_command_line(project, monkeypatch, capsys):
     assert '#1 [waiting for approval] CSV export' in capsys.readouterr().out
 
 
+# ---------- the runner gets the screenshots (S4) ----------
+
+PNG = b'\x89PNG\r\n\x1a\n' + bytes(range(32))
+
+
+def _fake_cli(project, monkeypatch):
+    from tests.auto_runner.fake_central import FakeTasks
+    connect(project)
+    svc = FakeTasks()
+    real = ar.autodeliver.HttpTransport
+    monkeypatch.setattr(at.autodeliver, 'HttpTransport', lambda *a, **k: real(*a, **dict(k, send=svc.send)))
+    for k, v in FAKE_ENV.items():
+        monkeypatch.setenv(k, v)
+    return svc
+
+
+def test_next_downloads_the_screenshots_once_and_prints_their_paths(project, monkeypatch, capsys):
+    svc = _fake_cli(project, monkeypatch)
+    svc.add(1, 'Fix the header', 'It overlaps the logo.')
+    svc.attach(1, 'a1', 'header bug.png', PNG)
+    svc.attach(1, 'b2', 'header bug.png', PNG + b'second')                 # same name: no collision
+    svc.attach(1, 'c3', '../evil.png', PNG + b'evil')
+    assert at.main(['next', '--project', str(project)]) == 0
+    out = capsys.readouterr().out
+    folder = (project / '.auto' / 'run' / 'tasks' / '1' / 'attachments').resolve()
+    names = sorted(p.name for p in folder.iterdir())
+    assert names == ['a1-header_bug.png', 'b2-header_bug.png', 'c3-evil.png']
+    assert (folder / 'a1-header_bug.png').read_bytes() == PNG
+    assert (folder / 'b2-header_bug.png').read_bytes() == PNG + b'second'
+    assert (folder / 'c3-evil.png').read_bytes() == PNG + b'evil'         # written inside the folder
+    assert not (project / '.auto' / 'run' / 'tasks' / '1' / 'evil.png').exists()
+    assert '--- Screenshots ---' in out
+    for name in names:
+        assert str(folder / name) in out
+    assert len(svc.downloads) == 3
+    assert at.main(['next', '--project', str(project)]) == 0              # again: nothing is downloaded twice
+    assert len(svc.downloads) == 3 and str(folder / 'a1-header_bug.png') in capsys.readouterr().out
+
+
+def test_next_without_screenshots_prints_no_section_and_a_failed_download_does_not_stop_it(project, monkeypatch, capsys):
+    svc = _fake_cli(project, monkeypatch)
+    svc.add(1, 'Fix the header')
+    assert at.main(['next', '--project', str(project)]) == 0
+    assert 'Screenshots' not in capsys.readouterr().out
+    svc.attach(1, 'gone', 'x.png', PNG)
+    del svc.files[(1, 'gone')]                                             # deleted on the page meanwhile
+    assert at.main(['next', '--project', str(project)]) == 0
+    out = capsys.readouterr().out
+    assert 'Not downloaded: x.png: could not download' in out and 'Task 1: Fix the header' in out
+    assert not (project / '.auto' / 'run' / 'tasks' / '1' / 'attachments' / 'gone-x.png').exists()
+
+
+@pytest.mark.parametrize('attachment_id, filename, expected', [
+    ('a1', '../evil.png', 'a1-evil.png'),
+    ('a1', '..\\..\\evil.png', 'a1-evil.png'),
+    ('a1', '..', 'a1-..'),
+    ('a1', 'my shot (2).png', 'a1-my_shot__2_.png'),
+    ('a1', '', 'a1-screenshot'),
+    ('../x', 'y.png', '.._x-y.png'),
+    ('..', 'y.png', None),
+    ('', 'y.png', None),
+])
+def test_attachment_names_stay_in_the_folder(attachment_id, filename, expected):
+    assert at.attachment_name(attachment_id, filename) == expected
+
+
+def test_next_downloads_from_the_real_service(project, central, team, env):
+    from central import attachments
+    connect(project)
+    n = add_task(central, team)['number']
+    row = attachments.add(central.conn, central.project, n, team['dev'], 'shot.png', PNG, team['now'])
+    at.take_next(project, env, central.send)
+    paths, problems = at.fetch_attachments(project, n, env, central.send)
+    assert problems == [] and [p.name for p in paths] == [f'{row["id"]}-shot.png'] and paths[0].read_bytes() == PNG
+
+
 # ---------- a resumed run keeps its task's newest claim (F1) ----------
 
 def test_a_resumed_run_beats_with_the_newest_claim(project, central, team, env, monkeypatch):

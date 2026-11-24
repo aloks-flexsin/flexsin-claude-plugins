@@ -304,3 +304,44 @@ def test_app_js_has_the_paste_and_drop_handlers(app):
     for event in ('"paste"', '"drop"', '"dragover"', '"change"'):
         assert 'addEventListener(%s' % event in js
     assert 'picked-files' in js                                          # the chosen files are listed
+
+
+# ---------- the runner gets the screenshots (S4) ----------
+
+def _api_get(app, path, raw, project='alpha'):
+    from .test_access import new_client
+    return new_client(app).get(path + '?project=' + project, headers={'Authorization': 'Bearer ' + raw})
+
+
+def test_the_task_api_lists_and_serves_the_screenshots(app, team, conn):
+    n = add(team)
+    first = attachments.add(conn, team['alpha'], n, team['accounts']['dev'], 'shot.png', PNG, START)
+    second = attachments.add(conn, team['alpha'], n, team['accounts']['dev'], 'b.gif', GIF, START)
+    task = _api_get(app, '/api/v1/tasks/%d' % n, team['token']['dev']).get_json()['task']
+    assert task['attachments'] == [
+        {'id': first['id'], 'filename': 'shot.png', 'content_type': 'image/png', 'size': len(PNG)},
+        {'id': second['id'], 'filename': 'b.gif', 'content_type': 'image/gif', 'size': len(GIF)}]
+    got = _api_get(app, '/api/v1/tasks/%d/attachments/%s' % (n, first['id']), team['token']['dev'])
+    assert got.status_code == 200 and got.data == PNG and got.headers['Content-Type'] == 'image/png'
+    assert got.headers['X-Content-Type-Options'] == 'nosniff' and 'private' in got.headers['Cache-Control']
+    assert _api_get(app, '/api/v1/tasks/%d/attachments/nope' % n, team['token']['dev']).status_code == 404
+    assert _api_get(app, '/api/v1/tasks/%d/attachments/%s' % (n + 1, first['id']), team['token']['dev']).status_code == 404
+    assert _api_get(app, '/api/v1/tasks/%d/attachments/%s' % (n, first['id']), 'arp_not-a-token').status_code == 401
+    empty = add(team, title='No screenshots')
+    assert _api_get(app, '/api/v1/tasks/%d' % empty, team['token']['dev']).get_json()['task']['attachments'] == []
+
+
+def test_another_projects_token_cannot_fetch_the_screenshots(app, team, conn):
+    from central import projects, tokens
+    n = add(team)
+    row = attachments.add(conn, team['alpha'], n, team['accounts']['dev'], 'shot.png', PNG, START)
+    path = '/api/v1/tasks/%d/attachments/%s' % (n, row['id'])
+    from .test_repo_url import AT
+    beta = projects.create(conn, 'beta', 'Beta', AT, 'https://github.com/example/beta.git')
+    projects.add_member(conn, beta['id'], 'dev@example.com', 'developer', AT)
+    beta_raw, _ = tokens.create(conn, beta['id'], ['pull'], None, AT)
+    assert _api_get(app, path, beta_raw).status_code == 403                    # a project token of beta, naming alpha
+    assert _api_get(app, path, beta_raw, project='beta').status_code == 403    # project tokens never use the task API
+    other = _api_get(app, path, team['token']['dev'], project='beta')          # dev's token, but asking in beta
+    assert other.status_code == 404 and other.data != PNG
+    assert _api_get(app, path, team['token']['viewer']).status_code == 403     # a viewer runs no runner

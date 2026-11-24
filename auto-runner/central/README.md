@@ -140,6 +140,11 @@ may not stick over plain http. The API endpoints do not use the cookie.
 - `GET /projects/<slug>/tasks/<N>/attachments/<id>` (any member): the bytes with the stored content type,
   `X-Content-Type-Options: nosniff`, `Content-Disposition: inline` and `Cache-Control: private`.
 - `POST .../attachments/<id>/delete`: the uploader or an admin, after a confirm step; audited (`task.attachment.delete`).
+- **For the runner** (task API, personal tokens of a developer or above, the project named as for every call):
+  `GET /api/v1/tasks/<N>` lists `attachments` (`id`, `filename`, `content_type`, `size`; no bytes), and
+  `GET /api/v1/tasks/<N>/attachments/<id>` returns the bytes with the same headers as the page route. A project token gets
+  403, a screenshot of another project's task (or an unknown id) 404. `autotasks.py next` downloads them (see the plugin
+  README). Unverified until used against the live service.
 - **Every request is capped at 4 MB** (`MAX_CONTENT_LENGTH`): a larger one gets 413 with a page (JSON under `/api/`)
   that names the limit. So one upload request carries at most 4 MB of files in total.
 - The task page has a **Screenshots** section: a thumbnail of each image (the image itself, sized by CSS in

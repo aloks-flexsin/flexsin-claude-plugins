@@ -183,12 +183,12 @@ class HttpTransport(Transport):
     def __repr__(self):
         return f'HttpTransport({self.base_url!r})'
 
-    def _call(self, method, path, refusals=None, payload=None, timeout=None, query=None):
-        """-> the JSON object of a 2xx reply. A 4xx raises refusals[status] (default TransportRefused) with the message."""
+    def _exchange(self, method, path, payload=None, timeout=None, query=None, accept='application/json'):
+        """-> (status, raw body, parsed JSON or None, path with query). No reply or a 5xx raise TransportUnavailable."""
         from urllib.parse import urlencode
         params = {k: v for k, v in {'project': self.project, **(query or {})}.items() if v}
         path = path + ('?' + urlencode(params) if params else '')
-        headers = {'Authorization': f'Bearer {self._token}', 'Accept': 'application/json'}
+        headers = {'Authorization': f'Bearer {self._token}', 'Accept': accept}
         body = None
         if method == 'POST':
             body = b'' if payload is None else json.dumps(payload).encode('utf-8')
@@ -205,14 +205,30 @@ class HttpTransport(Transport):
             data = None
         if status >= 500:
             raise TransportUnavailable(f'{method} {path}: server error {status}')
+        return status, raw, data, path
+
+    @staticmethod
+    def _refuse(method, path, status, data, refusals=None):
+        error = data.get('error') if isinstance(data, dict) else None
+        message = f'{method} {path}: {status}' + (f' {str(error)[:200]}' if error else '')
+        refused = (refusals or {}).get(status)
+        return refused(message) if refused else TransportRefused(message, status)
+
+    def fetch(self, path):
+        """GET a file (a task's screenshot) -> its bytes. 4xx raise TransportRefused with `.status`."""
+        status, raw, data, path = self._exchange('GET', path, accept='*/*')
+        if 200 <= status < 300:
+            return raw or b''
+        raise self._refuse('GET', path, status, data)
+
+    def _call(self, method, path, refusals=None, payload=None, timeout=None, query=None):
+        """-> the JSON object of a 2xx reply. A 4xx raises refusals[status] (default TransportRefused) with the message."""
+        status, raw, data, path = self._exchange(method, path, payload=payload, timeout=timeout, query=query)
         if 200 <= status < 300:
             if not isinstance(data, dict):
                 raise TransportUnavailable(f'{method} {path}: unreadable reply')
             return data
-        error = data.get('error') if isinstance(data, dict) else None
-        message = f'{method} {path}: {status}' + (f' {str(error)[:200]}' if error else '')
-        refused = (refusals or {}).get(status)
-        raise refused(message) if refused else TransportRefused(message, status)
+        raise self._refuse(method, path, status, data, refusals)
 
     def request(self, method, path, payload=None):
         """Any other API call (the task API, autotasks.py) -> the reply object; 4xx raise TransportRefused with `.status`."""

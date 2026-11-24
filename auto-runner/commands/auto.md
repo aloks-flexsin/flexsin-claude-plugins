@@ -30,8 +30,13 @@ Tasks live on the central service (decision record 0007); this needs the project
 (`/auto-runner:central`). Repeat until a run is started or nothing is left:
 1. Run `python "${CLAUDE_PLUGIN_ROOT}/bin/autotasks.py" next --project "${CLAUDE_PROJECT_DIR}"`. If it says "Not done",
    tell the user why (usually: run `/auto-runner:central` first) and stop. If there is no task waiting, say so and stop.
+   When it prints a `--- Screenshots ---` section, the task came with screenshots, already downloaded to
+   `.auto/run/tasks/<N>/attachments/`: open every path listed there with the Read tool (it shows images) before planning
+   or building, and treat what they show as part of the task. A "Not downloaded" line means that screenshot is missing:
+   say so in the plan.
 2. **Action: plan** (a new task, or one sent back with a comment to address). Plan it exactly as step 1 below describes
-   (plan mode, the same sections, Reuse check, the spec check), using its description (and the comment) as the task.
+   (plan mode, the same sections, Reuse check, the spec check), using its description (and the comment, and the
+   screenshots) as the task.
    Do **not** ask the user to accept it: the approval happens on the central page. Write the whole plan to
    `.auto/run/tasks/<N>-plan.md` and only its Queue items (verbatim, no headings) to `.auto/run/tasks/<N>-items.md`, then run
    `python "${CLAUDE_PLUGIN_ROOT}/bin/autotasks.py" plan <N> --plan .auto/run/tasks/<N>-plan.md --items .auto/run/tasks/<N>-items.md --project "${CLAUDE_PROJECT_DIR}"`.
