@@ -174,7 +174,7 @@ Schema v2 sections (objects, every nested key optional, unknown nested keys and 
 | `principles` | `enabled` (default on), `file` (default the plugin's `docs/engineering-principles.md`), `require_slices` (default on): see "Engineering principles" |
 | `safety` | `allow_env_read` (`true`: the agent may read `.env` files; init leaves out the `Read(./.env)` rules and preflight stops demanding them. Default off) |
 | `locks` | `path`, `stale_after_minutes` |
-| `usage_limit` | `wait` (default false), `max_wait_minutes` (default 360): wait for Claude's usage limit to reset and continue, instead of stopping |
+| `usage_limit` | `wait` (default false), `max_wait_minutes` (default 360): wait for Claude's usage limit to reset and continue, instead of stopping; `stop_at_percent` (1 to 100, default 90): stop between items when a plan-usage window reaches it (100 = never) |
 | `acceptance` | `browser`: `enabled`, `base_url`, `command`, `headless`, `exploratory`, `accounts`: `method` (`seed_command` or `signup`), `seed_command` |
 | `changelog` | `enabled` (default off), `file` (default `CHANGELOG.md`), `versioning` (only `semver`) |
 | `watch` | `poll_seconds` (default 300), `plan_budget_usd` (default 2), `daily_budget_usd` (default 20); read with `autocfg.watch()`. Settings for watch mode (`/auto-runner:auto watch`). `plan_budget_usd` caps one headless plan (`bin/autoplan.py`: planner and spec check together); `poll_seconds` is how long the watch loop (`bin/autowatch.py`) waits when idle; `daily_budget_usd` caps what all of the watcher's `claude -p` calls (plans, spec checks, builds) report per local day (`.auto/run/spend-<date>.json`); at the cap the watcher pauses until local midnight. The headless planner's instructions are in `docs/planner-prompt.md` (the plan sections of `/auto-runner:auto` step 1) |
@@ -255,7 +255,15 @@ seconds; the interrupted try does not use up an iteration, and the run stops as 
 `max_wait_minutes`. Plan usage: the CLI's `rate_limit_event` line in each iteration's output gives the utilization (0 to 1) and reset time of each
 window (`five_hour` shown as "5-hour", `seven_day` as "7-day"; any other key by its name). It is stored as `plan_usage` on the
 iteration's `.auto/runs.jsonl` entry and `auto_report.py status` prints "Plan usage (last iteration): 5-hour 16% (resets 20:00), ..."
-in the computer's local time, or "Plan usage: not reported". It only reports; it does not change how the run stops.
+in the computer's local time, or "Plan usage: not reported". Plan-usage threshold: `"usage_limit": {"stop_at_percent": N}` (whole number 1 to 100, default 90) stops the run
+between items. After an item's iteration is recorded, and only when open items remain and another iteration would start,
+the window with the highest utilization is compared with N; at or over it the run says "plan usage at N% of the <window>
+limit (resets HH:MM): stopping before the next item" and ends with exit code 75, reason `usage_threshold` and
+`{window, utilization, resets_at}` as `usage` in the `run_end` detail. With `usage_limit.wait` on it instead waits until that
+window's reset plus 60 seconds (STOP ends the wait; the wait uses no iteration) and carries on, unless the reset is further
+away than the waiting left under `max_wait_minutes` (the 7-day window can be days away): then it stops as when `wait` is off.
+`"stop_at_percent": 100` turns it off. Output without usage data never stops the run (a log note says so), and an item that
+finishes the queue ends the run normally whatever the usage. It is checked only between items, never inside one.
 An attempt that ends because its `--max-budget-usd` ran out is a handover, not a failure: its
 uncommitted changes are stashed and the same item runs again from them (at most twice; then the usual stop), and every
 prompt tells the agent its budget and to commit before about nine tenths of it. A lock whose process is no longer running
