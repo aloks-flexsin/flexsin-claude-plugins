@@ -1,57 +1,78 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui %}
 {% block title %}Accounts{% endblock %}
 {% block content %}
-<h1>Accounts</h1>
-{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+<div class="page-head">
+  <div><h1>Accounts</h1><p class="lead">Everyone who can sign in, across all projects. To give someone a project, invite
+    them from the project's Settings › Members instead: that adds the account and the membership in one step.</p></div>
+</div>
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 {% if link %}
-<div class="card" role="status">
+<div class="result-card" role="status">
   <p><strong>{{ "Invite link" if link.kind == "invite" else "Password reset link" }} for {{ link.email }}.</strong>
     Send it to them (chat or email). It is shown only now, works once and expires in {{ lifetime_hours }} hours.
     {% if link.kind == "reset" %}Their old password no longer works and they were signed out everywhere.{% endif %}</p>
-  <p><code>{{ link.link }}</code></p>
+  {{ ui.copy_field(("Invite" if link.kind == "invite" else "Reset") ~ " link for " ~ link.email, link.link, "account-link") }}
 </div>
 {% endif %}
-<table>
-  <thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
-  <tbody>
+
+<div class="toolbar">
+  <form method="get" action="{{ url_for('admin.accounts_page') }}" class="search" role="search">
+    <label class="sr-only" for="acc-q">Search accounts</label>
+    <input id="acc-q" type="search" name="q" value="{{ q }}" placeholder="Search name or email" maxlength="320">
+    <button type="submit" class="btn">Search</button>
+    {% if q %}<a href="{{ url_for('admin.accounts_page') }}">Clear</a> <span class="muted">{{ accounts | length }} of {{ total }}</span>{% endif %}
+  </form>
+  <details class="pop"{% if error and form_email %} open{% endif %}>
+    <summary class="btn primary">Add account</summary>
+    <form method="post" action="{{ url_for('admin.account_add') }}" class="pop-body">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="a-email">Email</label>
+      <input id="a-email" type="email" name="email" value="{{ form_email }}" required>
+      <label for="a-role">Role</label>
+      <select id="a-role" name="role">{% for r in roles %}<option value="{{ r }}"{% if r == "user" %} selected{% endif %}>{{ r }}</option>{% endfor %}</select>
+      <button type="submit" class="btn primary">Add account</button>
+      <p class="muted small">You get a one-time link to send them; they set their own password.</p>
+    </form>
+  </details>
+</div>
+
+{% if accounts %}
+<div class="list">
   {% for a in accounts %}
-    <tr>
-      <td>{{ a.email }}</td>
-      <td><span class="badge">{{ a.role }}</span></td>
-      <td><span class="badge {{ 'off' if a.disabled else 'ok' }}">{{ "disabled" if a.disabled else "enabled" }}</span>{% if a.pending %} <span class="badge warn">invited</span>{% endif %}</td>
-      <td>
-        <form method="post" action="{{ url_for('admin.account_disabled', account_id=a.id) }}"{% if not a.disabled %} data-confirm="Disable {{ a.email }}?" data-confirm-detail="They are signed out everywhere, their tokens stop working and their runners stop at their next step. You can enable the account again later." data-confirm-action="Disable"{% endif %}>
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="disabled" value="{{ '0' if a.disabled else '1' }}">
-          <button type="submit">{{ "Enable" if a.disabled else "Disable" }}</button>
-        </form>
-        <form method="post" action="{{ url_for('admin.account_role', account_id=a.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <select name="role" aria-label="Role for {{ a.email }}">
-            {% for r in roles %}<option value="{{ r }}"{% if r == a.role %} selected{% endif %}>{{ r }}</option>{% endfor %}
-          </select>
-          <button type="submit">Change role</button>
-        </form>
+  <div class="list-row">
+    {{ ui.person(a.email, a.name, a.email) }}
+    <span class="muted grow-sm">{{ a.projects }} project{{ "s" if a.projects != 1 }} · {% if a.last_active %}active {{ ui.when(a.last_active) }}{% else %}not active recently{% endif %}</span>
+    {% if a.disabled %}{{ ui.status("account", "disabled") }}{% elif a.pending %}{{ ui.status("account", "invited") }}{% endif %}
+    <form method="post" action="{{ url_for('admin.account_role', account_id=a.id) }}" class="inline role-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <select name="role" aria-label="Role for {{ a.email }}" data-autosave>
+        {% for r in roles %}<option value="{{ r }}"{% if r == a.role %} selected{% endif %}>{{ r }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="btn autosave-btn">Save</button>
+    </form>
+    <details class="pop row-menu">
+      <summary class="btn" aria-label="More for {{ a.email }}">⋯</summary>
+      <div class="pop-body">
         <form method="post" action="{{ url_for('admin.account_reset_password', account_id=a.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit">{{ "New invite link" if a.pending else "Send reset link" }}</button>
+          <button type="submit" class="btn">{{ "New invite link" if a.pending else "Send reset link" }}</button>
         </form>
         <form method="post" action="{{ url_for('admin.account_tokens_revoke', account_id=a.id) }}" data-confirm="Revoke every token of {{ a.email }}?" data-confirm-detail="Each computer they signed in from stops working at once; they sign in again from Claude to get a new one." data-confirm-action="Revoke tokens">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="danger">Revoke tokens</button>
+          <button type="submit" class="btn danger">Revoke tokens</button>
         </form>
-      </td>
-    </tr>
+        <form method="post" action="{{ url_for('admin.account_disabled', account_id=a.id) }}"{% if not a.disabled %} data-confirm="Disable {{ a.email }}?" data-confirm-detail="They are signed out everywhere, their tokens stop working and their runners stop at their next step. You can enable the account again later." data-confirm-action="Disable"{% endif %}>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="disabled" value="{{ '0' if a.disabled else '1' }}">
+          <button type="submit" class="btn{{ ' danger' if not a.disabled }}">{{ "Enable" if a.disabled else "Disable" }}</button>
+        </form>
+      </div>
+    </details>
+  </div>
   {% endfor %}
-  </tbody>
-</table>
-<h2>Add an account</h2>
-<p class="muted">You get a one-time link to send them; they set their own password. To give someone a project, invite
-  them from the project's page instead: that adds the account and the membership in one step.</p>
-<form method="post" action="{{ url_for('admin.account_add') }}">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <label>Email <input type="email" name="email" value="{{ form_email }}" required></label>
-  <label>Role <select name="role">{% for r in roles %}<option value="{{ r }}"{% if r == "user" %} selected{% endif %}>{{ r }}</option>{% endfor %}</select></label>
-  <button type="submit">Add account</button>
-</form>
+</div>
+{% else %}
+{{ ui.empty("No account matches.") }}
+{% endif %}
 {% endblock %}

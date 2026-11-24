@@ -149,6 +149,19 @@ may not stick over plain http. The API endpoints do not use the cookie.
 - **Settings**: Members (`/settings/members`), Repository (`/settings/repository`), Machine tokens (`/settings/tokens`;
   `/projects/<slug>/tokens` redirects). The projects list is cards with what waits in each.
 
+## People and access (UX audit PR 5)
+
+- **Settings › Members**: People with their email, when they were last active (newest of their sessions and personal
+  token use; nothing new is stored), a role select that saves itself (a Save button without JavaScript), and Remove
+  under a "⋯" menu (asks first). **Invite people** opens a small form; the one-time link comes back in a copy field.
+  **Pending invites** lists people who have not set a password, with when their link expires, **New invite link** and
+  **Cancel invite** (`POST /projects/<slug>/members/<id>/cancel`, owners and admins, asks first): the link stops working
+  and they leave the project; the account stays without a password, so the email can be invited again.
+- **Settings › Machine tokens**: a new token comes back in a copy field; Replace and Revoke ask first.
+- **Admin › Accounts**: search (`?q=`), each account's projects count and last active, role select that saves itself,
+  and Send reset link / Revoke tokens / Disable under "⋯". **Add account** opens a small form.
+- **My tokens**: one row per computer with when it signed in and was last used; Revoke asks first.
+
 ## My work and task progress
 
 - `/my` (**My work**, first in the top bar; everyone signed in): across every project the person can see (all for an admin),

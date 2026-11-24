@@ -9,7 +9,7 @@ from central import accounts, audit, db, projects, tokens
 PW = 'violet-anchor-58-tide'
 START = datetime.datetime(2026, 10, 31, 9, 0, tzinfo=datetime.timezone.utc)
 MEMBER_ROLES = ('viewer', 'developer', 'manager', 'owner')
-TOKEN_RE = re.compile(r'<code id="new-token">(art_[A-Za-z0-9_-]+)</code>')
+TOKEN_RE = re.compile(r'id="new-token" type="text" readonly value="(art_[A-Za-z0-9_-]+)"')
 
 
 @pytest.fixture

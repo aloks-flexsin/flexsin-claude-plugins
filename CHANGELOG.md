@@ -5,6 +5,10 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Central service, people and access (UX audit PR 5): **Members** shows when each person was last active, a role select
+  that saves itself, Remove under "⋯", an **Invite people** form whose link comes in a copy field, and **Pending
+  invites** with expiry, New invite link and **Cancel invite**. **Machine tokens** and **My tokens** get copy fields,
+  relative times and confirmations; **Admin › Accounts** gets search, project counts, last active and a "⋯" menu.
 - Central service, Runs and Blockers (UX audit PR 4): **Runs** shows live runs as cards with progress and how long they
   have run, then a history with outcome chips, reasons in words, durations and the next step for a stopped or silent run.
   **Blockers** list the question first with how long each has waited; the **answer page** names the task and the waiting

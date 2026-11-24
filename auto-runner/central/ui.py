@@ -102,6 +102,12 @@ STATUS = {
     ("item", "done"): ("Done", "ok", "dot"),
     ("item", "blocked"): ("Blocked", "attention", "square"),
     ("item", "failed"): ("Failed", "bad", "square"),
+    # tokens and accounts
+    ("token", "active"): ("Active", "ok", "dot"),
+    ("token", "revoked"): ("Revoked", "neutral", "square"),
+    ("account", "enabled"): ("Enabled", "ok", "dot"),
+    ("account", "disabled"): ("Disabled", "neutral", "square"),
+    ("account", "invited"): ("Invited", "attention", "dot"),
     # runs
     ("run", "running"): ("Running", "info", "dot"),
     ("run", "finished"): ("Finished", "ok", "dot"),

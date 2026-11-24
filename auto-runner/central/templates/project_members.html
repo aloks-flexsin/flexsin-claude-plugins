@@ -1,58 +1,89 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui %}
 {% from "_project.html" import header, settings_nav with context %}
 {% block title %}{{ project.name }} members{% endblock %}
 {% block content %}
 {{ header(project, "settings") }}
 {{ settings_nav(project, "members") }}
-{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 {% if invite %}
-<div class="card" role="status">
-  <p><strong>{{ "Invited" if invite.new else "New link for" }} {{ invite.email }}.</strong> Send them this link (chat or
-    email). It is shown only now, works once and expires in {{ lifetime_hours }} hours; they set their own password with it.</p>
-  <p><code>{{ invite.link }}</code></p>
+<div class="result-card" role="status">
+  <p><strong>{{ "Invited" if invite.new else "New link for" }} {{ invite.email }}{% if invite.role %} as {{ invite.role }}{% endif %}.</strong>
+    Send them this link (chat or email). It is shown only now, works once and expires in {{ lifetime_hours }} hours; they set their own password with it.</p>
+  {{ ui.copy_field("Invite link for " ~ invite.email, invite.link, "invite-link") }}
 </div>
 {% endif %}
-<h2>Members</h2>
-<table>
-  <thead><tr><th>Email</th><th>Role</th>{% if can_manage %}<th>Actions</th>{% endif %}</tr></thead>
-  <tbody>
-  {% for m in members %}
-    <tr>
-      <td>{{ m.email }}{% if m.disabled %} (disabled){% endif %}{% if m.pending %} <span class="badge warn">invited</span>{% endif %}</td>
-      <td><span class="badge">{{ m.role }}</span></td>
+
+<section class="block">
+  <div class="block-head">
+    <h2>People <span class="muted">{{ members | length }}</span></h2>
+    {% if can_manage %}
+    <details class="pop" id="invite"{% if error and form_email %} open{% endif %}>
+      <summary class="btn primary">Invite people</summary>
+      <form method="post" action="{{ url_for('projects.member_add', slug=project.slug) }}" class="pop-body">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="i-email">Email</label>
+        <input id="i-email" type="email" name="email" value="{{ form_email }}" required placeholder="name@company.com">
+        <label for="i-role">Role</label>
+        <select id="i-role" name="role">{% for r in roles %}<option value="{{ r }}"{% if r == "developer" %} selected{% endif %}>{{ r }}</option>{% endfor %}</select>
+        <button type="submit" class="btn primary">Invite</button>
+        <p class="muted small">Someone new gets an account and you get a one-time link to send them. Someone with an account is added at once.</p>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+  <p class="muted small roles-legend"><strong>viewer</strong> sees everything · <strong>developer</strong> also runs runners · <strong>manager</strong> also approves plans, answers blockers and makes machine tokens · <strong>owner</strong> also manages people and the repository</p>
+  <div class="list">
+    {% for m in members %}
+    <div class="list-row">
+      {{ ui.person(m.email, None, m.email) }}
+      <span class="muted nowrap grow-sm">{% if m.disabled %}<span class="chip tone-neutral"><span class="mark square" aria-hidden="true"></span>Disabled</span>{% elif m.last_active %}active {{ ui.when(m.last_active) }}{% else %}not active recently{% endif %}</span>
       {% if can_manage %}
-      <td>
-        <form method="post" action="{{ url_for('projects.member_role', slug=project.slug, account_id=m.account_id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <select name="role" aria-label="Role for {{ m.email }}">
-            {% for r in roles %}<option value="{{ r }}"{% if r == m.role %} selected{% endif %}>{{ r }}</option>{% endfor %}
-          </select>
-          <button type="submit">Change role</button>
-        </form>
-        {% if m.pending %}
-        <form method="post" action="{{ url_for('projects.member_reinvite', slug=project.slug, account_id=m.account_id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit">New invite link</button>
-        </form>
-        {% endif %}
-        <form method="post" action="{{ url_for('projects.member_remove', slug=project.slug, account_id=m.account_id) }}" data-confirm="Remove {{ m.email | display_name }} from {{ project.name }}?" data-confirm-detail="Their runners stop working on this project at their next step, and tasks they are building go back to approved for someone else. Their account and other projects are not affected." data-confirm-action="Remove">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="danger">Remove</button>
-        </form>
-      </td>
+      <form method="post" action="{{ url_for('projects.member_role', slug=project.slug, account_id=m.account_id) }}" class="inline role-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <select name="role" aria-label="Role for {{ m.email }}" data-autosave>
+          {% for r in roles %}<option value="{{ r }}"{% if r == m.role %} selected{% endif %}>{{ r }}</option>{% endfor %}
+        </select>
+        <button type="submit" class="btn autosave-btn">Save</button>
+      </form>
+      <details class="pop row-menu">
+        <summary class="btn" aria-label="More for {{ m.email }}">⋯</summary>
+        <div class="pop-body">
+          <form method="post" action="{{ url_for('projects.member_remove', slug=project.slug, account_id=m.account_id) }}" data-confirm="Remove {{ m.email | display_name }} from {{ project.name }}?" data-confirm-detail="Their runners stop working on this project at their next step, and tasks they are building go back to approved for someone else. Their account and other projects are not affected." data-confirm-action="Remove">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn danger">Remove from project</button>
+          </form>
+        </div>
+      </details>
+      {% else %}
+      <span class="chip tone-neutral">{{ m.role }}</span>
       {% endif %}
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% if can_manage %}
-<h2>Invite a member</h2>
-<p class="muted">Someone without an account gets one, and you get a one-time link to send them; they set their own password.</p>
-<form method="post" action="{{ url_for('projects.member_add', slug=project.slug) }}">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <label>Email <input type="email" name="email" value="{{ form_email }}" required></label>
-  <label>Role <select name="role">{% for r in roles %}<option value="{{ r }}"{% if r == "viewer" %} selected{% endif %}>{{ r }}</option>{% endfor %}</select></label>
-  <button type="submit">Invite</button>
-</form>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% if pending %}
+<section class="block">
+  <div class="block-head"><h2>Pending invites <span class="muted">{{ pending | length }}</span></h2></div>
+  <div class="list">
+    {% for m in pending %}
+    <div class="list-row">
+      {{ ui.person(m.email, None, m.role) }}
+      <span class="muted grow-sm">{% if m.link_expires %}link expires {{ ui.when(m.link_expires) }}{% else %}link expired or used up{% endif %}</span>
+      {% if can_manage %}
+      <form method="post" action="{{ url_for('projects.member_reinvite', slug=project.slug, account_id=m.account_id) }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn">New invite link</button>
+      </form>
+      {{ ui.danger_form(url_for('projects.member_cancel_invite', slug=project.slug, account_id=m.account_id), "Cancel invite",
+                        "Cancel the invite for " ~ m.email ~ "?", "The link they were sent stops working and they leave " ~ project.name ~ ". You can invite them again later.") }}
+      {% else %}
+      <span class="chip tone-attention"><span class="mark dot" aria-hidden="true"></span>invited</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
 {% endif %}
 {% endblock %}

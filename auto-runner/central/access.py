@@ -85,7 +85,11 @@ def project_create():
 def _members_page(error=None, status=200, form_email="", invite=None):
     """`invite`: {'email', 'link', 'new'} to show a just-made link once (never in a URL or a redirect)."""
     db = get_db()
-    page = render_template("project_members.html", project=g.project, members=projects.members(db, g.project["id"]),
+    seen, links = accounts.last_active(db), invites.open_links(db, auth.now())
+    rows = [dict(m, last_active=seen.get(m["account_id"]), link_expires=links.get(m["account_id"]))
+            for m in projects.members(db, g.project["id"])]
+    page = render_template("project_members.html", project=g.project, members=[m for m in rows if not m["pending"]],
+                           pending=[m for m in rows if m["pending"]],
                            can_manage=projects.allows(g.project_role, "owner"), roles=projects.MEMBER_ROLES,
                            can_tokens=projects.allows(g.project_role, "manager"), invite=invite,
                            my_role=g.project_role, error=error, form_email=form_email,
@@ -173,7 +177,8 @@ def member_add(slug):
         return redirect(url_for("projects.members_page", slug=slug))
     raw = invites.issue(db, added["id"], "invite", g.account["id"], auth.now())
     _record(db, "invite.create", {"target_id": added["id"], "email": added["email"]})
-    return _members_page(invite={"email": added["email"], "link": invites.link(raw), "new": created is not None})
+    return _members_page(invite={"email": added["email"], "link": invites.link(raw), "new": created is not None,
+                                 "role": role})
 
 
 @bp.post("/projects/<slug>/members/<account_id>/invite")
@@ -188,6 +193,29 @@ def member_reinvite(slug, account_id):
     raw = invites.issue(db, account_id, "invite", g.account["id"], auth.now())
     _record(db, "invite.create", {"target_id": account_id, "email": target["email"]})
     return _members_page(invite={"email": target["email"], "link": invites.link(raw), "new": False})
+
+
+@bp.post("/projects/<slug>/members/<account_id>/cancel")
+@project_access("owner")
+def member_cancel_invite(slug, account_id):
+    """Take back an invite nobody used yet: its links stop working and the person leaves the project. The account stays
+    (no password, no link), so inviting the same email again works."""
+    db = get_db()
+    target = _member_or_404(db, account_id)
+    if not target["pending"]:
+        return _members_page(error="%s has already joined; remove them instead." % target["email"], status=400)
+    if not ui.confirmed():
+        return ui.confirm_page("Cancel the invite for %s?" % target["email"],
+                               "The link they were sent stops working and they leave %s. You can invite them again later."
+                               % g.project["name"], "Cancel invite", url_for("projects.members_page", slug=slug))
+    invites.cancel(db, account_id, auth.now())
+    try:
+        projects.remove_member(db, g.project["id"], account_id)
+    except projects.ProjectError as exc:
+        db.rollback()
+        return _members_page(error=str(exc), status=400)
+    _record(db, "invite.cancel", {"target_id": account_id, "email": target["email"]})
+    return redirect(url_for("projects.members_page", slug=slug))
 
 
 def _member_or_404(db, account_id):
