@@ -90,7 +90,7 @@ def find(db, raw, moment):
     """-> the link row (with the account's email and disabled flag) while it is unused and not expired, else None."""
     if not raw or len(raw) > 128:
         return None
-    row = db.query_one("SELECT i.*, a.email, a.disabled FROM invite i JOIN account a ON a.id = i.account_id "
+    row = db.query_one("SELECT i.*, a.email, a.disabled, a.name FROM invite i JOIN account a ON a.id = i.account_id "
                        "WHERE i.token_hash = ?", (_hash(raw),))
     if row is None or row["used_at"] or row["expires_at"] <= sessions.iso(moment) or row["disabled"]:
         return None
@@ -127,7 +127,7 @@ def accept_page(token):
     row = find(get_db(), token, auth.now())
     if row is None:
         return render_template("invite.html", row=None, error=None), 404
-    return render_template("invite.html", row=row, error=None)
+    return render_template("invite.html", row=row, form={"name": row["name"] or ""}, error=None)
 
 
 @bp.post("/invite/<token>")
@@ -138,14 +138,21 @@ def accept_post(token):
     row = find(db, token, moment)
     if row is None:
         return render_template("invite.html", row=None, error=None), 404
+    form = {"name": (request.form.get("name") or "")[:accounts.MAX_NAME]}
     if password != again:
-        return render_template("invite.html", row=row, error="The two passwords are not the same."), 400
+        return render_template("invite.html", row=row, form=form, error="The two passwords are not the same."), 400
+    try:
+        name = accounts.clean_name(request.form.get("name"))
+    except accounts.AccountError as exc:
+        return render_template("invite.html", row=row, form=form, error=str(exc)), 400
     try:
         account, kind = accept(db, token, password, moment)
     except passwords.PasswordError as exc:
-        return render_template("invite.html", row=row, error=str(exc)), 400
+        return render_template("invite.html", row=row, form=form, error=str(exc)), 400
     except InviteError:
         abort(404)
+    if name:
+        accounts.set_name(db, account["id"], name)
     sessions.delete(db, request.cookies.get(auth.SESSION_COOKIE))
     raw_id, _csrf = sessions.create(db, account["id"], moment)
     audit.record(db, "%s.accept" % kind, sessions.iso(moment), account_id=account["id"],

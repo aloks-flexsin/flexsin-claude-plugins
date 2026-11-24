@@ -153,7 +153,7 @@ def test_unknown_email_gets_the_same_answer_as_a_wrong_password(client, ada, clo
     assert wrong.status_code == unknown.status_code == 401
 
     def message(resp):
-        return re.search(r'<p role="alert">(.*?)</p>', resp.get_data(as_text=True)).group(1)
+        return re.search(r'<p class="alert" role="alert">(.*?)</p>', resp.get_data(as_text=True)).group(1)
     assert message(wrong) == message(unknown)
     assert client.get_cookie(auth.SESSION_COOKIE) is None
 

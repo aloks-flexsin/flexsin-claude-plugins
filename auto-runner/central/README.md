@@ -70,7 +70,7 @@ may not stick over plain http. The API endpoints do not use the cookie.
     shown once on the page, which the inviter sends on. "New invite link" makes a fresh one for a member still marked
     *invited*. Admins can also add an account on `/admin/accounts` (a link, no password).
   - An admin's **Send reset link** takes the current password away at once, ends every session and makes a link. An
-    admin changes their own password on the Password page, not here.
+    admin changes their own password on the Account page, not here.
   - A link (`/invite/<token>`) works **once**, **expires after 72 hours**, and a newer link for the same account ends the
     older one; a disabled account's link does not work. Only its SHA-256 is stored (table `invite`), it is never in the
     audit log, and setting a password with it follows the password policy, ends every session and signs the person in.
@@ -139,7 +139,7 @@ may not stick over plain http. The API endpoints do not use the cookie.
 ## The frame (UX audit, PR 2; `shell.py`)
 
 - Signed in, `/` goes to **My work**. The top bar: My work (with the number of decisions waiting for you: plans you may
-  approve and blockers you may answer), Projects, Accounts (admins), and an account menu (My tokens, Password, Sign out).
+  approve and blockers you may answer), Projects, Accounts (admins), and an account menu (Account, My tokens, Sign out).
 - Every project page shares one header (name, repository, your role, members, New task for people who run runners) and
   tabs: **Overview** · Tasks (open, plans waiting) · Runs (live) · Blockers (waiting) · **Settings**. The counts come
   from `shell.project_nav`, injected into every page that has `g.project`.
@@ -161,6 +161,20 @@ may not stick over plain http. The API endpoints do not use the cookie.
 - **Admin › Accounts**: search (`?q=`), each account's projects count and last active, role select that saves itself,
   and Send reset link / Revoke tokens / Disable under "⋯". **Add account** opens a small form.
 - **My tokens**: one row per computer with when it signed in and was last used; Revoke asks first.
+
+## Sign-in, invite, device and Account (UX audit PR 6)
+
+- **Sign in**: one focused card with Show for the password. A failed sign-in gets the same words for every cause (unknown
+  email, wrong password, locked, disabled) plus how the lockout works (5 wrong tries, 15 minutes), so it never says
+  whether an email has an account.
+- **Invite / reset link** (`/invite/<token>`): an invited person can give their name (optional, `account.name`); the
+  password has Show and a live checklist (12+ characters, both the same) from `app.js`. The server's rules are
+  unchanged and decide; a bad name refuses the form and leaves the link and the password unset.
+- **Device** (`/device`): the code large, the computer and repository, and a countdown to when the code expires; Deny
+  and Approve.
+- **Account** (`/account`, was Password): your name (`POST /account/name`) and your password (`POST /account/password`,
+  as before; `GET /account/password` redirects here). Admins set anyone's name from Accounts
+  (`POST /admin/accounts/<id>/name`). Name changes are audited as `account.name`.
 
 ## My work and task progress
 

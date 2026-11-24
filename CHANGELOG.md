@@ -5,6 +5,10 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Central service, sign-in and account (UX audit PR 6): a focused **sign-in** with Show and a lockout explanation that
+  never reveals whether an email exists; **invite** links ask for your name and show a live password checklist; the
+  **device** page shows the code large with a countdown; **Account** (was Password) sets your name and password, and
+  admins can set anyone's name. Every page checked at phone width.
 - Central service, people and access (UX audit PR 5): **Members** shows when each person was last active, a role select
   that saves itself, Remove under "⋯", an **Invite people** form whose link comes in a copy field, and **Pending
   invites** with expiry, New invite link and **Cancel invite**. **Machine tokens** and **My tokens** get copy fields,

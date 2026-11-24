@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Account{% endblock %}
+{% block content %}
+<div class="narrow">
+<h1>Account</h1>
+<p class="lead">{{ g.account.email }}{% if g.account.role == "admin" %} · site admin{% endif %}</p>
+
+<section class="form-card" id="name">
+  <h2>Your name</h2>
+  <p class="muted">Shown to your team instead of your email address.</p>
+  {% if saved == "name" %}<p class="saved" role="status">Saved.</p>{% endif %}
+  {% if name_error %}<p class="alert" role="alert">{{ name_error }}</p>{% endif %}
+  <form method="post" action="{{ url_for('admin.own_name_post') }}" class="stack-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="acc-name">Name</label>
+    <input id="acc-name" type="text" name="name" value="{{ g.account.name or '' }}" maxlength="100" autocomplete="name" placeholder="{{ g.account.email | display_name }}">
+    <div class="form-actions"><button type="submit" class="btn primary">Save name</button></div>
+  </form>
+</section>
+
+<section class="form-card" id="password">
+  <h2>Password</h2>
+  <p class="muted">Changing it signs you out everywhere, including here.</p>
+  {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+  <form method="post" action="{{ url_for('admin.own_password_post') }}" class="stack-form" data-pw-form>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="pw-current">Current password</label>
+    <input id="pw-current" type="password" name="current_password" autocomplete="current-password" required>
+    <label for="pw-new">New password</label>
+    <div class="pw-field"><input id="pw-new" type="password" name="new_password" autocomplete="new-password" required data-pw-new><button type="button" class="btn" data-show-password="pw-new">Show</button></div>
+    <label for="pw-again">New password again</label>
+    <input id="pw-again" type="password" name="confirm_password" autocomplete="new-password" required data-pw-again>
+    <ul class="pw-checks" aria-live="polite">
+      <li data-rule="length">At least 12 characters</li>
+      <li data-rule="match">Both the same</li>
+      <li>Not a common password (checked when you save)</li>
+    </ul>
+    <div class="form-actions"><button type="submit" class="btn primary">Change password</button></div>
+  </form>
+</section>
+<p class="muted"><a href="{{ url_for('personal.tokens_page') }}">My tokens</a>: the computers you signed in from Claude.</p>
+</div>
+{% endblock %}

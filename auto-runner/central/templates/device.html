@@ -1,35 +1,43 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui %}
 {% block title %}Sign in a computer{% endblock %}
 {% block content %}
+<div class="auth wide">
 <h1>Sign in a computer</h1>
-{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 {% if done == "approved" %}
-<div class="card" role="status"><p><strong>Approved.</strong> Go back to Claude: it finishes signing in by itself within a
-  few seconds. You can see and revoke this computer's token on <a href="{{ url_for('personal.tokens_page') }}">My tokens</a>.</p></div>
+<div class="result-card" role="status"><p><strong>Approved.</strong> Go back to Claude: it finishes signing in by itself
+  within a few seconds. You can see and revoke this computer's token on <a href="{{ url_for('personal.tokens_page') }}">My tokens</a>.</p></div>
 {% elif done == "denied" %}
-<div class="card" role="status"><p><strong>Denied.</strong> That computer gets no token.</p></div>
+<div class="form-card" role="status"><p><strong>Denied.</strong> That computer gets no token.</p></div>
 {% elif row %}
-<div class="card">
-  <p>Code <strong>{{ user_code[:4] }}-{{ user_code[4:] }}</strong> asks for a token for <strong>{{ g.account.email }}</strong>:</p>
-  <ul>
-    <li>Computer: <strong>{{ row.client_name }}</strong></li>
-    {% if row.repo %}<li>Repository: <code>{{ row.repo }}</code></li>{% endif %}
-    <li>Requested at {{ row.created_at }}</li>
-  </ul>
-  <p><strong>Approve only a code you started yourself, just now, in Claude.</strong> If someone sent you this code, deny it.</p>
-  <form method="post" action="{{ url_for('personal.device_decide') }}">
+<div class="form-card">
+  <p class="muted">This code asks for a token for <strong>{{ g.account.email }}</strong>:</p>
+  <div class="device-code">{{ user_code[:4] }}-{{ user_code[4:] }}</div>
+  <dl class="facts plain-facts">
+    <dt>Computer</dt><dd><strong>{{ row.client_name }}</strong></dd>
+    {% if row.repo %}<dt>Repository</dt><dd><code>{{ row.repo }}</code></dd>{% endif %}
+    <dt>Requested</dt><dd>{{ ui.when(row.created_at) }}</dd>
+    <dt>Code expires</dt><dd><span data-countdown="{{ row.expires_at | iso }}">{{ row.expires_at | ago }}</span></dd>
+  </dl>
+  <p class="warn-box"><strong>Approve only a code you started yourself, just now, in Claude.</strong> If someone sent you this code, deny it.</p>
+  <form method="post" action="{{ url_for('personal.device_decide') }}" class="form-actions">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="user_code" value="{{ user_code }}">
-    <button type="submit" name="decision" value="approve">Approve</button>
-    <button type="submit" name="decision" value="deny" class="danger">Deny</button>
+    <button type="submit" name="decision" value="deny" class="btn danger">Deny</button>
+    <button type="submit" name="decision" value="approve" class="btn primary">Approve</button>
   </form>
 </div>
 {% else %}
-<p>Type the code Claude showed you (for example <code>KQ4M-7RXD</code>). It works for 10 minutes.</p>
-<form method="post" action="{{ url_for('personal.device_lookup') }}">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <label>Code <input type="text" name="user_code" autocomplete="off" autocapitalize="characters" maxlength="12" required></label>
-  <button type="submit">Continue</button>
-</form>
+<div class="form-card">
+  <p>Type the code Claude showed you (for example <code>KQ4M-7RXD</code>). It works for 10 minutes.</p>
+  <form method="post" action="{{ url_for('personal.device_lookup') }}" class="stack-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="dev-code">Code</label>
+    <input id="dev-code" class="code-input" type="text" name="user_code" autocomplete="off" autocapitalize="characters" maxlength="12" required autofocus placeholder="XXXX-XXXX">
+    <button type="submit" class="btn primary wide-btn">Continue</button>
+  </form>
+</div>
 {% endif %}
+</div>
 {% endblock %}

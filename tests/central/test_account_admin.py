@@ -235,7 +235,7 @@ def test_a_weak_password_is_refused_and_the_link_still_works(app, conn, as_root,
 
 def test_an_admin_cannot_reset_their_own_password_here(conn, as_root, root):
     resp = post(as_root, '/admin/accounts/%s/password' % root['id'])
-    assert resp.status_code == 400 and 'Password page' in resp.get_data(as_text=True)
+    assert resp.status_code == 400 and 'Account page' in resp.get_data(as_text=True)
     assert accounts.get(conn, root['id'])['password_hash'] != '!'
 
 
@@ -282,7 +282,7 @@ def test_own_password_page_needs_a_session(app):
 def test_admin_forms_carry_csrf_and_refuse_without_it(conn, as_root, bob):
     page = as_root.get('/admin/accounts').get_data(as_text=True)
     assert page.count('<form method="post"') == page.count('name="csrf_token"') >= 4      # the search is a GET
-    own = as_root.get('/account/password').get_data(as_text=True)
+    own = as_root.get('/account').get_data(as_text=True)
     assert own.count('<form') == own.count('name="csrf_token"')
     assert as_root.post('/admin/accounts/%s/disabled' % bob['id'], data={'disabled': '1'}).status_code == 400
     assert as_root.post('/admin/accounts', data={'email': 'x@example.com', 'password': NEW_PW}).status_code == 400

@@ -57,6 +57,28 @@ def create(db, email, password, role="user", now=None):
     return get(db, account_id)
 
 
+MAX_NAME = 100
+
+
+def clean_name(name):
+    """A person's display name: trimmed, inner spaces collapsed, None when empty. AccountError when too long or when it
+    holds control characters."""
+    text = " ".join((name or "").split()) if isinstance(name, str) else ""
+    if len(text) > MAX_NAME:
+        raise AccountError("the name is longer than %d characters" % MAX_NAME)
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in text):
+        raise AccountError("the name holds characters that cannot be shown")
+    return text or None
+
+
+def set_name(db, account_id, name):
+    """Set (or clear, with an empty name) the account's display name and commit -> the cleaned name."""
+    value = clean_name(name)
+    db.execute("UPDATE account SET name = ? WHERE id = ?", (value, account_id))
+    db.commit()
+    return value
+
+
 def list_all(db):
     return db.query("SELECT * FROM account ORDER BY email")
 

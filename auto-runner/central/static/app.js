@@ -78,6 +78,41 @@
     sel.addEventListener("change", function () { if (sel.form) sel.form.submit(); });
   });
 
+  /* Passwords: a Show button next to the field, and a live checklist (length, both the same). The server still decides. */
+  document.querySelectorAll("[data-show-password]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var field = document.getElementById(btn.getAttribute("data-show-password"));
+      if (!field) return;
+      var show = field.type === "password";
+      field.type = show ? "text" : "password";
+      btn.textContent = show ? "Hide" : "Show";
+    });
+  });
+  document.querySelectorAll("form[data-pw-form]").forEach(function (form) {
+    var pw = form.querySelector("[data-pw-new]"), again = form.querySelector("[data-pw-again]");
+    if (!pw || !again) return;
+    function check() {
+      var rules = {length: pw.value.length >= 12, match: pw.value !== "" && pw.value === again.value};
+      form.querySelectorAll(".pw-checks [data-rule]").forEach(function (li) {
+        li.classList.toggle("ok", !!rules[li.getAttribute("data-rule")]);
+      });
+    }
+    pw.addEventListener("input", check); again.addEventListener("input", check); check();
+  });
+
+  /* Countdown: <span data-countdown="ISO time"> shows "7:42 left", then that the code expired. */
+  document.querySelectorAll("[data-countdown]").forEach(function (el) {
+    var end = Date.parse(el.getAttribute("data-countdown"));
+    if (isNaN(end)) return;
+    function step() {
+      var s = Math.round((end - Date.now()) / 1000);
+      if (s <= 0) { el.textContent = "expired: start the sign-in again in Claude"; el.classList.add("expired"); return; }
+      el.textContent = Math.floor(s / 60) + ":" + ("0" + (s % 60)).slice(-2) + " left";
+      setTimeout(step, 1000);
+    }
+    step();
+  });
+
   /* Auto-refresh: <body data-refresh="30"> reloads while the tab is visible and nobody is typing or deciding. */
   var every = parseInt(document.body.getAttribute("data-refresh") || "0", 10);
   if (every > 0) {
