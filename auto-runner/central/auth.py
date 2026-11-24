@@ -199,6 +199,23 @@ def signout():
     return redirect(url_for("auth.signin"))
 
 
+THEME_MAX_AGE = 365 * 24 * 3600
+
+
+@bp.post("/theme")
+def theme_post():
+    """Remember the chosen colour theme (`light` or `dark`) in the `theme` cookie for a year and go back to `next`
+    (a same-site path, else My work). Signed in or not; CSRF is checked like every form."""
+    from . import ui
+    choice = request.form.get("theme", "")
+    if choice not in ("light", "dark"):
+        abort(400, description="Unknown theme.")
+    response = redirect(ui.safe_next(request.form.get("next")) or url_for("mywork.my_page"))
+    response.set_cookie("theme", choice, max_age=THEME_MAX_AGE, path="/", secure=True, httponly=True,
+                        samesite="Lax")
+    return response
+
+
 @bp.get("/")
 @login_required
 def home():

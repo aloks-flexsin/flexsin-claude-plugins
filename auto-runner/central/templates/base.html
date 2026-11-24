@@ -29,6 +29,13 @@
     </div>
   </details>
   {% endif %}
+  {%- set other_theme = "light" if theme == "dark" else "dark" %}
+  <form method="post" class="theme-form" action="{{ url_for('auth.theme_post') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="theme" value="{{ other_theme }}">
+    <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+    <button type="submit" class="theme-toggle">{{ "Light mode" if theme == "dark" else "Dark mode" }}</button>
+  </form>
 </div></header>
 <main>
 {% block content %}{% endblock %}

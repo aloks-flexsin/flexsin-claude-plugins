@@ -156,6 +156,10 @@ dialog.confirm-dialog p{color:var(--muted);margin:0}
 .account-menu .menu a,.account-menu .menu button{display:block;text-align:left;width:100%;padding:9px 10px;border-radius:8px;color:var(--text);background:none;border:0;font-weight:500;font-size:14px}
 .account-menu .menu a:hover,.account-menu .menu button:hover{background:var(--bg);text-decoration:none;filter:none}
 .account-menu .menu form{margin:0}
+.theme-form{margin:0 0 0 auto}
+.account-menu+.theme-form{margin-left:0}
+.theme-toggle{padding:5px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--text);font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}
+.theme-toggle:hover{border-color:var(--brand)}
 .menu-who{font-size:12px;color:var(--muted);padding:6px 10px 8px;border-bottom:1px solid var(--line);margin-bottom:6px;word-break:break-all}
 .project-head{margin:0 0 22px}
 .project-title{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
