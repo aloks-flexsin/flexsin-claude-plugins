@@ -28,6 +28,7 @@ and an owner, manager or admin answers it there.
 | `deliveries.py` | Decisions and the delivery endpoints |
 | `audit.py` | The audit log |
 | `runners.py` | Runner presence: `POST /api/v1/runners/beat`, silent after 2 hours, pause/stop returned; Pause, Resume and Stop on the pages |
+| `notifications.py` | In-app notifications: `notify` (members only, no duplicates), `resolve`, `unread_count`, `for_account` |
 | `cli.py` | `python -m central init-db` and `python -m central create-admin --email X` |
 | `api/index.py`, `vercel.json` | Vercel entry point; every route is rewritten to it |
 | `templates/`, `static/style.css` | The pages (`base.html` holds the top bar) and their one stylesheet, served by Flask at `/static/style.css` because the CSP allows only same-origin styles; no inline styles or scripts |
@@ -144,6 +145,25 @@ may not stick over plain http. The API endpoints do not use the cookie.
 - **Starting a watcher:** `/auto-runner:central` offers watch mode (`/auto-runner:auto watch`) as its optional last
   step once a checkout is connected and signed in; people read about it in `docs/central-guide.md` ("Hands-free work").
   The service needs nothing for it beyond `runners/beat` and the task API. Unverified on the live service.
+
+## Notifications (`notifications.py`)
+
+A `notification` row is kept per person for each thing that waits on them. Only enabled **members** of the project
+get one: a site admin who is not a member gets none (they still see everything on My work). While a person has an
+unresolved notification with the same key, the same event again adds nothing; once the thing no longer waits, every
+notification with its key is marked resolved. There is no page or bell for them yet (queue item N2), and no push
+(`push_state`/`push_detail` stay empty until N5).
+
+| Kind | When | Who | Text and link | Resolved when |
+|------|------|-----|---------------|---------------|
+| `plan` | a plan is posted (`tasks.post_plan`) or proposed for page approval (`POST /api/v1/tasks` with `"approval": "page"`) | the assignee, managers and owners | "Plan waiting: #N title" → the task page | any decision on the plan; a reassignment |
+| `changes` | a plan is sent back with changes | the assignee | "Changes asked on #N title" → the task page | the next plan is posted; a reassignment |
+| `assigned` | an admin adds a task for someone else, or gives a task to a new person (release with an assignee) | the new assignee | "Assigned to you: #N title" → the task page | not resolved |
+| `blocker` | a new raised blocker arrives through ingest | managers and owners | "Blocker waiting: question" → `/projects/<slug>/blockers/<id>` | the blocker is answered (`deliveries.record_decision`) |
+
+Taking a task back without a new person leaves a plan that still waits for approval (and its notification) as it is.
+`notifications.unread_count` and `notifications.for_account` (waiting first, newest first) feed the pages to come.
+`python -m central init-db` adds the table to an existing database.
 
 ## Presentation (UX audit foundations)
 

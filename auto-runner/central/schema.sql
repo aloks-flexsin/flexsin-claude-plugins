@@ -222,3 +222,21 @@ CREATE TABLE IF NOT EXISTS runner (
     created_at VARCHAR(32) NOT NULL,
     UNIQUE (project_id, label)
 );
+
+-- In-app notifications (notifications.py): one row per person for something that waits on them. `dedupe` identifies
+-- the thing (one unresolved row per person and key); `resolved_at` is set once it no longer waits. `push_state` and
+-- `push_detail` record a browser push for it (NULL until push is set up).
+CREATE TABLE IF NOT EXISTS notification (
+    id VARCHAR(64) PRIMARY KEY,
+    account_id VARCHAR(64) NOT NULL REFERENCES account (id) ON DELETE CASCADE,
+    project_id VARCHAR(64) NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    kind VARCHAR(32) NOT NULL,
+    text VARCHAR(500) NOT NULL,
+    link VARCHAR(500) NOT NULL,
+    dedupe VARCHAR(300) NOT NULL,
+    created_at VARCHAR(32) NOT NULL,
+    read_at VARCHAR(32),
+    resolved_at VARCHAR(32),
+    push_state VARCHAR(16),
+    push_detail TEXT
+);

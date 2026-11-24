@@ -27,7 +27,7 @@ import secrets
 
 from flask import Blueprint, abort, g, jsonify, redirect, render_template, request, url_for
 
-from . import accounts, audit, auth, projects, sessions, tokens, ui
+from . import accounts, audit, auth, notifications, projects, sessions, tokens, ui
 from .access import project_access
 from .db import get_db
 
@@ -161,8 +161,25 @@ def post_plan(db, project, number, claim, plan, items, moment):
     items = _text(items, MAX_PLAN, "the items", required=True)
     db.execute("UPDATE project_task SET plan = ?, items = ?, status = 'plan_review', heartbeat_at = ?, updated_at = ?"
                " WHERE id = ?", (plan, items, _at(moment), _at(moment), row["id"]))
+    notifications.resolve(db, notifications.task_key(project, number, "changes"), moment)
+    notify_plan(db, project, row, moment)
     db.commit()
     return get(db, project["id"], number)
+
+
+def notify_plan(db, project, row, moment):
+    """A plan waits for approval: tell the assignee and the project's managers and owners. Does not commit."""
+    who = [row["assignee_id"]] + notifications.members_with(db, project, APPROVER_ROLE)
+    notifications.notify(db, who, project, "plan", notifications.task_text("plan", row),
+                         notifications.task_link(project, row["number"]),
+                         notifications.task_key(project, row["number"], "plan"), moment)
+
+
+def notify_assigned(db, project, row, moment):
+    """The task was given to `row["assignee_id"]` by someone else. Does not commit."""
+    notifications.notify(db, [row["assignee_id"]], project, "assigned", notifications.task_text("assigned", row),
+                         notifications.task_link(project, row["number"]),
+                         notifications.task_key(project, row["number"], "assigned"), moment)
 
 
 def report(db, project, number, claim, result, branch, pr_url, note, moment):
@@ -200,6 +217,11 @@ def decide(db, project, row, account, decision, comment, moment):
     db.execute("UPDATE project_task SET status = ?, decision_comment = ?, decided_by = ?, decided_at = ?, heartbeat_at = ?,"
                " updated_at = ?, claim_id = CASE WHEN ? = 'rejected' THEN NULL ELSE claim_id END WHERE id = ?",
                (status, comment or None, account["id"], at, at, at, status, row["id"]))
+    notifications.resolve(db, notifications.task_key(project, row["number"], "plan"), moment)
+    if status == "changes_requested":
+        notifications.notify(db, [row["assignee_id"]], project, "changes", notifications.task_text("changes", row),
+                             notifications.task_link(project, row["number"]),
+                             notifications.task_key(project, row["number"], "changes"), moment)
     db.commit()
     return get(db, project["id"], row["number"])
 
@@ -214,8 +236,15 @@ def release(db, project, row, assignee, moment):
     db.execute("UPDATE project_task SET claim_id = NULL, claim_runner = NULL, heartbeat_at = NULL, status = ?,"
                " assignee_id = ?, updated_at = ? WHERE id = ?",
                (status, assignee["id"] if assignee else row["assignee_id"], at, row["id"]))
+    # a plan or a change request that no longer waits (the task went back to open for a new person) is done
+    for kind, waiting in (("plan", "plan_review"), ("changes", "changes_requested")):
+        if status != waiting:
+            notifications.resolve(db, notifications.task_key(project, row["number"], kind), moment)
+    updated = get(db, project["id"], row["number"])
+    if assignee is not None:
+        notify_assigned(db, project, updated, moment)
     db.commit()
-    return get(db, project["id"], row["number"])
+    return updated
 
 
 def public(row, moment, full=False):
@@ -309,6 +338,8 @@ def api_record():
                      status="plan_review" if on_page else "building", plan=plan, items=items, runner=runner)
         audit.record(db, "task.create", _at(moment), account_id=account["id"], project_id=g.token_project["id"],
                      detail={"number": row["number"], "via": "terminal", "approval": approval})
+        if on_page:
+            notify_plan(db, g.token_project, row, moment)
         db.commit()
         return jsonify(task=public(row, moment, full=True), claim=row["claim_id"])
     return _api(run)
@@ -441,6 +472,8 @@ def task_add(slug):
                                "done_when": (request.form.get("done_when") or "")[:MAX_TEXT], "assignee": chosen})
     audit.record(db, "task.create", _at(moment), account_id=g.account["id"], project_id=g.project["id"],
                  detail={"number": row["number"], "assignee": row["assignee_email"]})
+    if row["assignee_id"] != g.account["id"]:
+        notify_assigned(db, g.project, row, moment)
     db.commit()
     return redirect(url_for("tasks.task_page", slug=slug, number=row["number"]))
 
