@@ -22,7 +22,9 @@ bp = Blueprint("runs", __name__)
 MAX_EVENTS = 5000
 STALE = datetime.timedelta(hours=2)
 ACCOUNT_CHECKS = ("match", "mismatch", "not_set", "unknown")
-SHOWN_TYPES = ("run_start", "run_end", "publish", "item_state", "tests", "blocker")
+# the service's own copy of the runner's WINDOW_LABELS (auto_run.py)
+WINDOW_LABELS = {"five_hour": "5-hour", "seven_day": "7-day"}
+SHOWN_TYPES =("run_start", "run_end", "publish", "item_state", "tests", "blocker")
 
 
 def _when(text):
@@ -50,6 +52,27 @@ def _display(r):
     return r
 
 
+def _number(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _usage_stop(usage, ended):
+    """The `usage` of a `run_end` -> {text} for the page, or None when it is not well formed."""
+    if not isinstance(usage, dict) or usage.get("window") not in WINDOW_LABELS:
+        return None
+    util, reset = usage.get("utilization"), usage.get("resets_at")
+    if not _number(util) or not 0 <= util <= 1 or not isinstance(reset, int) or isinstance(reset, bool):
+        return None
+    try:
+        at = datetime.datetime.fromtimestamp(reset, datetime.timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return None
+    end = _when(ended)
+    other_day = end is not None and end.astimezone(datetime.timezone.utc).date() != at.date()
+    when = at.strftime("%d %b %H:%M UTC").lstrip("0") if other_day else at.strftime("%H:%M UTC")
+    return "Stopped at %d%% of the %s limit (resets %s)" % (round(util * 100), WINDOW_LABELS[usage["window"]], when)
+
+
 def summarise(events, now):
     """`events`: event.v1 dicts of one project, any order -> run summaries, newest start first."""
     runs = {}
@@ -61,7 +84,7 @@ def summarise(events, now):
             "run": run_id, "user": None, "account": None, "branch": None, "base": None, "started": e.get("time"),
             "last": e.get("time"), "ended": None, "exit": None, "reason": None, "items": {}, "current": None,
             "tests": None, "pushed": None, "pr_url": None, "publish_error": None, "blockers": 0, "signed_in": None,
-            "signed_in_name": None, "task": None, "account_check": None})
+            "signed_in_name": None, "task": None, "account_check": None, "usage_stop": None})
         r["signed_in"] = r["signed_in"] or e.get("_signed_in")
         r["signed_in_name"] = r["signed_in_name"] or e.get("_signed_in_name")
         r["last"] = e.get("time") or r["last"]
@@ -76,6 +99,7 @@ def summarise(events, now):
                 r["account_check"] = detail["account_check"]
         elif kind == "run_end":
             r["ended"], r["exit"], r["reason"] = e.get("time"), detail.get("exit"), detail.get("reason")
+            r["usage_stop"] = _usage_stop(detail.get("usage"), e.get("time"))
         elif kind == "item_state" and e.get("item"):
             r["items"][e["item"]] = detail.get("to")
             r["current"] = e["item"] if detail.get("to") == "running" else (
