@@ -173,3 +173,42 @@ def test_propose_and_list_from_the_command_line(project, monkeypatch, capsys):
     assert 'waits for approval' in capsys.readouterr().out and svc.tasks[1]['status'] == 'plan_review'
     assert at.main(['list', '--project', str(project)]) == 0
     assert '#1 [waiting for approval] CSV export' in capsys.readouterr().out
+
+
+# ---------- a resumed run keeps its task's newest claim (F1) ----------
+
+def test_a_resumed_run_beats_with_the_newest_claim(project, central, team, env, monkeypatch):
+    """The run adopted task.json (old claim); `next` then re-claimed the task, saving a new claim in run/tasks/<N>.json.
+    `current` hands back the new claim and rewrites current-task.json, so `beat` gets ok instead of losing the task."""
+    n, transport = _runner_with_task(project, central, team, env, monkeypatch)
+    auto = project / '.auto'
+    at.adopt(auto, auto / 'pending' / 'csv-export')
+    old = at.current(auto)['claim']
+    reply = at.take_next(project, env, central.send)
+    assert reply['task']['number'] == n and reply['claim'] != old          # the server issued a new claim
+    assert at.current(auto)['claim'] == reply['claim']
+    assert json.loads((auto / 'run' / 'current-task.json').read_text())['claim'] == reply['claim']
+    assert at.beat(transport, auto) == 'ok'
+    assert server_task(central, n)['claim_id'] == reply['claim']
+
+
+def _write(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data), encoding='utf-8')
+
+
+def test_matching_claims_leave_current_task_unchanged(tmp_path):
+    auto = tmp_path / '.auto'
+    current = auto / 'run' / 'current-task.json'
+    _write(current, {'number': 4, 'claim': 'c-1'})
+    _write(auto / 'run' / 'tasks' / '4.json', {'number': 4, 'claim': 'c-1', 'title': 'T'})
+    before = current.read_text(encoding='utf-8')
+    assert at.current(auto) == {'number': 4, 'claim': 'c-1'}
+    assert current.read_text(encoding='utf-8') == before
+
+
+def test_no_current_task_stays_missing(tmp_path):
+    auto = tmp_path / '.auto'
+    _write(auto / 'run' / 'tasks' / '4.json', {'number': 4, 'claim': 'c-2'})
+    assert at.current(auto) is None
+    assert not (auto / 'run' / 'current-task.json').exists()

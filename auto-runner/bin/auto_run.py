@@ -92,6 +92,7 @@ autochange = _load('autorunner_change', 'autochange.py')
 autodocs = _load('autorunner_docs', 'autodocs.py')
 autojourney = _load('autorunner_journey', 'autojourney.py')
 autodeck = _load('autorunner_deck', 'autodeck.py')
+autocentral = _load('autorunner_central', 'autocentral.py')
 
 AUTO_DIR = '.auto'
 STALE_NOTE = '(stale artifact)'
@@ -721,14 +722,47 @@ def publish(project, wt, cfg, base, branch, pr_runner=None, start=None, name=Non
         log = git(wt, 'log', '--oneline', '--no-decorate', f'{start}..{branch}', check=False)
         body = ('Opened by auto-runner after its own test run passed on every commit. Read the diff before merging.\n\n'
                 + '\n'.join(f'- {line}' for line in log.splitlines()))
-        code, text = pr_runner(['gh', 'pr', 'create', '--head', branch, '--base', base,
-                                '--title', pr_title(branch, name, ahead), '--body', body], wt)
-        urls = [w for w in text.split() if w.startswith('https://')]
-        if code == 0 and urls:
-            out['pr_url'] = urls[-1]
+        title = pr_title(branch, name, ahead)
+        code, text = pr_runner(['gh', 'pr', 'create', '--head', branch, '--base', base, '--title', title, '--body', body], wt)
+        url = _pr_url(code, text)
+        if url:
+            out['pr_url'] = url
         else:
-            out['pr_error'] = f'gh pr create failed (exit {code}): ' + (text.strip().splitlines() or ['no output'])[-1][:300]
+            out['pr_error'] = _pr_error('gh pr create', code, text)
+            if 'graphql' in (text or '').lower():       # GraphQL blocked (e.g. by a proxy in cloud sessions): try REST
+                url, error = rest_pull_request(wt, s['remote'], base, branch, title, body, pr_runner)
+                if url:
+                    out['pr_url'] = url
+                    del out['pr_error']
+                else:
+                    out['pr_error'] += '; ' + error
     return out
+
+
+def _pr_url(code, text):
+    urls = [w for w in (text or '').split() if w.startswith('https://')]
+    return urls[-1] if code == 0 and urls else None
+
+
+def _pr_error(what, code, text):
+    return f'{what} failed (exit {code}): ' + ((text or '').strip().splitlines() or ['no output'])[-1][:300]
+
+
+def rest_pull_request(wt, remote, base, branch, title, body, pr_runner):
+    """Open the pull request with `gh api repos/<owner>/<repo>/pulls -X POST` (the REST API), for when `gh pr create`
+    failed because GraphQL is blocked. Owner and repository come from `autocentral.repo_key` on the push remote's URL;
+    a host other than github.com is passed as `--hostname`. -> (url, None) or (None, error)."""
+    key = autocentral.repo_key(git(wt, 'remote', 'get-url', remote, check=False))
+    host, _, path = (key or '').partition('/')
+    if not key or path.count('/') != 1:
+        return None, f'gh api pulls not tried: no owner/repository in the URL of remote {remote}'
+    argv = ['gh', 'api', f'repos/{path}/pulls', '-X', 'POST', '-f', f'title={title}', '-f', f'head={branch}',
+            '-f', f'base={base}', '-f', f'body={body}', '--jq', '.html_url']
+    if host != 'github.com':
+        argv[2:2] = ['--hostname', host]
+    code, text = pr_runner(argv, wt)
+    url = _pr_url(code, text)
+    return (url, None) if url else (None, _pr_error('gh api pulls', code, text))
 
 
 def pr_title(branch, name, commits):
@@ -1538,6 +1572,8 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 set_state(item, 'blocked', 'changelog: ' + '; '.join(change['errors']))
             elif entry['result'] == 'blocked':
                 set_state(item, 'blocked', blocked_detail(raised))
+            elif denied and code != 0:                 # an early exit, not a refusal the agent stopped on: retry
+                set_state(item, 'queued', f'agent exited with {code}; retried next iteration')
             elif denied:
                 set_state(item, 'blocked', f'needs permission for {"; ".join(denied[:3])}: allow it in .claude/settings.json, '
                                            f'or put the tool on PATH with "path_prepend"')

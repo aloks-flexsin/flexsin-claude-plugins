@@ -213,6 +213,12 @@ a repository with no remote simply is not published; `"push": true` written out 
 - Then `gh pr create --head <branch> --base <base>` with the title `<type>: <brief> (<user> via <account>-claude-auto-runner)` and the commit
   list as the body. A second clean run on the same unmerged branch pushes again; `gh` then reports that the pull request
   exists, which is recorded as `pr_error` and is harmless.
+- When `gh pr create` fails and its output mentions GraphQL (blocked by a proxy, as in some cloud sessions), the runner opens
+  the pull request with the REST API instead: `gh api repos/<owner>/<repo>/pulls -X POST -f title=... -f head=... -f base=...
+  -f body=... --jq .html_url` through the same `pr_runner`, with owner and repository from `autocentral.repo_key` on
+  `git remote get-url <remote>` (https and ssh forms; `--hostname <host>` for a host other than github.com). Its URL is
+  recorded as `pr_url`; when it fails too (or the remote names no owner/repository), `pr_error` holds both errors. Any
+  other `gh pr create` failure makes no REST call.
 - The outcome is a `publish` event (`pushed`, `commits`, `pr_url` or `pr_error`, or `error`) in `.auto/events.jsonl` and,
   with central on, on the central service. A failed push or pull request is reported and never fails the run.
 - A red run, or one stopped on a problem, publishes nothing. Merging, tagging and deploying stay with a person.
@@ -266,7 +272,10 @@ continue from it; only the agent's files come back (never the queue, `.auto/` or
 patch and new files one by one, and a stash that does not apply cleanly is kept for a person.
 When the agent stops because a tool call was refused for lack of permission (read from the result's `permission_denials`,
 or from refused tool results in the transcript), the item's status names the call, for example "needs permission for Bash:
-corepack pnpm install: allow it in .claude/settings.json, or put the tool on PATH with path_prepend", and the log lists them.
+corepack pnpm install: allow it in .claude/settings.json, or put the tool on PATH with path_prepend", and the log lists them. That holds only when the agent exited 0: when it exited non-zero (it was cut
+off early, so the refusals may not be why it stopped) and nothing else explains the stop, the item goes back to queued with
+"agent exited with <code>; retried next iteration" and the next iteration runs it again; two such exits in a row still
+stop the run by the no-progress rule.
 It also stops on a browser-acceptance failure, a STOP file, uncommitted leftovers, or two iterations without progress. Cost per iteration is recorded in `.auto/runs.jsonl` only when the CLI reports it; otherwise it is `null`.
 Every run also appends to `.auto/events.jsonl` (schema `event.v1`, `bin/autoevents.py`), under a run id that is unique across people
 and machines (`<YYYYMMDD-HHMM>-<6 hex>`; 0.17.0): run start (with branch, base, and who ran it: `user` and `account` from
@@ -287,7 +296,7 @@ such as `₹` never breaks a run on Windows.
 | `bin/autostale.py` | Artifact front-matter (`version`, `hash`, `built_from`, `status`), `scan`, `status`, `revalidate`; stale artifacts refuse a resume. |
 | `bin/autoeval.py` | Evaluation harness: `run --benchmark ID --runner fake`, `validate`, `validate-results FILE`. |
 | `bin/auto_init.py`, `bin/auto_report.py` | Init (preview/apply/remove, the `central` section and its repository check) and the status/log reports. |
-| `bin/autotasks.py` | Central tasks: `next` (claim my next task; plan or build), `plan N` (post its plan), `start N` (an approved task → a request folder with `task.json`), `record` (a terminal task), `propose` (a terminal plan sent for approval on the page: `"approval": "page"`, stored as `plan_review`, claim kept in `.auto/run/tasks/<N>.json`), `list` (`plan_review` shown as "waiting for approval"); and for the runner `adopt`, `beat` (`lost` on 409), `finish` (report done/stopped). Personal tokens only. |
+| `bin/autotasks.py` | Central tasks: `next` (claim my next task; plan or build), `plan N` (post its plan), `start N` (an approved task → a request folder with `task.json`), `record` (a terminal task), `propose` (a terminal plan sent for approval on the page: `"approval": "page"`, stored as `plan_review`, claim kept in `.auto/run/tasks/<N>.json`), `list` (`plan_review` shown as "waiting for approval"); and for the runner `adopt`, `current` (a resumed run keeps the task's newest claim: when `next` has re-claimed it, the claim in `.auto/run/tasks/<N>.json` wins and is written back to `current-task.json`; no `current-task.json` means no current task), `beat` (`lost` on 409), `finish` (report done/stopped). Personal tokens only. |
 | `bin/autocentral.py` | What init and join share: `default_token_env`, `repo_key` / `clean_url`, `remote_url`, `lookup` (`GET /api/v1/project`), `check`, `token_steps`; `status` (`python autocentral.py status`, `/auto-runner:central`): the read-only connection check with next steps, exit 0 when connected; and **sign in from Claude** (0.18.0, decision record 0008): `login start` asks the service for a code (sending `client_name`, `repo` and, when `AUTO_RUNNER_USER` and `AUTO_RUNNER_ACCOUNT` are both set and valid, `user` and `claude_account`; an unset identity sends neither) and shows it with the address, keeping the device code in a private file; `login wait` polls until the person approves or denies in the browser (10 minutes at most) and stores the personal token without printing it, on Windows in the user variable `AUTO_RUNNER_TOKEN` (set by PowerShell from the child's environment, never on a command line), elsewhere in `~/.config/auto-runner/credentials` (mode 600). **One-command setup** (0.20.0): `projects` lists the signed-in person's projects (`GET /api/v1/projects`), `sync` fetches origin and fast-forwards the base branch only when it is checked out, clean and has no commits of its own (anything else is reported, never changed), and `status` in a folder that is not a checkout says how to sign in, list and clone. The page links it prints point to My work and the project's Overview (0.22: the project page opens on its Overview; members, repository and machine tokens are under Settings). Tested against the real central app through its test client. |
 | `bin/auto_join.py` | Join: repository URL from the central service, `git clone` into a folder you confirm, then init's preview. |
 | `bin/autojourney.py` | Journey check: parses journeys, starts and stops the app, runs the click-through agent, validates `journey.v1`, writes fix items. |

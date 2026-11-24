@@ -192,3 +192,88 @@ def test_the_runner_blocks_push_for_its_agent_and_settings_need_no_push_rule(pro
     assert not any('git push' in r for r in safe.required_rules('main', env_read=True))
     assert 'git push' not in ' '.join(safe.missing_rules({'permissions': {'deny': []}}, 'main'))
     assert 'PowerShell(git push:*)' in ar.autobrowser.EXPLORE_DENIED and 'Bash' in ar.autobrowser.EXPLORE_DENIED
+
+
+# ---------- REST fallback when GraphQL is blocked ----------
+
+GRAPHQL_403 = 'error connecting to api.github.com\nGraphQL: HTTP 403 Forbidden (https://api.github.com/graphql)\n'
+RUNNER = 'tester/acct-claude-auto-runner'
+BRANCH = f'{RUNNER}/fix/rest-pr'
+
+
+class ScriptedGh:
+    """A fake `pr_runner` answering each call in turn from `answers` [(code, output), ...]."""
+    def __init__(self, *answers):
+        self.calls, self.answers = [], list(answers)
+
+    def __call__(self, argv, cwd):
+        self.calls.append(argv)
+        return self.answers.pop(0)
+
+
+def rest_ready(p, tmp_path, url='https://github.com/o/r.git'):
+    """A run branch with one commit; `origin` reads as `url` but pushes to a local bare repository."""
+    remote = bare_origin(p, tmp_path)
+    sh(p, 'remote', 'set-url', 'origin', url)
+    sh(p, 'remote', 'set-url', '--push', 'origin', str(remote))
+    sh(p, 'switch', '-q', '-c', BRANCH)
+    (p / 'rest.txt').write_text('x\n', encoding='utf-8')
+    sh(p, 'add', 'rest.txt')
+    sh(p, 'commit', '-q', '-m', 'rest')
+    return {**ar.autocfg.load(p), 'publish': {'push': True, 'pull_request': True}}
+
+
+def publish_with(p, cfg, gh):
+    return ar.publish(p, p, cfg, 'main', BRANCH, gh, name=RUNNER)
+
+
+def test_a_graphql_block_falls_back_to_the_rest_api(project, tmp_path):
+    cfg = rest_ready(project, tmp_path)
+    gh = ScriptedGh((1, GRAPHQL_403), (0, 'https://github.com/o/r/pull/9\n'))
+    out = publish_with(project, cfg, gh)
+    assert out['pushed'] is True and out['pr_url'] == 'https://github.com/o/r/pull/9' and 'pr_error' not in out
+    create, rest = gh.calls
+    assert create[:3] == ['gh', 'pr', 'create']
+    assert rest[:5] == ['gh', 'api', 'repos/o/r/pulls', '-X', 'POST'] and rest[-2:] == ['--jq', '.html_url']
+    fields = dict(rest[i + 1].split('=', 1) for i, a in enumerate(rest) if a == '-f')
+    assert fields['head'] == BRANCH and fields['base'] == 'main'
+    assert fields['title'] == create[create.index('--title') + 1] and fields['body'] == create[create.index('--body') + 1]
+
+
+def test_a_failure_without_graphql_makes_no_rest_call(project, tmp_path):
+    cfg = rest_ready(project, tmp_path)
+    gh = ScriptedGh((1, 'a pull request for branch "x" into branch "main" already exists'))
+    out = publish_with(project, cfg, gh)
+    assert len(gh.calls) == 1 and 'pr_url' not in out
+    assert out['pr_error'].startswith('gh pr create failed (exit 1)') and 'gh api' not in out['pr_error']
+
+
+def test_both_failing_records_both_errors(project, tmp_path):
+    cfg = rest_ready(project, tmp_path)
+    gh = ScriptedGh((1, GRAPHQL_403), (1, 'gh: Not Found (HTTP 404)'))
+    out = publish_with(project, cfg, gh)
+    assert len(gh.calls) == 2 and 'pr_url' not in out
+    assert 'gh pr create failed (exit 1): GraphQL: HTTP 403' in out['pr_error']
+    assert 'gh api pulls failed (exit 1): gh: Not Found (HTTP 404)' in out['pr_error']
+
+
+@pytest.mark.parametrize('url', ['https://github.com/o/r.git', 'git@github.com:o/r.git', 'ssh://git@github.com/o/r'])
+def test_owner_and_repo_come_from_the_push_remote(project, tmp_path, url):
+    cfg = rest_ready(project, tmp_path, url)
+    gh = ScriptedGh((1, GRAPHQL_403), (0, 'https://github.com/o/r/pull/9'))
+    publish_with(project, cfg, gh)
+    assert gh.calls[1][:3] == ['gh', 'api', 'repos/o/r/pulls']
+
+
+def test_a_remote_on_another_host_passes_its_hostname(project, tmp_path):
+    cfg = rest_ready(project, tmp_path, 'https://ghe.example.com/o/r.git')
+    gh = ScriptedGh((1, GRAPHQL_403), (0, 'https://ghe.example.com/o/r/pull/9'))
+    assert publish_with(project, cfg, gh)['pr_url'] == 'https://ghe.example.com/o/r/pull/9'
+    assert gh.calls[1][:5] == ['gh', 'api', '--hostname', 'ghe.example.com', 'repos/o/r/pulls']
+
+
+def test_a_remote_without_owner_and_repo_is_not_tried(project, tmp_path):
+    cfg = rest_ready(project, tmp_path, str(tmp_path / 'somewhere.git'))
+    gh = ScriptedGh((1, GRAPHQL_403))
+    out = publish_with(project, cfg, gh)
+    assert len(gh.calls) == 1 and 'gh api pulls not tried' in out['pr_error']
