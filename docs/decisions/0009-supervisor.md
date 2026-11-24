@@ -24,7 +24,8 @@ Three roles, kept apart:
 
 ### 1. The Supervisor never writes code
 Only runners write to branches. The Supervisor's outputs are decisions, reviews, instructions (tasks and change
-requests on the central service), task management (restart, release, reassign, split, reschedule) and merges. Every
+requests on the central service), task management (restart, release, reassign, split, reschedule), queue management
+(the order and priority of tasks, adding new tasks), runner control (start, pause, resume, stop) and merges. Every
 problem it finds goes back to a runner as a task, with its diagnosis attached:
 
 | Situation | Supervisor | Runner |
@@ -91,6 +92,27 @@ The Supervisor's judgement only proposes. What it may do is enforced outside it:
 | New dependency | Allowed when its licence is on the allowlist and it is free. |
 | UAT migration, deploy, check, rollback | Automatic. |
 
+### 6a. The queue and the runners are the Supervisor's to run
+Keeping work moving means more than reacting to failures. The Supervisor also decides **what runs next and whether
+anything runs at all**:
+
+| Power | Policy |
+|---|---|
+| Order and priority | It orders the queue by dependency first (a task that unblocks others goes first), then by the priority a person set, then by age. A person's priority or a pin always wins over the Supervisor's order; it reorders only within it. |
+| Adding tasks | It may add tasks that trace to work already asked for: a follow-up a review or a plan's "Needs a person" list names, a gap a failing check or a UAT check reveals, a split of an item that is too big, docs a change left behind. Each new task says what it came from. It never invents product features: new scope comes from people. |
+| Prioritising what it adds | A fix that blocks a task already in progress goes before new work; other tasks it adds take the lowest priority unless they unblock something. |
+| Start | It starts a runner (on any machine that runs one as a service) when a task is ready and a runner and Claude account have room. |
+| Pause and resume | It pauses a runner before a usage threshold, while `main` or UAT is broken, or when two tasks would touch the same files; it resumes when the cause is gone. A pause ends after the current item: never mid-item. |
+| Stop | It stops a runner that loops or spends past its budget, and records why. |
+
+Runner control is remote: the Supervisor writes a command (start, pause, resume, stop) for a runner on the central
+service, and the runner picks it up at its next pull, between items, the way it picks up blocker answers. The local
+`.auto/STOP` file keeps working for a person at the machine. Every command, every reorder and every added task is in
+the audit log with its reason, and a person can undo it from the page.
+
+Tasks waiting in a runner's queue show as **Queued** on the page, not Building, and keep their claim alive while they
+wait. Today a task planned in the terminal shows Building, and its claim gets no heartbeat until its run starts.
+
 ### 7. When a person is needed
 1. Production: deploy, data, migrations.
 2. Secrets, new external accounts, paid services, cost above the set limit.
@@ -127,6 +149,8 @@ journeys every plan already has (J1, J2, …) become the final message's "what t
   existing decision delivery (`auto-runner/docs/delivery-contract.md`), carries the Supervisor's review findings to the runner.
 - **A runner that runs as a service:** it polls for tasks and can be restarted by the Supervisor, instead of a person
   starting `/auto-runner:auto`.
+- **Remote commands:** the runner pulls start, pause, resume and stop commands from the central service between
+  items (decision 6a), and follows the queue order the service gives it instead of its own file order.
 - **No human waits:** plan approval and blocker answers come from the Supervisor's role, and `usage_limit.wait` is on.
 
 ## Rules this changes
@@ -143,7 +167,8 @@ Each phase removes one kind of interruption. Progress is measured as human touch
 | Phase | What lands | What stops reaching a person |
 |---|---|---|
 | P0 Foundations | UAT environment (own Vercel project and Supabase database, mail sink); CI deploys `main` to UAT; branch protection; Supervisor identity and role; the policy model; the rule changes above; the runner as a service; tasks with a branch attached | nothing yet: this makes the rest safe |
-| P1 Watchdog | The check-and-act pass; restart, reschedule, reassign; usage limits across accounts | "interrupted", "usage limit", "runner stopped" |
+| P1 Watchdog and runner control | The check-and-act pass; restart, reschedule, reassign; usage limits across accounts; remote start, pause, resume and stop; Queued shown as Queued | "interrupted", "usage limit", "runner stopped", "start the runner again" |
+| P1b Queue | Ordering by dependency and priority; adding traced follow-up tasks with their source | "what should run next?" |
 | P2 Decisions | Plan approval and blocker answers by policy; recorded decisions; escalation that lists what was tried | "waiting for plan approval", "blocked" |
 | P3 Review and merge | Independent review; change requests on pull requests; the merge gate | "pull request awaiting review" |
 | P4 UAT delivery | Deploy check, journeys against UAT, the fix and redeploy loop, the final message; a rejection becomes a fix task | the person's role becomes acceptance only |
