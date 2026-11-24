@@ -118,6 +118,10 @@ bar tells you when something waits on you (see Notifications).
   spec check as always), which then **waits for approval** on the task's page; meanwhile the runner takes your next one.
 - On the task page you, a manager, an owner or an admin **Approve** the plan, **Request changes** (with a comment; the
   runner revises it on its next `/auto-runner:auto`) or **Reject** it (it asks first). Short plans can be approved from My work.
+  From a terminal on a signed-in computer, the same decision is
+  `python auto-runner/bin/autotasks.py decide N approve|changes|reject [--comment TEXT]` (`changes` needs `--comment`);
+  it prints "Task N: approved" (or "changes requested", "rejected"), or "Not done:" with the reason, and the Activity
+  line ends "(through the API)". Not yet tried against the live service.
 - Run `/auto-runner:auto` again: an approved task is built on its own branch and pull request, and shows **done** with the
   PR when the run finishes.
 - A task you type in the terminal (`/auto-runner:auto <task>`) is approved there as before and recorded on the page too.
