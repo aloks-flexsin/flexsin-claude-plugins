@@ -121,7 +121,7 @@ def test_members_page_and_management_by_role(world, conn, who):
     viewer_id = world['accounts']['viewer']['id']
     resp = post(c, '/projects/alpha/members/%s/role' % viewer_id, role='developer')
     assert resp.status_code == (302 if who in ('owner', 'admin') else 404)
-    resp = post(c, '/projects/alpha/members/%s/remove' % viewer_id)
+    resp = post(c, '/projects/alpha/members/%s/remove' % viewer_id, confirm='1')
     assert resp.status_code == (302 if who in ('owner', 'admin') else 404)
     gone = projects.member_role(conn, world['alpha']['id'], viewer_id) is None
     assert gone == (who in ('owner', 'admin'))
@@ -196,7 +196,7 @@ def test_membership_changes_are_audited(world, conn):
     stranger = world['accounts']['stranger']
     assert post(owner, '/projects/alpha/members', email='STRANGER@example.com', role='developer').status_code == 302
     assert post(owner, '/projects/alpha/members/%s/role' % stranger['id'], role='manager').status_code == 302
-    assert post(owner, '/projects/alpha/members/%s/remove' % stranger['id']).status_code == 302
+    assert post(owner, '/projects/alpha/members/%s/remove' % stranger['id'], confirm='1').status_code == 302
     [add] = audit.rows(conn, 'member.add')
     [role] = audit.rows(conn, 'member.role')
     [remove] = audit.rows(conn, 'member.remove')
@@ -216,9 +216,9 @@ def test_bad_membership_requests_are_refused_and_audited(world, conn):
     assert post(owner, '/projects/alpha/members', email='stranger@example.com', role='admin').status_code == 400
     assert post(owner, '/projects/alpha/members/%s/role' % viewer_id, role='admin').status_code == 400
     assert post(owner, '/projects/alpha/members/nope/role', role='viewer').status_code == 404
-    assert post(owner, '/projects/alpha/members/nope/remove').status_code == 404
+    assert post(owner, '/projects/alpha/members/nope/remove', confirm='1').status_code == 404
     # A non-member of alpha (the stranger) cannot be re-roled through alpha.
-    assert post(owner, '/projects/alpha/members/%s/remove' % world['accounts']['stranger']['id']).status_code == 404
+    assert post(owner, '/projects/alpha/members/%s/remove' % world['accounts']['stranger']['id'], confirm='1').status_code == 404
     assert len(audit.rows(conn, 'member.add.refused')) == 3
     assert len(audit.rows(conn, 'member.role.refused')) == 1
     assert audit.rows(conn, 'member.add') == [] and audit.rows(conn, 'member.role') == []
@@ -230,14 +230,14 @@ def test_last_owner_cannot_be_removed_or_demoted(world, conn):
     admin = world['clients']['admin']
     resp = post(admin, '/projects/alpha/members/%s/role' % owner_id, role='manager')
     assert resp.status_code == 400 and 'last owner' in resp.get_data(as_text=True)
-    assert post(admin, '/projects/alpha/members/%s/remove' % owner_id).status_code == 400
+    assert post(admin, '/projects/alpha/members/%s/remove' % owner_id, confirm='1').status_code == 400
     assert projects.member_role(conn, alpha_id, owner_id) == 'owner'
     assert len(audit.rows(conn, 'member.role.refused')) == 1
     assert len(audit.rows(conn, 'member.remove.refused')) == 1
     # With a second owner, the first may step down.
     assert post(admin, '/projects/alpha/members/%s/role' % world['accounts']['manager']['id'],
                 role='owner').status_code == 302
-    assert post(world['clients']['owner'], '/projects/alpha/members/%s/remove' % owner_id).status_code == 302
+    assert post(world['clients']['owner'], '/projects/alpha/members/%s/remove' % owner_id, confirm='1').status_code == 302
     assert world['clients']['owner'].get('/projects/alpha').status_code == 404
 
 

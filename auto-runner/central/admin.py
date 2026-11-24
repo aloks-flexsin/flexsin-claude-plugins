@@ -7,7 +7,7 @@
 """
 from flask import Blueprint, abort, g, redirect, render_template, request, url_for
 
-from . import accounts, audit, auth, invites, passwords, personal, sessions
+from . import accounts, audit, auth, invites, passwords, personal, sessions, ui
 from .db import get_db
 
 bp = Blueprint("admin", __name__)
@@ -76,6 +76,10 @@ def account_disabled(account_id):
     db = get_db()
     target = _target(db, account_id)
     disable = request.form.get("disabled") == "1"
+    if disable and not ui.confirmed():
+        return ui.confirm_page("Disable %s?" % target["email"],
+                               "They are signed out everywhere, their tokens stop working and their runners stop at their next "
+                               "step. You can enable the account again later.", "Disable", url_for("admin.accounts_page"))
     action = "account.disable" if disable else "account.enable"
     try:
         accounts.set_disabled(db, target["id"], disable)
@@ -124,6 +128,10 @@ def account_tokens_revoke(account_id):
     _require_admin()
     db = get_db()
     target = _target(db, account_id)
+    if not ui.confirmed():
+        return ui.confirm_page("Revoke every token of %s?" % target["email"],
+                               "Each computer they signed in from stops working at once; they sign in again from Claude to "
+                               "get a new one.", "Revoke tokens", url_for("admin.accounts_page"))
     count = personal.revoke_all(db, target["id"], auth.now())
     audit.record(db, "personal_token.revoke_all", _at(), account_id=g.account["id"],
                  detail={"target_id": target["id"], "email": target["email"], "count": count})

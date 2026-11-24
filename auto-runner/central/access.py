@@ -15,7 +15,7 @@ import functools
 
 from flask import Blueprint, abort, g, jsonify, make_response, redirect, render_template, request, url_for
 
-from . import accounts, audit, auth, invites, projects, sessions, tokens
+from . import accounts, audit, auth, invites, projects, sessions, tokens, ui
 from .db import get_db
 
 bp = Blueprint("projects", __name__)
@@ -193,6 +193,12 @@ def member_role(slug, account_id):
 def member_remove(slug, account_id):
     db = get_db()
     target = _member_or_404(db, account_id)
+    if not ui.confirmed():
+        who = ui.display_name(target["email"])
+        return ui.confirm_page("Remove %s from %s?" % (who, g.project["name"]),
+                               "Their runners stop working on this project at their next step, and tasks they are building go "
+                               "back to approved for someone else. Their account and other projects are not affected.",
+                               "Remove", url_for("projects.members_page", slug=slug))
     try:
         projects.remove_member(db, g.project["id"], account_id)
     except projects.ProjectError as exc:
@@ -249,6 +255,10 @@ def _token_or_404(db, token_id):
 def token_revoke(slug, token_id):
     db = get_db()
     row = _token_or_404(db, token_id)
+    if not ui.confirmed():
+        return ui.confirm_page("Revoke the machine token %s…?" % row["prefix"],
+                               "Every runner using it is refused from its next call. This cannot be undone; make a new token "
+                               "if it is still needed.", "Revoke token", url_for("projects.tokens_page", slug=slug))
     try:
         tokens.revoke(db, g.project["id"], token_id, _at())
     except tokens.TokenError as exc:
@@ -263,6 +273,10 @@ def token_revoke(slug, token_id):
 def token_rotate(slug, token_id):
     db = get_db()
     old = _token_or_404(db, token_id)
+    if not ui.confirmed():
+        return ui.confirm_page("Replace the machine token %s…?" % old["prefix"],
+                               "A new token is shown once; the old one stops working at once, so every runner using it must "
+                               "get the new one.", "Replace token", url_for("projects.tokens_page", slug=slug))
     try:
         raw, row = tokens.rotate(db, g.project["id"], token_id, g.account["id"], _at())
     except tokens.TokenError as exc:

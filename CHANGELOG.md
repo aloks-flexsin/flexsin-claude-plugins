@@ -4,6 +4,12 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+### Added
+- Central service, UX foundations (from the UX audit): one status vocabulary with tone and shape, relative times,
+  readable names and runners, runner reasons in words, a safe Markdown renderer for plans, copy buttons, live times and
+  auto-refresh (`static/app.js`), and **a confirmation before every action that cannot be undone** (a dialog with
+  JavaScript, a confirm page without). Needs `init-db` (column `account.name`).
+
 ## [0.21.0] - 2026-11-24
 
 ### Added

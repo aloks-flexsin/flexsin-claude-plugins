@@ -1,0 +1,42 @@
+{#- Shared pieces for every page (UX audit foundations). Import with:
+    {% import "_ui.html" as ui %}  then  {{ ui.status("task", t.status) }}  etc. -#}
+
+{% macro status(kind, value, extra="") -%}
+{%- set s = ui_status(kind, value) -%}
+<span class="chip tone-{{ s.tone }}"><span class="mark {{ s.shape }}" aria-hidden="true"></span>{{ s.label }}{% if extra %} · {{ extra }}{% endif %}</span>
+{%- endmacro %}
+
+{% macro person(email, name=None, sub=None) -%}
+{%- set shown = email | display_name(name) -%}
+<span class="person" title="{{ email }}"><span class="av" aria-hidden="true">{{ shown | initials }}</span><span><span class="person-name">{{ shown }}</span>{% if sub %}<span class="person-sub">{{ sub }}</span>{% endif %}</span></span>
+{%- endmacro %}
+
+{% macro runner(label) -%}
+{%- if label -%}<span class="runner" title="{{ label }}">{{ label | runner_label }}</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro when(ts) -%}
+{%- if ts -%}<time datetime="{{ ts | iso }}" title="{{ ts | when_abs }} UTC" data-ago>{{ ts | ago }}</time>{%- endif -%}
+{%- endmacro %}
+
+{% macro progress(done, total, note="") -%}
+<div class="progress"><div class="progress-head"><span>{{ done }} of {{ total }} item{{ "s" if total != 1 }}</span>{% if note %}<span>{{ note }}</span>{% endif %}</div>
+<progress value="{{ done }}" max="{{ total if total else 1 }}">{{ done }} / {{ total }}</progress></div>
+{%- endmacro %}
+
+{% macro copy_field(label, value, id) -%}
+<div class="copy-field"><label for="{{ id }}" class="sr-only">{{ label }}</label><input id="{{ id }}" type="text" readonly value="{{ value }}"><button type="button" class="btn" data-copy="{{ id }}">Copy</button></div>
+{%- endmacro %}
+
+{% macro empty(text, href=None, action=None) -%}
+<div class="empty"><p>{{ text }}</p>{% if href %}<a class="btn primary" href="{{ href }}">{{ action }}</a>{% endif %}</div>
+{%- endmacro %}
+
+{#- A destructive action: one button that asks first (a dialog with JavaScript, the confirm page without). -#}
+{% macro danger_form(action, label, question, detail="", fields={}) -%}
+<form method="post" action="{{ action }}" class="inline" data-confirm="{{ question }}" data-confirm-detail="{{ detail }}" data-confirm-action="{{ label }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% for k, v in fields.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+  <button type="submit" class="btn danger">{{ label }}</button>
+</form>
+{%- endmacro %}

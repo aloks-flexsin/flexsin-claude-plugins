@@ -60,7 +60,7 @@
 
 {% if is_admin and task.status not in ('done', 'rejected') %}
 <h2>Admin</h2>
-<form method="post" action="{{ url_for('tasks.task_release', slug=project.slug, number=task.number) }}">
+<form method="post" action="{{ url_for('tasks.task_release', slug=project.slug, number=task.number) }}" data-confirm="Change who works on task #{{ task.number }}?" data-confirm-detail="The runner working on it stops at its next step. Work goes back one step (planning to open, building to approved); a new person plans it afresh." data-confirm-action="Confirm">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <label>Give it to <select name="assignee">
     <option value="">{{ task.assignee_email }} (keep)</option>

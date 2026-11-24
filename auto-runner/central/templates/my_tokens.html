@@ -16,7 +16,7 @@
       <td>{{ t.last_used_at or "never" }}</td>
       <td>{% if t.revoked_at %}<span class="badge off">revoked</span>{% else %}<span class="badge ok">active</span>{% endif %}</td>
       <td>{% if not t.revoked_at %}
-        <form method="post" action="{{ url_for('personal.token_revoke', token_id=t.id) }}">
+        <form method="post" action="{{ url_for('personal.token_revoke', token_id=t.id) }}" data-confirm="Revoke the token of {{ t.name }}?" data-confirm-detail="That computer stops working with the central service at once; sign it in again from Claude to get a new token." data-confirm-action="Revoke token">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="danger">Revoke</button>
         </form>{% endif %}</td>

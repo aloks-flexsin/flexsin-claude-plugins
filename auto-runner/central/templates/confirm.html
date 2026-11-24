@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Confirm{% endblock %}
+{% block content %}
+<div class="confirm card">
+  <h1>{{ question }}</h1>
+  {% if detail %}<p>{{ detail }}</p>{% endif %}
+  <form method="post" action="{{ action_url }}" class="row-actions">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% for name, value in fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+    <input type="hidden" name="confirm" value="1">
+    <a class="btn" href="{{ cancel_url }}">Keep it as it is</a>
+    <button type="submit" class="btn danger-solid">{{ action_label }}</button>
+  </form>
+</div>
+{% endblock %}

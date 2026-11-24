@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS account (
     disabled INTEGER NOT NULL DEFAULT 0,
     failed_count INTEGER NOT NULL DEFAULT 0,
     locked_until VARCHAR(32),
-    created_at VARCHAR(32) NOT NULL
+    created_at VARCHAR(32) NOT NULL,
+    name VARCHAR(100)
 );
 
 CREATE TABLE IF NOT EXISTS session (

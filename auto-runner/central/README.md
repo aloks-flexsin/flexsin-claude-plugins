@@ -112,6 +112,22 @@ may not stick over plain http. The API endpoints do not use the cookie.
   longer holds the task.
 - Table `project_task` (init-db creates it).
 
+## Presentation (UX audit foundations)
+
+- The CSP allows styles and scripts only from the app's own files, so no template has an inline `style=` or inline
+  script (a test enforces it): looks live in `static/style.css`, behaviour in `static/app.js`, and every page works
+  without JavaScript.
+- `ui.py` gives every page one way to show things: `ago` / `when_abs` (relative and absolute time, from the injectable
+  clock), one status vocabulary with tone and shape (`STATUS`), runner reasons in words (`reason_text`, `next_step`),
+  people (`display_name`, `initials`; `account.name` when set, else the email's local part), runners
+  (`runner_label`), and `md`, an escape-first Markdown subset for plans (no HTML, no links). `templates/_ui.html` holds
+  the matching macros (status chip, person, runner, time, progress, copy field, empty state, danger form).
+- **Actions that cannot be undone ask first:** remove a member, disable an account, revoke all of an account's tokens,
+  revoke a personal or machine token, replace a machine token, reject a plan, take a task back or give it to someone
+  else. Without `confirm=1` the route answers with a page saying what will happen and posts the same form again; with
+  JavaScript a dialog asks instead (`data-confirm` on the form).
+- `account.name` (nullable) is added by `init-db`.
+
 ## My work and task progress
 
 - `/my` (**My work**, first in the top bar; everyone signed in): across every project the person can see (all for an admin)

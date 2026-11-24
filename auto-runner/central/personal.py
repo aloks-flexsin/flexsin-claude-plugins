@@ -22,7 +22,7 @@ import secrets
 
 from flask import Blueprint, abort, current_app, g, jsonify, redirect, render_template, request, url_for
 
-from . import accounts, audit, auth, sessions
+from . import accounts, audit, auth, sessions, ui
 from .db import get_db
 
 bp = Blueprint("personal", __name__)
@@ -280,6 +280,14 @@ def tokens_page():
 @auth.login_required
 def token_revoke(token_id):
     db = get_db()
+    if not ui.confirmed():
+        row = db.query_one("SELECT name FROM personal_token WHERE id = ? AND account_id = ? AND revoked_at IS NULL",
+                           (token_id, g.account["id"]))
+        if row is None:
+            abort(404)
+        return ui.confirm_page("Revoke the token of %s?" % row["name"],
+                               "That computer stops working with the central service at once; sign it in again from Claude "
+                               "to get a new token.", "Revoke token", url_for("personal.tokens_page"))
     if not revoke(db, g.account["id"], token_id, auth.now()):
         abort(404)
     audit.record(db, "personal_token.revoke", sessions.iso(auth.now()), account_id=g.account["id"],
