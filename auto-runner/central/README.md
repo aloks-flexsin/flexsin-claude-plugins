@@ -280,6 +280,11 @@ stored only as SHA-256 (table `device_login`), and a request gives a token once.
 
 ## Deployment (unverified; a person runs these steps)
 
+
+**If a page says "This page needs a database update"** (HTTP 503): the code was deployed before
+`python -m central init-db` added the tables or columns it uses. Run `init-db` once with the production `DATABASE_URL`;
+it only adds what is missing. Only queries that hit a missing table or column answer this way (Postgres SQLSTATE
+42P01/42703, SQLite "no such table/column"); every other error is untouched. API calls get the same as JSON.
 None of these steps has been tried. Check each result before going on.
 
 1. **Database.** Create a new Supabase project for this service only. Copy its Postgres connection string, then apply the
