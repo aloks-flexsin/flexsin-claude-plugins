@@ -70,6 +70,8 @@ def _sentence(row, project_slug):
         "task.plan.reject": "%s rejected %s" % (who, task),
         "task.release": "%s took %s back from its runner" % (who, task),
         "task.reassign": "%s gave %s to %s" % (who, task, ui.display_name(d.get("to") or "")),
+        "task.attachment.add": "%s added a screenshot to %s" % (who, task),
+        "task.attachment.delete": "%s deleted a screenshot from %s" % (who, task),
         "member.add": "%s added %s as %s" % (who, ui.display_name(d.get("email") or ""), d.get("role", "member")),
         "member.remove": "%s removed %s" % (who, ui.display_name(d.get("email") or "")),
         "member.role": "%s made %s %s" % (who, ui.display_name(d.get("email") or ""), d.get("to", "")),

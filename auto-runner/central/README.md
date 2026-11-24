@@ -31,6 +31,7 @@ and an owner, manager or admin answers it there.
 | `runners.py` | Runner presence: `POST /api/v1/runners/beat`, silent after 2 hours, pause/stop returned; Pause, Resume and Stop on the pages |
 | `notifications.py` | In-app notifications: `notify` (members only, no duplicates), `resolve`, `unread_count`, `for_account`, `delivery`, `recent`; the Notifications page, open and read-all (the admins' log is in `admin.py`) |
 | `push.py` | Browser push subscriptions: `POST /push/subscribe`, `POST /push/unsubscribe`, the Account page's push section |
+| `attachments.py` | Task screenshots (`task_attachment`): `add`, `for_task`, `get`, `delete`; upload, view and delete routes; the 4 MB request cap and its 413 page |
 | `cli.py` | `python -m central init-db` and `python -m central create-admin --email X` |
 | `api/index.py`, `vercel.json` | Vercel entry point; every route is rewritten to it |
 | `templates/`, `static/style.css` | The pages (`base.html` holds the top bar) and their one stylesheet, served by Flask at `/static/style.css` because the CSP allows only same-origin styles; no inline styles or scripts |
@@ -127,6 +128,22 @@ may not stick over plain http. The API endpoints do not use the cookie.
   `.../heartbeat` (`{claim}`), `.../report` (`{claim, result: done|stopped, branch, pr_url, note}`). 409 = this runner no
   longer holds the task.
 - Table `project_task` (init-db creates it).
+
+## Task screenshots (`attachments.py`)
+
+- Images attached to a task, stored in the database (table `task_attachment`, data as `BYTEA`; init-db adds the table to
+  an existing database). Only **PNG, JPEG, GIF and WebP** are kept, recognised by their first bytes (never by the name or
+  the type the browser sends); at most **4 MB** each and **10 per task**. The name is kept as shown (last path part only).
+- `POST /projects/<slug>/tasks/<N>/attachments` (multipart `file`, one or more; members except viewers, so developer and
+  up; CSRF as every form): each good image is stored and audited (`task.attachment.add`); refused files are named with the
+  reason on the task page (status 400) while the good ones are kept. Viewers get 403, non-members 404.
+- `GET /projects/<slug>/tasks/<N>/attachments/<id>` (any member): the bytes with the stored content type,
+  `X-Content-Type-Options: nosniff`, `Content-Disposition: inline` and `Cache-Control: private`.
+- `POST .../attachments/<id>/delete`: the uploader or an admin, after a confirm step; audited (`task.attachment.delete`).
+- **Every request is capped at 4 MB** (`MAX_CONTENT_LENGTH`): a larger one gets 413 with a page (JSON under `/api/`)
+  that names the limit. So one upload request carries at most 4 MB of files in total.
+- The task page does not show screenshots yet (queue item S2); the routes above work on their own.
+- Postgres storage is unverified until used live (tests run on SQLite).
 
 ## Runner presence (decision record 0009; `runners.py`)
 
