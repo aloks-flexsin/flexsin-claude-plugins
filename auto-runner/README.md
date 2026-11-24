@@ -71,6 +71,12 @@ The runner can also be started by hand: `python bin/auto_run.py [--project DIR] 
   `.claude/auto.json`. Without either, or with anything but lower-case letters, digits, `.`, `_` and `-`, the preflight
   refuses. `/auto-runner:init` says how to set them (PowerShell:
   `[Environment]::SetEnvironmentVariable('AUTO_RUNNER_USER', 'alok', 'User')`, the same for `AUTO_RUNNER_ACCOUNT`).
+- **Claude account check (optional):** set `AUTO_RUNNER_ACCOUNT_EMAIL` to the email of the Claude account the CLI should be signed in
+  with. Before the `run_start` event the runner asks `claude auth status --json` (20-second timeout) and compares the signed-in email,
+  ignoring case. The result is `match`, `mismatch`, `not_set` (no variable) or `unknown` (the CLI failed, timed out, is signed out or
+  answered badly); it goes into the `run_start` detail as `account_check`, and `/auto-runner:central`'s "Runner identity" lines show it.
+  A `mismatch` prints a warning naming the variable and never stops the run. The email is compared on your machine only: it is never
+  printed, logged, put in an event or sent to the central service.
 - **Branch name:** the team convention `<user>/<account>-claude-<surface>/<type>/<brief>` with the surface `auto-runner`:
   `<user>/<account>-claude-auto-runner/<type>/<brief>`, for example `alok/bhawish-claude-auto-runner/fix/login`. `<brief>` is the
   request's slug (`queue-<stamp>` when the queue has open items but no request); `<type>` comes from the request's `*Kind:*`

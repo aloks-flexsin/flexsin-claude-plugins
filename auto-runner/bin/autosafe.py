@@ -59,6 +59,7 @@ CREDENTIALS_ENV = 'AUTO_RUNNER_CREDENTIALS'          # another credentials file 
 ENV_NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,127}$')
 RUNNER_USER_ENV = 'AUTO_RUNNER_USER'
 RUNNER_ACCOUNT_ENV = 'AUTO_RUNNER_ACCOUNT'
+RUNNER_ACCOUNT_EMAIL_ENV = 'AUTO_RUNNER_ACCOUNT_EMAIL'
 RUNNER_NAME = re.compile(r'[a-z0-9][a-z0-9._-]{0,63}')
 RUNNER_SURFACE = 'claude-auto-runner'
 PUSH_DENIED = ('Bash(git push:*)', 'PowerShell(git push:*)')     # passed as --disallowedTools to every agent the runner starts
@@ -98,6 +99,42 @@ def runner_name_problems(env=None):
             problems.append(f'{var} ("{value}") must be lower-case letters, digits, ".", "_" or "-", starting with a letter '
                             f'or digit (for example {example}).')
     return problems
+
+
+def claude_signed_in(run=subprocess.run):
+    """-> the email of the account the claude CLI is signed in with, or None (not signed in, no CLI, timeout, bad output)."""
+    try:
+        done = run(['claude', 'auth', 'status', '--json'], capture_output=True, text=True, timeout=20)
+        if done.returncode != 0:
+            return None
+        data = json.loads(done.stdout)
+    except Exception:
+        return None
+    if not isinstance(data, dict) or data.get('loggedIn') is not True:
+        return None
+    email = data.get('email')
+    return email.strip() if isinstance(email, str) and email.strip() else None
+
+
+def account_check(env=None, run=subprocess.run):
+    """-> 'match' | 'mismatch' | 'not_set' | 'unknown': the CLI's signed-in email against AUTO_RUNNER_ACCOUNT_EMAIL.
+    The emails are compared here and never returned, printed or sent."""
+    env = os.environ if env is None else env
+    expected = (env.get(RUNNER_ACCOUNT_EMAIL_ENV) or '').strip()
+    if not expected:
+        return 'not_set'
+    actual = claude_signed_in(run)
+    if actual is None:
+        return 'unknown'
+    return 'match' if actual.lower() == expected.lower() else 'mismatch'
+
+
+def account_check_line(check):
+    """The one-line message for an account check, '' when there is nothing to say; never contains an email."""
+    if check == 'mismatch':
+        return (f'WARNING: the signed-in Claude account is not the one {RUNNER_ACCOUNT_EMAIL_ENV} names. The run continues; '
+                'check which account it is using.')
+    return ''
 
 
 def changelog_enabled(cfg):

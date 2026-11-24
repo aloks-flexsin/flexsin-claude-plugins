@@ -171,3 +171,60 @@ def test_run_start_names_who_ran_it_and_run_ids_are_unique(project):
     assert len(starts) == 2 and starts[0]['run'] != starts[1]['run']
     assert all(re.fullmatch(r'\d{8}-\d{4}-[0-9a-f]{6}', e['run']) for e in starts)
     assert starts[0]['detail']['user'] == 'tester' and starts[0]['detail']['account'] == 'acct'
+
+
+# ---------- the CLI's signed-in Claude account ----------
+
+def _cli(stdout='', code=0, raises=None):
+    calls = []
+
+    def run(argv, **kw):
+        calls.append((argv, kw))
+        if raises:
+            raise raises
+        return subprocess.CompletedProcess(argv, code, stdout, '')
+    run.calls = calls
+    return run
+
+
+SIGNED_IN = '{"loggedIn": true, "email": "Alok@Example.com"}'
+WANT = {'AUTO_RUNNER_ACCOUNT_EMAIL': 'alok@example.com'}
+
+
+def _first_event(project):
+    import json
+    return json.loads((project / '.auto' / 'events.jsonl').read_text(encoding='utf-8').splitlines()[0])
+
+
+def test_claude_signed_in_reads_the_email_and_asks_with_a_timeout():
+    run = _cli(SIGNED_IN)
+    assert safe.claude_signed_in(run) == 'Alok@Example.com'
+    assert run.calls[0][0] == ['claude', 'auth', 'status', '--json'] and run.calls[0][1]['timeout'] == 20
+
+
+@pytest.mark.parametrize('run', [_cli('{"loggedIn": false}'), _cli(SIGNED_IN, code=1), _cli('not json'), _cli('[]'),
+                                 _cli(raises=subprocess.TimeoutExpired('claude', 20)), _cli(raises=FileNotFoundError())])
+def test_claude_signed_in_is_none_on_any_failure(run):
+    assert safe.claude_signed_in(run) is None
+
+
+def test_account_check_outcomes():
+    assert safe.account_check(WANT, _cli(SIGNED_IN)) == 'match'
+    assert safe.account_check(WANT, _cli('{"loggedIn": true, "email": "other@example.com"}')) == 'mismatch'
+    unused = _cli(SIGNED_IN)
+    assert safe.account_check({}, unused) == 'not_set' and not unused.calls
+    assert safe.account_check(WANT, _cli(code=1)) == 'unknown'
+
+
+def test_a_mismatch_warns_without_emails_and_never_stops_the_run(project, monkeypatch, capsys):
+    monkeypatch.setattr(safe, 'account_check', lambda env=None, run=None: 'mismatch')
+    assert ar.run(project, max_iterations=1, claude=picking_agent()) == 0
+    warning = next(line for line in capsys.readouterr().out.splitlines() if 'WARNING' in line)
+    assert 'AUTO_RUNNER_ACCOUNT_EMAIL' in warning and '@' not in warning
+    assert _first_event(project)['detail']['account_check'] == 'mismatch'
+
+
+def test_run_start_records_not_set_without_the_variable(project, monkeypatch):
+    monkeypatch.delenv('AUTO_RUNNER_ACCOUNT_EMAIL', raising=False)
+    assert ar.run(project, max_iterations=1, claude=picking_agent()) == 0
+    assert _first_event(project)['detail']['account_check'] == 'not_set'
