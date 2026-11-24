@@ -88,6 +88,34 @@ class CentralTransport(ad.Transport):
         return self.central.ack(did)
 
 
+class FakeRunners:
+    """In-memory fake of runner presence (`POST /api/v1/runners/beat`) for the watch tests, as a `send` for
+    autodeliver.HttpTransport: beats are kept in `beats` (the JSON bodies) and answered with `control` (None, 'pause'
+    or 'stop', which a test sets as a person would on the pages). `refuse` answers every beat with that status (e.g. 403);
+    `down` makes beats unreachable. Every other call goes to `inner` (the real central's send, or FakeTasks.send)."""
+
+    def __init__(self, inner):
+        self.inner, self.beats, self.control, self.refuse, self.down = inner, [], None, None, False
+        self.order = []                           # 'beat' or the other call's path, in the order they were sent
+
+    def states(self):
+        return [b['state'] for b in self.beats]
+
+    def send(self, method, url, headers, body, timeout):
+        path = urlparse(url).path
+        if path != '/api/v1/runners/beat':
+            self.order.append(path)
+            return self.inner(method, url, headers, body, timeout)
+        self.order.append('beat')
+        if self.down:
+            raise ConnectionRefusedError('no route (simulated)')
+        if self.refuse:
+            return self.refuse, json.dumps({'error': 'refused (simulated)'}).encode('utf-8')
+        data = json.loads(body.decode('utf-8'))
+        self.beats.append(data)
+        return 200, json.dumps({'runner': {**data, 'control': self.control}, 'control': self.control}).encode('utf-8')
+
+
 class FakeTasks:
     """In-memory fake of the central task API (personal token) for the planner and watch tests: a `send` for
     autodeliver.HttpTransport that answers GET /api/v1/tasks/N and POST /api/v1/tasks/N/plan (the claim must match;

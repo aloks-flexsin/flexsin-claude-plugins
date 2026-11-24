@@ -206,7 +206,8 @@ def test_the_daily_cap_pauses_until_local_midnight(watched, central, team, env, 
     claude = FakeClaude()
     assert watch(watched, central, env, clock, claude, max_steps=1) == 0
     assert clock.now >= midnight and sum(clock.slept) == pytest.approx(600)
-    assert seen and all(state == 'paused_daily_budget' and calls == [] for state, calls in seen)  # nothing claimed
+    assert seen and all(state == 'paused_daily_budget' and calls and all('/runners/beat?' in c[1] for c in calls)
+                        for state, calls in seen)                  # nothing claimed: only presence beats
     assert 'daily budget reached (20.00 of 20 USD today): paused until local midnight' in capsys.readouterr().out
     assert claude.roles == ['plan', 'spec'] and server_task(central, n)['status'] == 'plan_review'
     assert aw.local_day(clock.now) != aw.local_day(midnight - 600)
@@ -270,3 +271,120 @@ def test_a_stale_watch_lock_is_cleared(watched, central, env):
     lock.write_text('999999999', encoding='utf-8')                 # a watcher that died
     assert watch(watched, central, env, Clock(), max_steps=1) == 0
     assert watch_file(watched)['state'] == 'idle'
+
+
+# --- H12 presence: the loop beats its state and obeys pause and stop ----------------------------------------------------
+
+from tests.auto_runner.fake_central import FakeRunners  # noqa: E402
+
+LABEL = 'alok/bhawish-claude-auto-runner'
+
+
+def presence(central):
+    return FakeRunners(central.send)
+
+
+def watch_via(project, runners, env, clock, claude=None, **kw):
+    return aw.watch(project, claude or FakeClaude(), env, runners.send, clock=clock.time, sleep=clock.sleep, **kw)
+
+
+def claims(runners):
+    return runners.order.count('/api/v1/tasks/next')
+
+
+def test_beats_carry_the_state_task_and_spend(watched, central, team, env):
+    n = add_task(central, team)['number']
+    runners, clock = presence(central), Clock()
+    assert watch_via(watched, runners, env, clock, max_steps=2) == 0       # plans it, then idles
+    assert runners.states() == ['watching', f'planning #{n}', 'watching']
+    assert [b['task'] for b in runners.beats] == [None, n, None]
+    assert all(b['label'] == LABEL for b in runners.beats)
+    assert runners.beats[0]['spend_usd'] == 0 and runners.beats[2]['spend_usd'] == pytest.approx(0.15)
+    assert runners.order[:3] == ['beat', '/api/v1/tasks/next', 'beat']      # a beat before each claim, then on claiming
+    approve(central, team, n)
+    runners.beats.clear()
+    assert watch_via(watched, runners, env, clock, max_steps=1) == 0
+    assert runners.states()[:2] == ['watching', f'building #{n}'] and runners.beats[1]['task'] == n
+    assert server_task(central, n)['status'] == 'done'
+
+
+def test_a_paused_runner_waits_without_claiming_until_resumed(watched, central, team, env, capsys):
+    n = add_task(central, team)['number']
+    runners = presence(central)
+    runners.control = 'pause'
+    seen = []
+
+    def on_sleep():
+        seen.append((watch_file(watched)['state'], claims(runners)))
+        if len(clock.slept) == 2 * POLL // aw.WAIT_SLICE:                   # two polls paused, then a person resumes it
+            runners.control = None
+
+    clock = Clock(on_sleep=on_sleep)
+    assert watch_via(watched, runners, env, clock, max_steps=1) == 0
+    assert seen[:24] == [('paused', 0)] * 24 and sum(clock.slept[:24]) == 2 * POLL
+    assert runners.states()[:3] == ['watching', 'paused', 'paused']         # it says it is paused while it waits
+    assert runners.states()[3] == f'planning #{n}' and claims(runners) == 1
+    assert server_task(central, n)['status'] == 'plan_review'
+    out = capsys.readouterr().out
+    assert out.count('paused from the service') == 1 and 'resumed from the service' in out
+
+
+def test_stop_from_the_service_ends_the_loop_cleanly(watched, central, team, env, capsys):
+    add_task(central, team)
+    runners = presence(central)
+    runners.control = 'stop'
+    assert watch_via(watched, runners, env, Clock()) == 0                   # no max_steps: the stop ends it
+    assert claims(runners) == 0 and runners.states() == ['watching']
+    assert watch_file(watched)['state'] == 'stopped' and 'stopped from the service' in capsys.readouterr().out
+    assert not (watched / aw.LOCK_FILE).exists()                            # the checkout lock is released
+
+
+def test_stop_during_a_step_lets_the_step_finish_first(watched, central, team, env):
+    n = add_task(central, team)['number']
+    runners = presence(central)
+
+    class StopWhilePlanning(FakeClaude):
+        def __call__(self, cmd, cwd):
+            runners.control = 'stop'                                        # a person presses Stop mid-plan
+            return super().__call__(cmd, cwd)
+
+    assert watch_via(watched, runners, env, Clock(), StopWhilePlanning()) == 0
+    assert server_task(central, n)['status'] == 'plan_review'               # the plan was still posted
+    assert claims(runners) == 1 and runners.states() == ['watching', f'planning #{n}', 'watching']
+    assert watch_file(watched)['state'] == 'stopped' and watch_file(watched)['last']['ok'] is True
+
+
+def test_stop_is_obeyed_during_the_daily_budget_pause(watched, central, env):
+    clock, runners = Clock(), presence(central)
+    aw.add_spend(watched, clock.now, 20.0)
+    runners.control = 'stop'
+    assert watch_via(watched, runners, env, clock) == 0
+    assert runners.states() == ['paused: daily budget reached'] and claims(runners) == 0
+    assert clock.slept == [] and watch_file(watched)['state'] == 'stopped'
+
+
+def test_a_failed_beat_is_reported_once_and_the_loop_carries_on(watched, central, team, env, capsys):
+    n = add_task(central, team)['number']
+    runners = presence(central)
+    runners.refuse = 403
+    assert watch_via(watched, runners, env, Clock(), max_steps=2) == 0
+    assert claims(runners) == 2 and server_task(central, n)['status'] == 'plan_review'
+    out = capsys.readouterr().out
+    assert out.count('could not report to the service') == 1 and '403' in out
+    runners.refuse, runners.down = None, True
+    assert watch_via(watched, runners, env, Clock(), max_steps=1) == 0
+    assert claims(runners) == 3 and watch_file(watched)['state'] == 'idle'
+
+
+def test_presence_and_stop_through_the_real_service(watched, central, team, env):
+    n = add_task(central, team)['number']
+    clock = Clock()
+    assert watch(watched, central, env, clock, max_steps=1) == 0
+    row = central.conn.query_one('SELECT * FROM runner WHERE label = ?', (LABEL,))
+    assert row['state'] == f'planning #{n}' and row['task_number'] == n
+    central.conn.execute("UPDATE runner SET control = 'stop' WHERE label = ?", (LABEL,))
+    central.conn.commit()
+    before = len(central.calls)
+    assert watch(watched, central, env, clock) == 0                         # a person pressed Stop on the pages
+    assert [c[1].split('?')[0] for c in central.calls[before:]] == ['https://central.test/api/v1/runners/beat']
+    assert watch_file(watched)['state'] == 'stopped'

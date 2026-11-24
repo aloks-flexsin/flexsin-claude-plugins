@@ -5,6 +5,9 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Auto-runner watch mode reports and obeys: the watcher beats the central service (`runners/beat`) with what it is
+  doing (watching, planning #N, building #N, paused) and its spend, and between steps obeys Pause (waits without taking
+  work) and Stop (ends cleanly) pressed on the pages. Unverified against the live service.
 - Auto-runner watch mode guardrails and command: `/auto-runner:auto watch` starts the watcher (`bin/autowatch.py`). Every
   `claude -p` it starts (plans, spec checks, builds) adds its reported cost to `.auto/run/spend-<local date>.json`; at
   `watch.daily_budget_usd` (default 20 USD) it pauses until local midnight. At Claude's usage limit it waits for the

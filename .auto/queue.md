@@ -88,7 +88,7 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Acceptance:* `tests/central/test_runner_pages.py`: who sees which buttons, nothing changes without confirmation, audit rows written, states shown in words.
   *Slice:* 5 Runner presence and controls
   *Kind:* feature
-- [ ] **H12 The watch loop reports and obeys.** `autowatch.py` sends `runners/beat` with its state (watching, planning #N, building #N, paused) each step and when idle, and obeys pause (waits) and stop (ends) between steps.
+- [x] **H12 The watch loop reports and obeys.** `autowatch.py` sends `runners/beat` with its state (watching, planning #N, building #N, paused) each step and when idle, and obeys pause (waits) and stop (ends) between steps.
   *Acceptance:* tests in `tests/auto_runner/test_autowatch.py` with `fake_central.py`: beats carry the right states, a paused runner waits without claiming, stop ends the loop cleanly.
   *Slice:* 5 Runner presence and controls
   *Kind:* feature

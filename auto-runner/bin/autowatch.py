@@ -26,8 +26,14 @@ Guardrails:
   claims again.
 - Checkout lock: `.auto/run/watch.lock` (`auto_run.Lock`, holding the process id; a stale one is cleared) so only one
   watcher, and so one build, runs per checkout. A second watcher refuses to start (exit 2).
-Presence on the service comes in a later step.
-Exit 0 = stopped by the STOP file, 2 = not started. Stdlib only.
+Presence on the service (`POST /api/v1/runners/beat`, personal token, label = `autotasks.runner_label`): before every
+claim the loop beats `watching` (or `paused`), and once a task is claimed it beats `planning #N` / `building #N` with the
+task number; each beat carries the day's spend. The reply's `control` is obeyed between steps: `pause` waits one poll
+without claiming (beating `paused` each poll) until a person resumes it, `stop` ends the loop cleanly (exit 0, heartbeat
+`stopped`). A step that has started always finishes. During the daily-budget pause it beats `paused: daily budget
+reached` each poll (so the pages do not show it silent) and still obeys stop. A beat that fails (service unreachable,
+refused) is reported once and never stops the loop: the runner then carries on as if nobody had asked it to pause.
+Exit 0 = stopped (STOP file or the service's stop), 2 = not started. Stdlib only.
 """
 import argparse
 import datetime
@@ -142,6 +148,16 @@ def heartbeat(project, state, now, last=None, **extra):
     path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
 
 
+def beat(project, state, task=None, spend=0.0, env=None, send=None):
+    """POST /api/v1/runners/beat -> the service's control: None (carry on), 'pause' or 'stop'. Raises TaskError (not
+    connected, no personal token, refused) or TransportUnavailable; the loop reports those and carries on."""
+    t = autotasks.transport(project, env, send)
+    reply = autotasks._call(t, 'POST', '/api/v1/runners/beat', {'label': autotasks.runner_label(env), 'state': state,
+                                                                 'task': task, 'spend_usd': round(spend, 4)})
+    control = reply.get('control')
+    return control if control in ('pause', 'stop') else None
+
+
 def _default_build(project, slug, claude, env, send):
     """auto_run.run on the request, with the personal-token transport. The transport is made from auto_run's own copy of
     autodeliver: the runner beats and reports the task only when `isinstance(transport, its HttpTransport)`."""
@@ -155,15 +171,18 @@ def _default_build(project, slug, claude, env, send):
     return auto_run.run(project, enqueue=slug, transport=transport, **kw)
 
 
-def step(project, claude=None, env=None, send=None, build=None, meter=None):
+def step(project, claude=None, env=None, send=None, build=None, meter=None, on_start=None):
     """Claim the next task and plan or build it -> the outcome {'task', 'action', 'ok', 'detail'} (and 'exit' for a
     build), or None when there is nothing to do. Never raises for a failed task: the failure is the outcome. With a
-    `meter`, every `claude -p` of the step goes through it (spend and usage limit)."""
+    `meter`, every `claude -p` of the step goes through it (spend and usage limit); `on_start(number, action)` is called
+    once the task is claimed, before it is planned or built (the loop beats from it)."""
     reply = autotasks.take_next(project, env, send)
     task = reply.get('task')
     if not task:
         return None
     number, action = task['number'], reply.get('action') or 'plan'
+    if on_start:
+        on_start(number, action)
     out = {'task': number, 'action': action, 'title': task.get('title', ''), 'ok': False, 'detail': ''}
     if meter:
         base = claude or (autoplan._run_claude if action == 'plan' else _runner().run_claude)
@@ -205,10 +224,28 @@ def watch(project, claude=None, env=None, send=None, build=None, clock=time.time
 
 
 def _loop(project, stop, poll, daily, runner, claude, env, send, build, clock, sleep, out, max_steps):
-    last, steps = None, 0
+    last, steps, paused, over_budget, beat_problem = None, 0, False, False, None
 
     def say(text):
         print(f'[watch] {text}', file=out or sys.stdout, flush=True)
+
+    def report(state, task=None):
+        """Beat the service -> its control (None when the beat failed: carry on). A failure is said once."""
+        nonlocal beat_problem
+        try:
+            control = beat(project, state, task, spent_today(project, clock()), env, send)
+        except (autotasks.TaskError, autodeliver.TransportUnavailable, autocfg.ConfigError, OSError) as e:
+            if str(e) != beat_problem:
+                say(f'could not report to the service ({e}); carrying on')
+            beat_problem = str(e)
+            return None
+        beat_problem = None
+        return control
+
+    def stopped(why):
+        heartbeat(project, 'stopped', clock(), last)
+        say(why)
+        return 0
 
     def wait(seconds):
         end = clock() + seconds
@@ -218,22 +255,39 @@ def _loop(project, stop, poll, daily, runner, claude, env, send, build, clock, s
     say(f'watching {project} (every {poll:g} s when idle; create {STOP_FILE} to stop)')
     while True:
         if stop.exists():
-            heartbeat(project, 'stopped', clock(), last)
-            say('STOP file found: stopping.')
-            return 0
+            return stopped('STOP file found: stopping.')
         if max_steps is not None and steps >= max_steps:
             return 0
         spent = spent_today(project, clock())
         if spent >= daily:
+            if report('paused: daily budget reached') == 'stop':
+                return stopped('stopped from the service.')
             until = next_midnight(clock())
             heartbeat(project, 'paused_daily_budget', clock(), last, until=_iso(until), spent_usd=round(spent, 4))
-            say(f'daily budget reached ({spent:.2f} of {daily:g} USD today): paused until local midnight')
-            wait(until - clock())
+            if not over_budget:
+                say(f'daily budget reached ({spent:.2f} of {daily:g} USD today): paused until local midnight')
+            over_budget = True
+            wait(min(until - clock(), poll))          # beat again each poll so the pages do not show it silent
             continue
+        over_budget = False
+        control = report('paused' if paused else 'watching')
+        if control == 'stop':
+            return stopped('stopped from the service.')
+        if control == 'pause':
+            if not paused:
+                say('paused from the service: waiting without taking work until someone resumes it')
+            paused = True
+            heartbeat(project, 'paused', clock(), last)
+            wait(poll)
+            continue
+        if paused:
+            say('resumed from the service')
+            paused = False
         steps += 1
         meter = Meter(project, clock)
         try:
-            result = step(project, claude, env, send, build, meter)
+            result = step(project, claude, env, send, build, meter,
+                          on_start=lambda n, a: report(f'{"planning" if a == "plan" else "building"} #{n}', n))
         except (autotasks.TaskError, autodeliver.TransportUnavailable, autocfg.ConfigError, OSError) as e:
             result = {'task': None, 'action': 'claim', 'ok': False, 'detail': f'could not claim a task: {e}'}
         if result is None:
