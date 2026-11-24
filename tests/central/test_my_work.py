@@ -58,7 +58,7 @@ def test_the_task_page_shows_the_build_live(app, team, clock):
     clock.now = datetime.datetime(2026, 11, 23, 9, 10, tzinfo=datetime.timezone.utc)
     send_run(app, team, n)
     page = team['clients']['viewer'].get('/projects/alpha/tasks/%d' % n).get_data(as_text=True)
-    assert '1 of 2 items done' in page and 'running: E2' in page and 'last tests: pass' in page
+    assert '1 of 2 items' in page and 'on E2' in page and 'last tests: pass' in page
     runs_page = team['clients']['viewer'].get('/projects/alpha/runs').get_data(as_text=True)
     assert 'href="/projects/alpha/tasks/%d">#%d</a>' % (n, n) in runs_page
 
@@ -70,25 +70,26 @@ def test_my_work_for_the_assignee_a_manager_and_a_viewer(app, team, conn, clock)
     api(app, 'POST', '/api/v1/events', team['token']['dev'],
         [ev('r9', 'blocker', 0, 'E1', action='raised', id='B-1', blocker={'question': 'Which colour?'})])
     dev = team['clients']['dev'].get('/my').get_data(as_text=True)
-    assert 'CSV export' in dev and 'plan waiting for approval' in dev                    # my task, and mine to approve
+    assert 'CSV export' in dev and 'Needs approval' in dev and '1 decision waits for you.' in dev   # mine to approve
     assert 'Which colour?' not in dev                                                    # developers do not answer blockers
     manager = team['clients']['manager'].get('/my').get_data(as_text=True)
-    assert 'Plans waiting for my approval <span class="badge warn">1</span>' in manager
+    assert 'Waiting for you <span class="pill attention">2</span>' in manager            # the plan and the blocker
     assert 'Which colour?' in manager and 'B-1' in manager
     viewer = team['clients']['viewer'].get('/my').get_data(as_text=True)
-    assert 'Nothing waiting for you.' in viewer and 'No blockers waiting for you.' in viewer
-    assert 'No runner is working on a task right now.' in viewer     # a plan waiting for a person is not runner work
+    assert 'No plans or blockers wait for you.' in viewer
+    assert 'Nothing is in progress.' in viewer                       # a plan waiting for a person is not runner work
 
 
 def test_my_work_shows_progress_and_what_finished(app, team, conn, clock):
     n, claim = building_task(app, team)
     send_run(app, team, n)
-    assert '1/2 done, on E2' in team['clients']['owner'].get('/my').get_data(as_text=True)
+    page = team['clients']['owner'].get('/my').get_data(as_text=True)
+    assert '1 of 2 items' in page and 'on E2' in page
     send_run(app, team, n, finished=True)
     api(app, 'POST', '/api/v1/tasks/%d/report' % n, team['token']['dev'],
         {'claim': claim, 'result': 'done', 'pr_url': 'https://github.com/o/r/pull/7'})
     page = team['clients']['owner'].get('/my').get_data(as_text=True)
-    assert 'https://github.com/o/r/pull/7' in page and 'No runner is working on a task right now.' in page
+    assert 'href="https://github.com/o/r/pull/7"' in page and 'PR #7' in page and 'Nothing is in progress.' in page
 
 
 def test_admins_see_every_project_and_strangers_see_nothing_of_it(app, team, conn):

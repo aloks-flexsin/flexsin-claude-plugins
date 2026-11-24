@@ -1,53 +1,94 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui %}
 {% block title %}My work{% endblock %}
-{% macro progress_cell(t) -%}
-  {% if t.progress %}{{ t.progress.done }}/{{ t.progress.total }} done{% if t.progress.current %}, on {{ t.progress.current }}{% endif %}{% if t.progress.blocked %}, blocked: {{ t.progress.blocked | join(", ") }}{% endif %}{% endif %}
-{%- endmacro %}
+{% block body_attrs %} data-refresh="30"{% endblock %}
 {% macro task_link(t) -%}
   <a href="{{ url_for('tasks.task_page', slug=t.project.slug, number=t.number) }}">#{{ t.number }} {{ t.title }}</a>
 {%- endmacro %}
 {% block content %}
-<h1>My work</h1>
-<p class="lead">Across {{ "every project" if account.role == "admin" else "your projects" }}. Refresh to see the latest.</p>
+<div class="page-head">
+  <div>
+    <h1>Hi {{ account.email | display_name(account.name) }}</h1>
+    <p class="lead">{% if waiting %}<strong>{{ waiting | length }} decision{{ "s" if waiting | length != 1 }} wait{{ "s" if waiting | length == 1 }} for you.</strong>{% else %}Nothing waits for you.{% endif %}
+      Across {{ "every project" if account.role == "admin" else "your projects" }}. <span class="muted" data-updated>Updated just now</span></p>
+  </div>
+</div>
 
-<h2>Plans waiting for my approval{% if approve %} <span class="badge warn">{{ approve | length }}</span>{% endif %}</h2>
-{% if approve %}
-<table><thead><tr><th>Project</th><th>Task</th><th>Assigned to</th><th>Planned by</th></tr></thead><tbody>
-{% for t in approve %}<tr><td>{{ t.project.name }}</td><td>{{ task_link(t) }}</td><td>{{ t.assignee_email }}</td><td><code>{{ t.claim_runner or "" }}</code></td></tr>{% endfor %}
-</tbody></table>
-{% else %}<p class="card empty">Nothing waiting for you.</p>{% endif %}
+{% if projects | length > 1 %}
+<nav class="filter-chips" aria-label="Project">
+  <a href="{{ url_for('mywork.my_page') }}"{% if not only %} aria-current="page"{% endif %}>All</a>
+  {% for p in projects %}<a href="{{ url_for('mywork.my_page', project=p.slug) }}"{% if only == p.slug %} aria-current="page"{% endif %}>{{ p.name }}</a>{% endfor %}
+</nav>
+{% endif %}
 
-<h2>Blockers I can answer{% if blockers %} <span class="badge warn">{{ blockers | length }}</span>{% endif %}</h2>
-{% if blockers %}
-<table><thead><tr><th>Project</th><th>Blocker</th><th>Item</th><th>Question</th><th>Raised</th></tr></thead><tbody>
-{% for b in blockers %}<tr><td>{{ b.project.name }}</td>
-  <td><a href="{{ url_for('blockers.blocker_page', slug=b.project.slug, blocker_id=b.blocker_id) }}">{{ b.blocker_id }}</a></td>
-  <td>{{ b.task or "" }}</td><td>{{ b.question or "(no question sent)" }}</td><td class="nowrap">{{ b.created_at }}</td></tr>{% endfor %}
-</tbody></table>
-{% else %}<p class="card empty">No blockers waiting for you.</p>{% endif %}
+<section class="block">
+  <div class="block-head"><h2>Waiting for you{% if waiting %} <span class="pill attention">{{ waiting | length }}</span>{% endif %}</h2></div>
+  {% if waiting %}
+  <div class="cards">
+    {% for w in waiting %}
+    {% if w.kind == "plan" %}{% set t = w.task %}
+    <div class="action-card attention">
+      <div class="card-top">{{ ui.status("task", "plan_review") }}<span class="muted">{{ t.project.name }}</span></div>
+      <div class="action-title">{{ task_link(t) }}</div>
+      <div class="muted">For {{ t.assignee_email | display_name }}{% if t.items_count %} · {{ t.items_count }} item{{ "s" if t.items_count != 1 }}{% endif %} · {{ ui.when(t.updated_at) }}</div>
+      <div class="card-actions">
+        {% if t.items_count and t.items_count <= inline_items %}
+        <form method="post" action="{{ url_for('tasks.task_decide', slug=t.project.slug, number=t.number) }}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+          <button type="submit" name="decision" value="approve" class="btn primary">Approve</button>
+        </form>
+        <a class="btn" href="{{ url_for('tasks.task_page', slug=t.project.slug, number=t.number) }}">Read plan</a>
+        {% else %}
+        <a class="btn primary" href="{{ url_for('tasks.task_page', slug=t.project.slug, number=t.number) }}">Read plan</a>
+        {% endif %}
+      </div>
+    </div>
+    {% else %}{% set b = w.blocker %}
+    <div class="action-card bad">
+      <div class="card-top">{{ ui.status("blocker", b.status, "item " ~ (b.task or "?")) }}<span class="muted">{{ b.project.name }}</span></div>
+      <div class="action-title"><a href="{{ url_for('blockers.blocker_page', slug=b.project.slug, blocker_id=b.blocker_id) }}">{{ b.question or "A runner is waiting for an answer" }}</a></div>
+      <div class="muted">{{ b.blocker_id }} · raised {{ ui.when(b.created_at) }}</div>
+      <div class="card-actions"><a class="btn primary" href="{{ url_for('blockers.blocker_page', slug=b.project.slug, blocker_id=b.blocker_id) }}">Answer</a></div>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% else %}
+  {{ ui.empty("No plans or blockers wait for you.") }}
+  {% endif %}
+</section>
 
-<h2>My tasks</h2>
-{% if mine %}
-<table><thead><tr><th>Project</th><th>Task</th><th>State</th><th>Progress</th><th>Runner</th></tr></thead><tbody>
-{% for t in mine %}<tr><td>{{ t.project.name }}</td><td>{{ task_link(t) }}</td>
-  <td><span class="badge {{ 'warn' if t.status in ('plan_review', 'changes_requested') else '' }}">{{ t.describe }}</span></td>
-  <td>{{ progress_cell(t) }}</td><td>{% if t.live %}<code>{{ t.claim_runner }}</code>{% endif %}</td></tr>{% endfor %}
-</tbody></table>
-{% else %}<p class="card empty">No open tasks assigned to you. Add one on a project's Tasks page.</p>{% endif %}
+<section class="block">
+  <div class="block-head"><h2>In progress</h2><span class="muted">Yours first, then the team's</span></div>
+  {% if progress %}
+  <div class="list">
+    {% for t in progress %}
+    <div class="list-row">
+      {{ ui.person(t.assignee_email, None, t.project.name ~ ((" · " ~ (t.claim_runner | runner_label)) if t.live else "")) }}
+      <div class="grow">{{ task_link(t) }} {{ ui.status("task", t.status) }}
+        {% if t.quiet %}<div class="warn-line">Its runner has been quiet since {{ ui.when(t.heartbeat_at) }}; it can be taken again.</div>{% endif %}</div>
+      {% if t.progress %}{{ ui.progress(t.progress.done, t.progress.total, ("on " ~ t.progress.current) if t.progress.current else "") }}
+      {% else %}<span class="muted nowrap">{{ ui.when(t.updated_at) }}</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  {{ ui.empty("Nothing is in progress. Add a task on a project's Tasks page.") }}
+  {% endif %}
+</section>
 
-<h2>Being worked on now</h2>
-{% if active %}
-<table><thead><tr><th>Project</th><th>Task</th><th>For</th><th>Runner</th><th>State</th><th>Progress</th></tr></thead><tbody>
-{% for t in active %}<tr><td>{{ t.project.name }}</td><td>{{ task_link(t) }}</td><td>{{ t.assignee_email }}</td>
-  <td><code>{{ t.claim_runner }}</code></td><td>{{ t.describe }}</td><td>{{ progress_cell(t) }}</td></tr>{% endfor %}
-</tbody></table>
-{% else %}<p class="card empty">No runner is working on a task right now.</p>{% endif %}
-
-<h2>Recently done</h2>
-{% if done %}
-<table><thead><tr><th>Project</th><th>Task</th><th>For</th><th>Pull request</th><th>Finished</th></tr></thead><tbody>
-{% for t in done %}<tr><td>{{ t.project.name }}</td><td>{{ task_link(t) }}</td><td>{{ t.assignee_email }}</td>
-  <td>{% if t.pr_url %}<a href="{{ t.pr_url }}" rel="noopener noreferrer">{{ t.pr_url }}</a>{% endif %}</td><td class="nowrap">{{ t.updated_at }}</td></tr>{% endfor %}
-</tbody></table>
-{% else %}<p class="card empty">Nothing finished yet.</p>{% endif %}
+<section class="block">
+  <div class="block-head"><h2>Recently done</h2></div>
+  {% if done %}
+  <ul class="feed">
+    {% for t in done %}
+    <li><span>{{ ui.status("task", "done") }} {{ task_link(t) }} <span class="muted">· {{ t.project.name }} · {{ t.assignee_email | display_name }}</span>
+      {% if t.pr_url %}· <a href="{{ t.pr_url }}" rel="noopener noreferrer">PR {{ t.pr_url | pr_label }}</a>{% endif %}</span>{{ ui.when(t.updated_at) }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  {{ ui.empty("Nothing finished yet.") }}
+  {% endif %}
+</section>
 {% endblock %}

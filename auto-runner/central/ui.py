@@ -96,6 +96,12 @@ STATUS = {
     ("task", "building"): ("Building", "info", "dot"),
     ("task", "done"): ("Done", "ok", "dot"),
     ("task", "rejected"): ("Rejected", "neutral", "dot"),
+    # a task's queue items
+    ("item", "queued"): ("Queued", "neutral", "ring"),
+    ("item", "running"): ("In progress", "info", "dot"),
+    ("item", "done"): ("Done", "ok", "dot"),
+    ("item", "blocked"): ("Blocked", "attention", "square"),
+    ("item", "failed"): ("Failed", "bad", "square"),
     # runs
     ("run", "running"): ("Running", "info", "dot"),
     ("run", "finished"): ("Finished", "ok", "dot"),
@@ -240,10 +246,26 @@ def confirm_page(question, detail, action_label, cancel_url):
                            action_url=request.path, fields=fields, cancel_url=cancel_url), 200
 
 
+def pr_label(url):
+    """'https://github.com/o/r/pull/7' -> '#7'; any other address unchanged."""
+    tail = (url or "").rstrip("/").rsplit("/", 2)
+    return "#" + tail[2] if len(tail) == 3 and tail[1] == "pull" and tail[2].isdigit() else (url or "")
+
+
+def safe_next(value):
+    """A same-site path to return to after a form (`/my?project=x`), else None. Never another site: no scheme, no
+    `//host`, no backslash tricks."""
+    if not isinstance(value, str) or not value.startswith("/") or value.startswith("//") or "\\" in value:
+        return None
+    if any(c in value for c in "\r\n") or len(value) > 500:
+        return None
+    return value
+
+
 def init_app(app):
     from markupsafe import Markup
     env = app.jinja_env
     env.filters.update(ago=ago, when_abs=when_abs, iso=iso, reason_text=reason_text, next_step=next_step,
-                       runner_label=runner_label, display_name=display_name, initials=initials,
+                       runner_label=runner_label, display_name=display_name, initials=initials, pr_label=pr_label,
                        md=lambda t: Markup(md(t)))
     env.globals.update(ui_status=status, ui_duration=duration)

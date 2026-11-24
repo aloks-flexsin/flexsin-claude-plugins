@@ -91,9 +91,17 @@ may not stick over plain http. The API endpoints do not use the cookie.
 
 ## Tasks (decision record 0007, step 4; `tasks.py`)
 
-- `/projects/<slug>/tasks` (any member): every task of the project with its assignee, state, the runner working on it, and
-  its pull request. People who can run runners (developer and above) add tasks for themselves; admins add them for any such
-  member. `/projects/<slug>/tasks/<N>`: the description, the plan and its queue items, and the decision.
+- `/projects/<slug>/tasks` (any member): the project's tasks under state tabs with counts (`?state=approval|progress|open|done`;
+  with none chosen, the first tab that has tasks), "Mine only" (`?mine=1`) and a title search (`?q=`); each row shows the
+  person, state, runner, build progress, pull request and when it last changed.
+- `/projects/<slug>/tasks/new`: people who can run runners (developer and above) add a task for themselves; admins for
+  any such member. "How we know it's done" is stored as a `Done when:` section of the description (no column of its own).
+- `/projects/<slug>/tasks/<N>`: a step tracker (Open → Planned → Approval → Building → Done), the decision bar while the
+  plan waits (Approve; Request changes opens the required comment; Reject asks first), the build's progress, the plan
+  rendered as Markdown (escaped), the items as a checklist with each item's live state and acceptance line, a side panel
+  (person, runner, branch, pull request), the admin's release/reassign under **More**, the runs and an **Activity**
+  history (from the audit log: added, claimed, plan posted, decisions, released, reported; plus run starts and ends).
+  Pages showing work in progress reload every 30 seconds while nobody is typing.
 - States: `open` → `planning` (a runner claimed it) → `plan_review` → `approved` → `building` → `done`; or
   `changes_requested` (back to the runner with a comment) and `rejected`. A task typed in the terminal is recorded as
   `building` (its plan was approved there).
@@ -143,10 +151,13 @@ may not stick over plain http. The API endpoints do not use the cookie.
 
 ## My work and task progress
 
-- `/my` (**My work**, first in the top bar; everyone signed in): across every project the person can see (all for an admin)
-  — plans waiting for their approval, blockers they can answer (manager and above), their open tasks with build progress,
-  every task a runner is working on now, and the last finished tasks with their pull requests (`mywork.py`). Refresh to
-  update; nothing is sent to anyone.
+- `/my` (**My work**, first in the top bar; everyone signed in): across every project the person can see (all for an admin),
+  narrowed to one with `?project=<slug>` (`mywork.py`). **Waiting for you**: plans they may decide and blockers they can
+  answer (manager and above), as cards; a plan of two items or fewer is approved right on its card (the decide form's
+  `next`, a same-site path only, brings them back), a longer one opens to be read. **In progress**: their own unfinished
+  tasks first, then every other task a runner is on, each once, with build progress and a warning when a runner went
+  quiet. **Recently done** with pull requests. Reloads every 30 seconds; nothing is sent to anyone.
+- Plan posts and runner reports are audited (`task.plan.post`, `task.report`) for the task's Activity.
 - A run names the task it builds (`task` in its `run_start` and `run_end` events, plugin 0.21.0+), so the **task page**
   shows the build live: items done out of the task's own items, the item in progress, the latest run's state and tests,
   blocked items, and every run of the task. The runs page links each run to its task.

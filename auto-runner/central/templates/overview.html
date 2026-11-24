@@ -73,7 +73,7 @@
   </ul>
   {% else %}
   {% if pnav.open_tasks or done %}{{ ui.empty("No activity recorded yet.") }}
-  {% else %}{{ ui.empty("Nothing has happened here yet.", url_for('tasks.tasks_page', slug=project.slug) ~ "#new-task" if pnav.can_run else None, "Add the first task") }}{% endif %}
+  {% else %}{{ ui.empty("Nothing has happened here yet.", url_for('tasks.task_new', slug=project.slug) if pnav.can_run else None, "Add the first task") }}{% endif %}
   {% endif %}
 </section>
 {% endblock %}

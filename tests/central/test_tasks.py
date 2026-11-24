@@ -93,8 +93,8 @@ def test_the_full_life_of_a_task(app, team, conn, clock):
     claim = got['claim']
     assert plan(app, team, n, claim).status_code == 200
     page = team['clients']['dev'].get('/projects/alpha/tasks/%d' % n).get_data(as_text=True)
-    assert 'Export CSV.' in page and 'Decide on the plan' in page
-    assert '**E1 Export.**' in page and 'built-in method' not in page      # the queue items, not dict.items
+    assert 'Export CSV.' in page and 'The plan waits for your decision.' in page
+    assert '<code>E1</code> <strong>Export</strong>' in page and 'built-in method' not in page   # the items, not dict.items
     assert take(app, team)['task'] is None                          # nothing else to do while the plan waits
     clock.now += datetime.timedelta(hours=5)                         # waiting for a person never expires a claim
     assert tasks.claim_live(tasks.get(conn, team['alpha']['id'], n), clock.now)

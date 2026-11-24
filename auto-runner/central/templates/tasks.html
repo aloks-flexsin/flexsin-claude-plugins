@@ -1,43 +1,49 @@
 {% extends "base.html" %}
-{% from "_project.html" import header, settings_nav with context %}
+{% import "_ui.html" as ui %}
+{% from "_project.html" import header with context %}
 {% block title %}{{ project.name }} tasks{% endblock %}
 {% block content %}
 {{ header(project, "tasks") }}
-{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% set keep = {"slug": project.slug} %}{% if mine %}{% set _ = keep.update(mine="1") %}{% endif %}{% if q %}{% set _ = keep.update(q=q) %}{% endif %}
+<div class="toolbar">
+  <nav class="state-tabs" aria-label="Task state">
+    {% for t in tabs %}
+    <a href="{{ url_for('tasks.tasks_page', state=t.key, **keep) }}"{% if t.key == state %} aria-current="page"{% endif %}>{{ t.label }} <span class="count">{{ t.rows | length }}</span></a>
+    {% endfor %}
+  </nav>
+  <form method="get" action="{{ url_for('tasks.tasks_page', slug=project.slug) }}" class="search" role="search">
+    <input type="hidden" name="state" value="{{ state }}">
+    <label class="sr-only" for="task-q">Search task titles</label>
+    <input id="task-q" type="search" name="q" value="{{ q }}" placeholder="Search titles" maxlength="200">
+    <label class="mine-toggle"><input type="checkbox" name="mine" value="1"{% if mine %} checked{% endif %}> Mine only</label>
+    <button type="submit" class="btn">Filter</button>
+    {% if q or mine %}<a href="{{ url_for('tasks.tasks_page', slug=project.slug, state=state) }}">Clear</a>{% endif %}
+  </form>
+</div>
+
 {% if tasks %}
-<table>
-  <thead><tr><th>#</th><th>Task</th><th>Assigned to</th><th>State</th><th>Being worked by</th><th>Pull request</th><th>Updated</th></tr></thead>
-  <tbody>
+<div class="list">
   {% for t in tasks %}
-    <tr>
-      <td>{{ t.number }}</td>
-      <td><a href="{{ url_for('tasks.task_page', slug=project.slug, number=t.number) }}">{{ t.title }}</a></td>
-      <td>{{ t.assignee_email }}</td>
-      <td><span class="badge {{ 'warn' if t.status in ('plan_review', 'changes_requested') else ('ok' if t.status == 'done' else ('off' if t.status == 'rejected' else '')) }}">{{ t.describe }}</span></td>
-      <td>{% if t.live %}<code>{{ t.claim_runner }}</code>{% elif t.claim_id and t.status in ('planning', 'building', 'approved', 'changes_requested') %}<span class="muted">claim expired</span>{% endif %}</td>
-      <td>{% if t.pr_url %}<a href="{{ t.pr_url }}" rel="noopener noreferrer">{{ t.pr_url.rsplit('/', 1)[-1] and '#' ~ t.pr_url.rsplit('/', 1)[-1] }}</a>{% endif %}</td>
-      <td class="nowrap">{{ t.updated_at }}</td>
-    </tr>
+  <div class="list-row">
+    <span class="task-no">#{{ t.number }}</span>
+    <div class="grow">
+      <a class="row-title" href="{{ url_for('tasks.task_page', slug=project.slug, number=t.number) }}">{{ t.title }}</a>
+      <div class="row-sub">{{ ui.person(t.assignee_email) }}{% if t.live %} <span class="muted">· {{ ui.runner(t.claim_runner) }}</span>{% elif t.claim_id and t.status in ('planning', 'building', 'approved', 'changes_requested') %} <span class="warn-line">· runner quiet, claim expired</span>{% endif %}
+        {% if t.pr_url %}<span class="muted">· <a href="{{ t.pr_url }}" rel="noopener noreferrer">PR {{ t.pr_url | pr_label }}</a></span>{% endif %}</div>
+    </div>
+    {{ ui.status("task", t.status) }}
+    {% if t.progress %}{{ ui.progress(t.progress.done, t.progress.total, ("on " ~ t.progress.current) if t.progress.current else "") }}{% endif %}
+    <span class="muted nowrap">{{ ui.when(t.updated_at) }}</span>
+  </div>
   {% endfor %}
-  </tbody>
-</table>
+</div>
+{% elif not any_tasks %}
+{{ ui.empty("No tasks yet. A runner takes a task when its person runs /auto-runner:auto with no task.",
+            url_for('tasks.task_new', slug=project.slug) if can_add else None, "Add the first task") }}
+{% elif q or mine %}
+{{ ui.empty("No task here matches. Try another tab or clear the filter.") }}
 {% else %}
-<p class="card empty">No tasks yet. Add one below; a runner takes it when its person runs <code>/auto-runner:auto</code> with no task.</p>
-{% endif %}
-{% if can_add %}
-<h2 id="new-task">Add a task</h2>
-<p class="muted">The runner of the person it is assigned to plans it first; the plan waits here for approval before anything is built.</p>
-<form method="post" action="{{ url_for('tasks.task_add', slug=project.slug) }}">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <label>Title <input type="text" name="title" value="{{ form.title }}" maxlength="200" required></label>
-  <label>What should be built, and why<br><textarea name="description" rows="5" cols="80" maxlength="20000">{{ form.description }}</textarea></label>
-  {% if is_admin %}
-  <label>Assign to <select name="assignee">
-    <option value="{{ g.account.id }}">me ({{ g.account.email }})</option>
-    {% for m in assignees %}{% if m.account_id != g.account.id %}<option value="{{ m.account_id }}">{{ m.email }} ({{ m.role }})</option>{% endif %}{% endfor %}
-  </select></label>
-  {% endif %}
-  <button type="submit">Add task</button>
-</form>
+{{ ui.empty({"approval": "No plan is waiting for approval.", "progress": "No task is being planned or built.",
+             "open": "No task is waiting for a runner.", "done": "Nothing finished yet."}[state]) }}
 {% endif %}
 {% endblock %}

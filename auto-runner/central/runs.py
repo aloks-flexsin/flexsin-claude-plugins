@@ -110,9 +110,32 @@ def item_ids(items_text):
     return ITEM_ID.findall(items_text or "")
 
 
+ITEM_LINE = re.compile(r"^\s*- \[([ xX])\] \*\*([A-Za-z][A-Za-z0-9-]*?\d+)\b\s*(.*?)\*\*\s*(.*)$")
+ACCEPTANCE = re.compile(r"^\s*\*Acceptance:\*\s*(.*)$")
+
+
+def parse_items(items_text):
+    """A task's queue items as a checklist -> [{id, title, text, acceptance, ticked}], in order. Lines that are not
+    items or their acceptance line are kept as the item's text; the page escapes all of it."""
+    out = []
+    for line in (items_text or "").splitlines():
+        m = ITEM_LINE.match(line)
+        if m:
+            out.append({"id": m.group(2), "title": m.group(3).strip().rstrip("."), "text": m.group(4).strip(),
+                        "acceptance": "", "ticked": m.group(1) != " "})
+        elif out and line.strip():
+            a = ACCEPTANCE.match(line)
+            if a:
+                out[-1]["acceptance"] = a.group(1).strip()
+            else:
+                out[-1]["text"] = (out[-1]["text"] + " " + line.strip()).strip()
+    return out
+
+
 def task_progress(task_runs, items_text):
     """A task's build progress from its runs (newest first) over its own items -> {total, done, blocked, current,
-    latest} or None when no run has worked on it yet. An item counts as done once any run finished it."""
+    latest, states} or None when no run has worked on it yet. An item counts as done once any run finished it;
+    `states` is each item's newest state (queued, running, done, blocked, ...)."""
     if not task_runs:
         return None
     ids = item_ids(items_text)
@@ -122,7 +145,8 @@ def task_progress(task_runs, items_text):
     mine = ids or list(state)
     latest = task_runs[0]
     return {"total": len(mine), "done": sum(1 for i in mine if state.get(i) == "done"),
-            "blocked": [i for i in mine if state.get(i) == "blocked"], "current": latest["current"], "latest": latest}
+            "blocked": [i for i in mine if state.get(i) == "blocked"], "current": latest["current"], "latest": latest,
+            "states": {i: state[i] for i in mine if i in state}}
 
 
 def for_task(db, project_id, number, now):
