@@ -5,6 +5,10 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Central service, Runs and Blockers (UX audit PR 4): **Runs** shows live runs as cards with progress and how long they
+  have run, then a history with outcome chips, reasons in words, durations and the next step for a stopped or silent run.
+  **Blockers** list the question first with how long each has waited; the **answer page** names the task and the waiting
+  runner, offers the options as cards with the recommended one marked and chosen in advance, and folds the context away.
 - Central service, My work and tasks (UX audit PR 3): **My work** shows what waits for you as cards (short plans are
   approved right there), one In progress list (yours first, then the team's, with quiet-runner warnings), recently done
   with `PR #n`, and project chips. The **Tasks** tab has state tabs with counts, "Mine only" and a search; tasks are

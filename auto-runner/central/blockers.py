@@ -12,7 +12,7 @@ import json
 
 from flask import Blueprint, abort, g, redirect, render_template, request, url_for
 
-from . import auth, deliveries, projects
+from . import auth, deliveries, projects, sessions
 from .access import project_access
 from .db import get_db
 
@@ -65,6 +65,18 @@ def _decisions(db, row):
     return [dict(r) for r in rows]
 
 
+def _raised_in(db, row):
+    """The run that raised the blocker (who, which task and branch), from the `raised` event's run id, or None."""
+    try:
+        run_id = json.loads(row["body"]).get("run")
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if not isinstance(run_id, str):
+        return None
+    from . import runs
+    return next((r for r in runs.summarise(runs.project_events(db, g.project["id"]), auth.now()) if r["run"] == run_id), None)
+
+
 def describe(status):
     return _DESCRIBE.get(status, status.replace("_", " ").lower())
 
@@ -75,15 +87,20 @@ def blockers_page(slug):
     rows = get_db().query(_ROW + " ORDER BY b.created_at DESC, b.blocker_id", (g.project["id"],))
     items = [dict(r, describe=describe(r["status"]), waiting=r["status"] in ANSWERABLE) for r in rows]
     items.sort(key=lambda r: not r["waiting"])            # stable: waiting first, newest first within each group
-    return render_template("blockers.html", project=g.project, blockers=items)
+    return render_template("blockers.html", project=g.project, blockers=items, now=sessions.iso(auth.now()))
 
 
 def _detail_page(blocker_id, error=None, status=200, form=None):
     db = get_db()
     row = _row(db, blocker_id)
     content = _content(row)
+    options = _options(content)
+    rec = (content.get("recommendation") or "").strip() if isinstance(content.get("recommendation"), str) else ""
+    for o in options:
+        o["recommended"] = bool(rec) and (o["label"] == rec or rec.lower().startswith(o["label"].lower()))
     page = render_template(
-        "blocker.html", project=g.project, blocker=row, content=content, options=_options(content),
+        "blocker.html", project=g.project, blocker=row, content=content, options=options, run=_raised_in(db, row),
+        recommended=next((o["label"] for o in options if o["recommended"]), None),
         assumptions=_texts(content.get("assumptions")), evidence=_texts(content.get("evidence")),
         decisions=_decisions(db, row), describe=describe(row["status"]),
         can_answer=projects.allows(g.project_role, deliveries.DECIDER_ROLE) and row["status"] in ANSWERABLE,

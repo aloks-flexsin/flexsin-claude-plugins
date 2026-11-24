@@ -297,3 +297,21 @@ details.pop>summary::-webkit-details-marker,details.more>summary::-webkit-detail
   .decision-bar .progress{width:100%}
   .steps li{min-width:auto}
 }
+/* PR 4: runs and blockers */
+.next-step{font-size:13px;margin-top:6px;color:var(--text);background:var(--bad-soft);border-radius:6px;padding:4px 8px;display:inline-block}
+.blocker-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 6px}
+.impact{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--attn-mark);border-radius:8px;padding:10px 14px}
+.answer-form{display:flex;flex-direction:column;align-items:stretch;gap:6px;margin:18px 0}
+.answer-form>label{margin:10px 0 0}
+fieldset.options{border:0;padding:0;margin:0;display:grid;gap:10px}
+fieldset.options legend{font-size:13px;font-weight:600;color:var(--muted);padding:0;margin-bottom:8px}
+label.option-card{display:flex;flex-direction:row;align-items:flex-start;gap:12px;margin:0;padding:14px 16px;background:var(--surface);border:1px solid var(--line);border-radius:12px;cursor:pointer;color:var(--text);font-size:15px;font-weight:400}
+label.option-card:has(input:checked){border-color:var(--brand);box-shadow:0 0 0 1px var(--brand)}
+label.option-card input{margin-top:4px}
+.option-trade{display:block;color:var(--muted);font-size:14px;margin-top:2px}
+.answer-bar{margin-top:10px;background:var(--surface);border-color:var(--line)}
+.answer-bar .muted{flex:1;min-width:220px;font-size:13px}
+details.context>summary{list-style:none}
+details.context[open]>summary{margin-bottom:6px}
+ul.plain{padding-left:18px}
+.action-card .progress{width:100%}

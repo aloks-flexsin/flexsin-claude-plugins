@@ -1,56 +1,78 @@
 {% extends "base.html" %}
-{% from "_project.html" import header, settings_nav with context %}
-{% block title %}{{ blocker.blocker_id }}{% endblock %}
+{% import "_ui.html" as ui %}
+{% from "_project.html" import header with context %}
+{% block title %}{{ blocker.blocker_id }} · {{ project.name }}{% endblock %}
 {% block content %}
-{{ header(project, "blockers") }}
-<h2 class="page-title">{{ blocker.blocker_id }}</h2>
-<p class="lead">Item {{ blocker.task or "?" }} · State: <span class="badge warn">{{ describe }}</span> · Raised {{ blocker.created_at }}</p>
-{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{{ header(project, "blockers", ("Blockers", url_for("blockers.blockers_page", slug=project.slug))) }}
 
-<h2>Question</h2>
-<p>{{ content.question or blocker.question or "The runner sent no question for this blocker (an older runner sends only its id); see QUESTIONS.md in the project." }}</p>
-{% if content.why_needed %}<h3>Why it is needed</h3><p>{{ content.why_needed }}</p>{% endif %}
-{% if content.prevents %}<h3>What it prevents</h3><p>{{ content.prevents }}</p>{% endif %}
-{% if content.impact_if_delayed %}<h3>If the answer is late</h3><p>{{ content.impact_if_delayed }}</p>{% endif %}
-{% if content.impact_if_wrong %}<h3>If the answer is wrong</h3><p>{{ content.impact_if_wrong }}</p>{% endif %}
-{% if options %}
-<h3>Options</h3>
-<ul>
-  {% for o in options %}<li><strong>{{ o.label }}</strong>{% if o.tradeoffs %}: {{ o.tradeoffs }}{% endif %}</li>{% endfor %}
-</ul>
+<div class="task-title">
+  <h2 class="page-title">{{ content.question or blocker.question or "A runner is waiting for an answer" }}</h2>
+</div>
+<p class="blocker-meta">
+  {{ ui.status("blocker", blocker.status) }}
+  <span class="muted">{{ blocker.blocker_id }}{% if blocker.task %} · item <code>{{ blocker.task }}</code>{% endif %}
+  {% if run and run.task %} · <a href="{{ url_for('tasks.task_page', slug=project.slug, number=run.task) }}">task #{{ run.task }}</a>{% endif %}
+  {% if run and run.user %} · {{ run.user }}'s runner{% if run.state == "running" %} is waiting{% endif %}{% endif %}
+  · raised {{ ui.when(blocker.created_at) }}</span>
+</p>
+<p class="muted">State: {{ describe }}.</p>
+{% if not (content.question or blocker.question) %}<p class="muted">The runner sent no question for this blocker (an older runner sends only its id); see QUESTIONS.md in the project.</p>{% endif %}
+{% if content.prevents or content.why_needed %}
+<p class="impact">{% if content.prevents %}<strong>Holding up:</strong> {{ content.prevents }} {% endif %}{% if content.why_needed %}<span class="muted">{{ content.why_needed }}</span>{% endif %}</p>
 {% endif %}
-{% if content.recommendation %}<h3>Recommendation</h3><p>{{ content.recommendation }}</p>{% endif %}
-{% if assumptions %}<h3>Assumptions</h3><ul>{% for a in assumptions %}<li>{{ a }}</li>{% endfor %}</ul>{% endif %}
-{% if evidence %}<h3>Evidence</h3><ul>{% for e in evidence %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 
 {% if can_answer %}
-<h2>Answer</h2>
-<form method="post" action="{{ url_for('blockers.blocker_answer', slug=project.slug, blocker_id=blocker.blocker_id) }}">
+<form method="post" action="{{ url_for('blockers.blocker_answer', slug=project.slug, blocker_id=blocker.blocker_id) }}" class="answer-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   {% if options %}
-  <fieldset>
-    <legend>Option</legend>
+  <fieldset class="options">
+    <legend>Choose an option</legend>
     {% for o in options %}
-    <label><input type="radio" name="option" value="{{ o.label }}"{% if form.option == o.label %} checked{% endif %}> {{ o.label }}</label><br>
+    <label class="option-card{{ ' recommended' if o.recommended }}">
+      <input type="radio" name="option" value="{{ o.label }}"{% if form.option == o.label or (not form.option and o.recommended and not form.text) %} checked{% endif %}>
+      <span><strong>{{ o.label }}</strong>{% if o.recommended %} <span class="chip tone-ok"><span class="mark dot" aria-hidden="true"></span>Recommended</span>{% endif %}
+        {% if o.tradeoffs %}<span class="option-trade">{{ o.tradeoffs }}</span>{% endif %}</span>
+    </label>
     {% endfor %}
   </fieldset>
   {% endif %}
-  <label>Answer or instructions<br><textarea name="text" rows="6" cols="80" maxlength="5000">{{ form.text }}</textarea></label><br>
-  <button type="submit">Send answer</button>
+  <label for="b-text">{{ "Instructions (optional)" if options else "Your answer" }}</label>
+  <textarea id="b-text" name="text" rows="4" maxlength="5000" placeholder="Anything the runner should know when it picks this up.">{{ form.text }}</textarea>
+  <div class="decision-bar answer-bar">
+    <span class="muted">The answer is data for the agent's next iteration, never a command. It reaches the runner the next time it pulls, and cannot be changed afterwards.</span>
+    <button type="submit" class="btn primary">Send answer</button>
+  </div>
 </form>
-<p>The answer is data for the agent's next iteration, never a command. It reaches the runner the next time it pulls.</p>
+{% elif options %}
+<section class="card">
+  <h3>Options</h3>
+  <ul class="plain">{% for o in options %}<li><strong>{{ o.label }}</strong>{% if o.recommended %} <span class="muted">(recommended)</span>{% endif %}{% if o.tradeoffs %}: {{ o.tradeoffs }}{% endif %}</li>{% endfor %}</ul>
+  {% if blocker.status in ("OPEN", "ESCALATED") %}<p class="muted small">An owner, manager or admin answers it.</p>{% endif %}
+</section>
+{% endif %}
+
+{% if content.recommendation and not recommended %}
+<section class="card"><h3>Recommendation</h3><p>{{ content.recommendation }}</p></section>
+{% endif %}
+
+{% if content.impact_if_delayed or content.impact_if_wrong or assumptions or evidence %}
+<details class="card context">
+  <summary><strong>Context</strong> <span class="muted">if it is late, if it is wrong, assumptions, evidence</span></summary>
+  {% if content.impact_if_delayed %}<h3>If the answer is late</h3><p>{{ content.impact_if_delayed }}</p>{% endif %}
+  {% if content.impact_if_wrong %}<h3>If the answer is wrong</h3><p>{{ content.impact_if_wrong }}</p>{% endif %}
+  {% if assumptions %}<h3>Assumptions</h3><ul>{% for a in assumptions %}<li>{{ a }}</li>{% endfor %}</ul>{% endif %}
+  {% if evidence %}<h3>Evidence</h3><ul>{% for e in evidence %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+</details>
 {% endif %}
 
 {% if decisions %}
-<h2>Answers</h2>
-<table>
-  <thead><tr><th>Version</th><th>By</th><th>Option</th><th>Answer</th><th>When</th><th>Delivery</th></tr></thead>
-  <tbody>
+<h3>Answers</h3>
+<ul class="feed">
   {% for d in decisions %}
-    <tr><td>{{ d.version }}</td><td>{{ d.email or "" }}</td><td>{{ d.option_label or "" }}</td><td>{{ d.text or "" }}</td>
-        <td>{{ d.created_at }}</td><td>{{ d.delivery or "" }}</td></tr>
+  <li><span><strong>{{ (d.email or "") | display_name }}</strong>{% if d.option_label %} chose <strong>{{ d.option_label }}</strong>{% endif %}{% if d.text %}: {{ d.text }}{% endif %}
+    {% if d.delivery %}<span class="muted"> · delivery {{ d.delivery | lower | replace("_", " ") }}</span>{% endif %}</span>{{ ui.when(d.created_at) }}</li>
   {% endfor %}
-  </tbody>
-</table>
+</ul>
 {% endif %}
 {% endblock %}

@@ -170,13 +170,20 @@ may not stick over plain http. The API endpoints do not use the cookie.
   when a run has no end and no event for 2 hours), the item in progress, items done and blocked, blockers raised, the last
   independent test result and the pull request (a link only when it is an `https://` address). Only the newest 5000 events
   of a project are read.
+- The page shows live runs as cards (person, task, item in progress, progress bar, last event, running for how long),
+  then the history with outcome chips (`?outcome=stopped|silent|finished`): the reason in words ("tests failing"), how
+  long the run took, and for a stopped or silent run the next step. It reloads every 30 seconds.
 
 ## Blockers
 
-- `/projects/<slug>/blockers` (any member): the project's blockers, the ones waiting for an answer first.
-- `/projects/<slug>/blockers/<blocker_id>` (any member): the question, why it is needed, the options with their
-  trade-offs, the recommendation, assumptions and evidence, as the runner sent them (redacted at ingest), and the
-  answers so far with their delivery state. A blocker raised by a runner older than this version shows only its id.
+- `/projects/<slug>/blockers` (any member): the project's blockers, question first, the ones waiting for an answer on
+  top with how long they have waited.
+- `/projects/<slug>/blockers/<blocker_id>` (any member): the question as the title, the item, the task and whose runner
+  waits (from the run that raised it), what it holds up; for people who answer, the options as cards with their
+  trade-offs and the recommended one marked and chosen in advance, optional instructions and **Send answer**; the
+  context (if late, if wrong, assumptions, evidence) folded under **Context**; and the answers so far as sentences with
+  their delivery state. All of it as the runner sent it (redacted at ingest). A blocker raised by a runner older than
+  this version shows only its id.
 - Owners, managers and admins answer a waiting (OPEN or ESCALATED) blocker with one of its options and/or text. The
   answer is stored as a `decision.v1`, queued as a delivery and audited; the runner picks it up at its next pull, and
   the blocker shows RESUMED once the runner reports that it took the item up again. A blocker cannot be answered twice

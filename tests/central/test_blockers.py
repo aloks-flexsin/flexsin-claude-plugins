@@ -114,7 +114,7 @@ def test_the_detail_page_shows_the_content(w):
     for part in ('The page depends on it.', 'Finishing A1.', 'Matches the brand.', 'Calmer.', 'Repainting later.',
                  'The brand guide is current.'):
         assert part in text
-    assert 'Recommendation' in text
+    assert '<strong>Orange</strong> <span class="muted">(recommended)</span>' in text      # the recommended option is marked
 
 
 @pytest.mark.parametrize('who,form', [('viewer', False), ('developer', False), ('manager', True), ('owner', True),

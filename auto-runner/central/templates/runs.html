@@ -1,42 +1,64 @@
 {% extends "base.html" %}
-{% from "_project.html" import header, settings_nav with context %}
+{% import "_ui.html" as ui %}
+{% from "_project.html" import header with context %}
 {% block title %}{{ project.name }} runs{% endblock %}
+{% block body_attrs %} data-refresh="30"{% endblock %}
+{% macro who(r) -%}
+{{ ui.person(r.user or "unknown", r.user or "Unknown", (r.account ~ " account") if r.account else ("runner before 0.17.0" if not r.user else None)) }}
+{%- endmacro %}
 {% block content %}
 {{ header(project, "runs") }}
-{% if active %}
-<h2>Working now</h2>
-<ul>
-{% for r in active %}
-  <li><strong>{{ r.user or "unknown" }}</strong>{% if r.account %} ({{ r.account }} account){% endif %} on <code title="{{ r.branch or '' }}">{{ r.branch_short or "(branch not sent)" }}</code>{% if r.current %}, item {{ r.current }}{% endif %} ({{ r.done }} done{% if r.blocked %}, {{ r.blocked }} blocked{% endif %})</li>
-{% endfor %}
-</ul>
-{% endif %}
-{% if runs %}
-<table>
-  <thead><tr><th>Who</th><th>Task</th><th>Branch</th><th>State</th><th>Items</th><th>Tests</th><th>Pull request</th><th>Started</th><th>Last event</th></tr></thead>
-  <tbody>
-  {% for r in runs %}
-    <tr>
-      <td><strong>{{ r.user or "unknown" }}</strong>{% if r.account %}<br><span class="muted">{{ r.account }} account</span>{% elif not r.user %}<br><span class="muted">runner before 0.17.0</span>{% endif %}{% if r.signed_in %}<br><span class="muted" title="verified by the service from the personal token">signed in as {{ r.signed_in }}</span>{% endif %}</td>
-      <td>{% if r.task %}<a href="{{ url_for('tasks.task_page', slug=project.slug, number=r.task) }}">#{{ r.task }}</a>{% endif %}</td>
-      <td><code title="{{ r.branch or '' }}">{{ r.branch_short }}</code></td>
-      <td>
-        {% if r.state == "running" %}<span class="badge warn">running{% if r.current %}: {{ r.current }}{% endif %}</span>
-        {% elif r.state == "finished" %}<span class="badge ok">finished</span>
-        {% elif r.state == "stopped" %}<span class="badge warn">stopped: {{ r.reason or "unknown" }}</span>
-        {% else %}<span class="badge off">silent for over {{ stale_hours }} h</span>{% endif %}
-      </td>
-      <td>{{ r.done }} done{% if r.blocked %}, {{ r.blocked }} blocked{% endif %}{% if r.blockers %} ({{ r.blockers }} blocker{{ "s" if r.blockers != 1 }} raised){% endif %}</td>
-      <td>{{ r.tests or "" }}</td>
-      <td>{% if r.pr_url %}<a href="{{ r.pr_url }}" title="{{ r.pr_url }}" rel="noopener noreferrer">{{ r.pr_label }}</a>{% elif r.pushed %}pushed{% if r.publish_error %} ({{ r.publish_error }}){% endif %}{% elif r.publish_error %}{{ r.publish_error }}{% endif %}</td>
-      <td class="nowrap">{{ r.started_at }}</td>
-      <td class="nowrap">{{ r.last_at }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-<p class="muted">Built from the events each runner sends. A run with no end is shown as silent after {{ stale_hours }} hours without an event.</p>
-{% else %}
-<p class="card empty">No runs yet. A run appears here as soon as a runner connected to this project sends its first events.</p>
-{% endif %}
+
+<section class="block">
+  <div class="block-head"><h2>Working now</h2><span class="muted" data-updated>Updated just now</span></div>
+  {% if active %}
+  <div class="cards">
+    {% for r in active %}
+    <div class="action-card">
+      <div class="card-top">{{ who(r) }}{{ ui.status("run", "running", r.current or "") }}</div>
+      <div class="action-title">{% if r.task %}<a href="{{ url_for('tasks.task_page', slug=project.slug, number=r.task) }}">Task #{{ r.task }}</a> · {% endif %}<code title="{{ r.branch or '' }}">{{ r.branch_short or "(branch not sent)" }}</code></div>
+      {{ ui.progress(r.done, r['items'] | length, ("item " ~ r.current) if r.current else "") }}
+      <div class="muted">Last event {{ ui.when(r.last) }} · running for {{ ui_duration(r.started, now) }}{% if r.blocked %} · {{ r.blocked }} blocked{% endif %}{% if r.tests %} · tests {{ r.tests }}{% endif %}{% if r.signed_in %} · <span title="verified by the service from the personal token">signed in as {{ r.signed_in }}</span>{% endif %}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  {{ ui.empty("No runner is working on this project right now.") }}
+  {% endif %}
+</section>
+
+<section class="block">
+  <div class="block-head"><h2>History</h2></div>
+  {% if runs %}
+  <nav class="filter-chips" aria-label="Outcome">
+    <a href="{{ url_for('runs.runs_page', slug=project.slug) }}"{% if not outcome %} aria-current="page"{% endif %}>All</a>
+    {% for key, label in outcomes %}{% if key != "running" %}<a href="{{ url_for('runs.runs_page', slug=project.slug, outcome=key) }}"{% if outcome == key %} aria-current="page"{% endif %}>{{ label }} {{ counts[key] }}</a>{% endif %}{% endfor %}
+  </nav>
+  {% if history %}
+  <div class="list">
+    {% for r in history %}
+    <div class="list-row">
+      {{ who(r) }}
+      <div class="grow">
+        <div>{% if r.task %}<a href="{{ url_for('tasks.task_page', slug=project.slug, number=r.task) }}">#{{ r.task }}</a> {% endif %}<code title="{{ r.branch or '' }}">{{ r.branch_short or "(branch not sent)" }}</code>
+          {{ ui.status("run", r.state) }}{% if r.state == "stopped" %} <span class="muted">{{ r.reason | reason_text }}</span>{% endif %}</div>
+        <div class="row-sub muted">{{ r.done }} done{% if r.blocked %}, {{ r.blocked }} blocked{% endif %}{% if r.blockers %} · {{ r.blockers }} blocker{{ "s" if r.blockers != 1 }} raised{% endif %}{% if r.tests %} · tests {{ r.tests }}{% endif %}
+          {% if r.ended %} · took {{ ui_duration(r.started, r.ended) }}{% endif %}
+          {% if r.pr_url %} · <a href="{{ r.pr_url }}" title="{{ r.pr_url }}" rel="noopener noreferrer">PR {{ r.pr_label }}</a>{% elif r.pushed %} · pushed{% if r.publish_error %} ({{ r.publish_error }}){% endif %}{% elif r.publish_error %} · {{ r.publish_error }}{% endif %}
+          {% if r.signed_in %} · <span title="verified by the service from the personal token">signed in as {{ r.signed_in }}</span>{% endif %}</div>
+        {% if r.state == "stopped" and r.reason | next_step %}<div class="next-step">Next: {{ r.reason | next_step }}</div>
+        {% elif r.state == "silent" %}<div class="next-step">No event for over {{ stale_hours }} hours: the runner stopped without saying so. Start it again; it resumes where it was.</div>{% endif %}
+      </div>
+      <span class="muted nowrap">{{ ui.when(r.started) }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  {{ ui.empty("No run here with that outcome.") }}
+  {% endif %}
+  <p class="muted small">Built from the events each runner sends. A run with no end shows as silent after {{ stale_hours }} hours without an event.</p>
+  {% else %}
+  {{ ui.empty("No runs yet. A run appears here as soon as a runner connected to this project sends its first events.") }}
+  {% endif %}
+</section>
 {% endblock %}

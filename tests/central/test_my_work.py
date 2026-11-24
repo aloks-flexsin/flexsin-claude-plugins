@@ -60,7 +60,7 @@ def test_the_task_page_shows_the_build_live(app, team, clock):
     page = team['clients']['viewer'].get('/projects/alpha/tasks/%d' % n).get_data(as_text=True)
     assert '1 of 2 items' in page and 'on E2' in page and 'last tests: pass' in page
     runs_page = team['clients']['viewer'].get('/projects/alpha/runs').get_data(as_text=True)
-    assert 'href="/projects/alpha/tasks/%d">#%d</a>' % (n, n) in runs_page
+    assert 'href="/projects/alpha/tasks/%d">Task #%d</a>' % (n, n) in runs_page        # the live card links its task
 
 
 def test_my_work_for_the_assignee_a_manager_and_a_viewer(app, team, conn, clock):
