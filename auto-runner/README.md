@@ -89,6 +89,12 @@ skips duplicates); creates `.claude/auto.json`, `.auto/queue.md` and `.gitignore
 with `--with-rules` writes a short `AUTO_RULES.md` when there is no `CLAUDE.md`. Idempotent. `--remove` previews, and with `--apply` removes only what init added.
 It also writes the `central` section (next section) or, with `--local`, none. When a gitignored `.env` exists it proposes
 `"env_files": [".env"]`; `--allow-env-read` writes `"safety": {"allow_env_read": true}` into a new auto.json and leaves out the `.env` read rules.
+When the central service is enabled (a new or an existing `central` section), init also appends a short "Work goes through the
+auto-runner" section to `CLAUDE.md` (or to `AUTO_RULES.md` when there is no `CLAUDE.md`, including the one `--with-rules` creates)
+telling interactive sessions to plan with `/auto-runner:auto` and send the plan with `autotasks.py propose`. It sits between
+`<!-- auto-runner:routing:start -->` and `<!-- auto-runner:routing:end -->` markers, is shown in the preview, recorded in the
+manifest (`routing_rule`, with the exact text added), and `--remove` takes out exactly that text, leaving the rest of the file
+byte-for-byte as it was (an edited section is kept and reported).
 
 ## Central-first setup (tested with the real central app through Flask's test client; never against the live service)
 The central service is the starting point for a project: an admin creates it there with its repository URL, and init connects

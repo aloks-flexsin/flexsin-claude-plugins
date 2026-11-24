@@ -48,7 +48,7 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Acceptance:* new test `tests/auto_runner/test_decision_0009.py` asserts the file exists and contains each of the six quoted answers; `python -m pytest -q` passes.
   *Slice:* 1 Prompt routing reminder
   *Kind:* internal
-- [ ] **H2 Init writes the routing rule.** In `auto_init.py`, add a short "Work goes through the auto-runner" section to `CLAUDE.md` (or `AUTO_RULES.md` when there is none) for projects with `central.enabled`; the rule names `autotasks.py propose`. Show it in the preview, record it in the manifest, take it out with `--remove`. Existing CLAUDE.md content must stay byte-for-byte outside the section.
+- [x] **H2 Init writes the routing rule.** In `auto_init.py`, add a short "Work goes through the auto-runner" section to `CLAUDE.md` (or `AUTO_RULES.md` when there is none) for projects with `central.enabled`; the rule names `autotasks.py propose`. Show it in the preview, record it in the manifest, take it out with `--remove`. Existing CLAUDE.md content must stay byte-for-byte outside the section.
   *Acceptance:* new tests in `tests/auto_runner/test_init_rule.py` (preview, apply, idempotent, remove, untouched content) pass.
   *Slice:* 1 Prompt routing reminder
   *Kind:* feature

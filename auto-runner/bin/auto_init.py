@@ -23,6 +23,9 @@ What it does, and only this:
     service (`GET /api/v1/project`) and refuses, writing nothing, unless the token is that project's and this folder's
     `origin` remote is the project's repository (https and ssh forms compare equal). An existing `central` section is never
     changed; when it is enabled, the same check runs. Without those options and without --local, init refuses.
+  * With the central service enabled (new or existing section): appends a short "Work goes through the auto-runner"
+    section (between `<!-- auto-runner:routing:start/end -->` markers, naming `autotasks.py propose`) to CLAUDE.md, or to
+    AUTO_RULES.md when there is no CLAUDE.md (into the one --with-rules creates). The rest of the file stays byte-for-byte.
   * `.auto/queue.md`: created only if absent. `.gitignore`: appends missing lines.
   * Reports an existing project `auto` command or auto_run scripts; never touches them.
   * Says when AUTO_RUNNER_USER or AUTO_RUNNER_ACCOUNT (who runs it and with which Claude account; run branches are
@@ -72,6 +75,45 @@ RULES_TEMPLATE = """# Rules for unattended runs
 - Never loosen or skip a test to get green. If blocked, write the question in the item's status line and stop.
 - Use synthetic data only. Do not invent facts, results or figures.
 """
+ROUTING_START = '<!-- auto-runner:routing:start -->'
+ROUTING_END = '<!-- auto-runner:routing:end -->'
+ROUTING_SECTION = ROUTING_START + """
+## Work goes through the auto-runner
+
+This project is connected to the auto-runner's central service. Do not build a new request in this checkout: plan it
+with `/auto-runner:auto`, then send the plan for approval with `autotasks.py propose`:
+`python "${CLAUDE_PLUGIN_ROOT}/bin/autotasks.py" propose --title "<title>" --plan <plan file> --items <items file>`.
+The runner builds it in its own worktree once a person approves it on the page.
+""" + ROUTING_END + '\n'
+
+
+def _read_exact(path):
+    """The file's text with its line endings as they are (no newline translation)."""
+    return path.read_bytes().decode('utf-8')
+
+
+def _routing_append(text):
+    """-> the exact text to append to `text` so the routing section follows it on its own lines."""
+    sep = '' if not text else ('\n' if text.endswith('\n') else '\n\n')
+    return sep + ROUTING_SECTION
+
+
+def routing_plan(project, central_enabled):
+    """-> (rel, how) for the routing rule, or (None, note). `how` is 'append' (to an existing file) or 'with-rules'
+    (goes into the AUTO_RULES.md that --with-rules creates). Only for projects with central enabled."""
+    if not central_enabled:
+        return None, None
+    for rel in ('CLAUDE.md', 'AUTO_RULES.md'):
+        path = project / rel
+        if path.exists():
+            try:
+                text = _read_exact(path)
+            except (OSError, UnicodeDecodeError):
+                return None, f'{rel} could not be read as UTF-8, so the auto-runner routing rule was not added to it.'
+            if ROUTING_START in text:
+                return None, f'{rel} already has the auto-runner routing rule.'
+            return rel, 'append'
+    return 'AUTO_RULES.md', 'with-rules'
 
 
 def detect_test_command(project):
@@ -288,6 +330,13 @@ def make_plan(project, central=None, env=None, send=None, allow_env_read=False):
         central_plan(project, central, env, send) if not problems else (None, [], [], []))
     if central_add is not None and new_cfg is not None:
         new_cfg['central'] = central_add
+    existing_central = _raw_config(project).get('central')
+    central_on = not problems and not central_problems and (central_add is not None or (
+        isinstance(existing_central, dict) and existing_central.get('enabled') is True))
+    routing_file, routing_how = routing_plan(project, central_on)
+    if routing_file is None and routing_how:
+        notes.append(routing_how)
+        routing_how = None
 
     found = []
     if (project / '.claude' / 'commands' / 'auto.md').exists():
@@ -298,7 +347,8 @@ def make_plan(project, central=None, env=None, send=None, allow_env_read=False):
             'test_cmd': cmd, 'rules_file': rules_file, 'queue_path': queue_path if not queue_path.exists() else None,
             'gitignore_add': gi_add, 'existing': found, 'notes': notes, 'problems': problems,
             'central_add': central_add if new_cfg is None else None, 'central_notes': central_notes,
-            'central_problems': central_problems, 'central_steps': central_steps}
+            'central_problems': central_problems, 'central_steps': central_steps,
+            'routing_file': routing_file, 'routing_how': routing_how}
 
 
 def describe(plan):
@@ -322,6 +372,12 @@ def describe(plan):
         lines.append('.claude/auto.json: unchanged')
     lines.append('queue: ' + (f'create {plan["queue_path"].relative_to(plan["project"]).as_posix()}' if plan['queue_path'] else 'exists'))
     lines.append('.gitignore: ' + (('add ' + ', '.join(plan['gitignore_add'])) if plan['gitignore_add'] else 'nothing to add'))
+    if plan.get('routing_how') == 'append':
+        lines.append(f'{plan["routing_file"]}: add the section "Work goes through the auto-runner" at the end (names '
+                     '`autotasks.py propose`; the rest of the file is left as it is)')
+    elif plan.get('routing_how') == 'with-rules':
+        lines.append('AUTO_RULES.md: with --with-rules, includes the section "Work goes through the auto-runner" (names '
+                     '`autotasks.py propose`); without it no routing rule is written (there is no CLAUDE.md)')
     for f in plan['existing']:
         lines.append(f'Found, left untouched: {f}')
     lines += plan['notes'] + plan['central_notes']
@@ -366,10 +422,20 @@ def apply(plan, with_rules=False):
         changed.append(f'created {path.relative_to(project).as_posix()}')
 
     cfg_data = plan['new_cfg']
+    how = plan.get('routing_how')
     if with_rules and plan['rules_file']:
-        create(plan['rules_file'], RULES_TEMPLATE)
+        text = RULES_TEMPLATE + (_routing_append(RULES_TEMPLATE) if how == 'with-rules' else '')
+        create(plan['rules_file'], text)  # recorded as a whole file: --remove deletes it (and the rule) when unedited
         if cfg_data is not None:
             cfg_data['rules_files'] = ['AUTO_RULES.md']
+    if how == 'append':
+        path = project / plan['routing_file']
+        text = _read_exact(path)
+        if ROUTING_START not in text:
+            added = _routing_append(text)
+            path.write_bytes((text + added).encode('utf-8'))
+            man['routing_rule'] = {'file': plan['routing_file'], 'added': added}
+            changed.append(f'{plan["routing_file"]}: added the auto-runner routing rule')
     if cfg_data is not None:
         create(project / autocfg.CONFIG_PATH, json.dumps(cfg_data, indent=2) + '\n')
     if plan['central_add'] is not None:
@@ -410,6 +476,17 @@ def remove_plan(project):
     added = man.get('auto_json_central')
     if added is not None and _raw_config(project).get('central') == added:
         actions.append(('central', '"central" in .claude/auto.json'))
+    rule = man.get('routing_rule')
+    if isinstance(rule, dict) and rule.get('file') and rule.get('added'):
+        path = project / rule['file']
+        try:
+            text = _read_exact(path) if path.exists() else ''
+        except (OSError, UnicodeDecodeError):
+            text = ''
+        if rule['added'] in text:
+            actions.append(('routing', rule['file']))
+        elif ROUTING_START in text:
+            actions.append(('keep', f'the routing rule in {rule["file"]}'))
     for rel, sha in man.get('files', {}).items():
         path = project / rel
         if not path.exists():
@@ -447,6 +524,13 @@ def remove(project):
         _write(path, json.dumps(data, indent=2) + '\n')
         done.append('removed "central" from .claude/auto.json')
     for kind, rel in actions:
+        if kind == 'routing':
+            path = project / rel
+            text, added = _read_exact(path), man['routing_rule']['added']
+            i = text.rfind(added)
+            path.write_bytes((text[:i] + text[i + len(added):]).encode('utf-8'))
+            done.append(f'removed the auto-runner routing rule from {rel}')
+    for kind, rel in actions:
         if kind == 'file':
             (project / rel).unlink()
             done.append(f'removed {rel}')
@@ -483,6 +567,7 @@ def main(argv=None):
             return 0
         for kind, detail in actions:
             print({'rule': 'remove deny rule', 'file': 'remove file', 'ignore': 'remove .gitignore line',
+                   'routing': 'remove the auto-runner routing rule from', 'central': 'remove',
                    'keep': 'KEEP (edited since init)'}[kind] + f': {detail}')
         if a.apply:
             for line in remove(project):
