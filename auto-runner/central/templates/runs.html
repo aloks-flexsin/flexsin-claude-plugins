@@ -10,6 +10,7 @@
 {%- else -%}
 {{ ui.person(r.user or "unknown", r.user or "Unknown", (r.account ~ " account") if r.account else ("runner before 0.17.0" if not r.user else None)) }}
 {%- endif %}
+{%- if r.account_check == "mismatch" %} <span class="chip tone-attention" title="The Claude CLI's signed-in account is not the one this runner was set up for (reported by the runner, unverified)">Claude account not confirmed</span>{% endif %}
 {%- endmacro %}
 {% block content %}
 {{ header(project, "runs") }}

@@ -78,7 +78,13 @@ one unused for 90 days stops working (sign in again).
 The **person** is verified: your personal token says whose account the runner works for. The **username and Claude account**
 are only what the runner reports (from `AUTO_RUNNER_USER` and `AUTO_RUNNER_ACCOUNT`), so treat them as unverified. They arrive
 with sign-in, with run starts and with task claims (a runner named `alok/bhawish-claude-auto-runner`), and show on **Account**,
-**Members**, **Runs** and the task page.
+**Members**, **Runs** and the task page. Each identity also has a surface (`auto-runner`, `cli`, `desktop` or `browser`;
+runners report `auto-runner`).
+
+A run whose Claude CLI was signed in to a different account than `AUTO_RUNNER_ACCOUNT_EMAIL` names shows **Claude account
+not confirmed** next to its Claude account on **Runs**. It only means the runner's own check said `mismatch` (it compares
+emails on the runner's machine and sends neither); a match, an unset variable, an unreadable sign-in or an older runner
+shows nothing. This is the runner's report and is unverified; the run is not stopped.
 
 ## Following progress: My work
 **My work** (first link in the top bar) is the one page to check. Across all your projects (all projects for an admin;

@@ -281,6 +281,10 @@ stored only as SHA-256 (table `device_login`), and a request gives a token once.
 (`identities.NAME`) and is shown on `/device` and on **My tokens** ("not reported" when absent). When the token is
 delivered, the pair is also recorded as a Claude identity of the approving account (shown under "Your Claude accounts").
 
+`runs.summarise()` also reads `account_check` from `run_start` (only `match`, `mismatch`, `not_set` or `unknown`; anything
+else, or a missing field from an older runner, is ignored). The Runs page shows "Claude account not confirmed" beside the
+Claude account for `mismatch` only (the runner's own report, unverified).
+
 **Who is identified how.** The person is verified: the personal token says whose account it is. The username and Claude
 account are only what the runner reports (unverified). A task call (`next`, `record`, or `plan` with a `runner` field) made
 with a personal token whose `runner` is `<user>/<account>-claude-auto-runner` (`identities.split_runner`, also used by

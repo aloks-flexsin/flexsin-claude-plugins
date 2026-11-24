@@ -56,6 +56,21 @@ def test_account_and_runs_show_the_reported_pairs(world, conn, clock):
     assert 'alok · Claude account alok-pers' in page
 
 
+def test_runs_marks_only_a_mismatched_account_check(world, conn, clock):
+    clock.now = NOW
+    raw = _alok(world, conn)
+    sent = []
+    for n, check in enumerate(('mismatch', 'match', None, 'bogus', ['x'])):
+        extra = {} if check is None else {'account_check': check}
+        sent.append(ev('r%d' % n, 'run_start', '2026-11-23T10:0%d:00+00:00' % n, user='alok', account='acc%d' % n,
+                       branch='b%d' % n, **extra))
+    assert _post(world['app'], raw, sent, '?project=alpha').status_code == 200
+    page = signed_in(world['app'], 'alok@example.com').get('/projects/alpha/runs').get_data(as_text=True)
+    assert page.count('Claude account not confirmed') == 1     # only the mismatched run
+    by_run = {r['run']: r['account_check'] for r in runs.summarise(sent, NOW)}
+    assert by_run == {'r0': 'mismatch', 'r1': 'match', 'r2': None, 'r3': None, 'r4': None}
+
+
 def test_a_project_token_run_keeps_the_old_who_text(world, conn, clock):
     clock.now = NOW
     sent = [ev('r1', 'run_start', '2026-11-23T10:00:00+00:00', user='ravi', account='bhawish', branch='b1'),
