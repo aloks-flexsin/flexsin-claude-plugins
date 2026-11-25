@@ -49,6 +49,11 @@ Listed in `.env.example`; no value is ever kept in the repo.
 | `CENTRAL_VAPID_PUBLIC_KEY` | VAPID public key for browser push (shown to the page). Optional: push is off unless all three VAPID settings are set. |
 | `CENTRAL_VAPID_PRIVATE_KEY` | VAPID private key that signs pushes; never shown on a page. |
 | `CENTRAL_VAPID_SUBJECT` | Contact for push services, `mailto:...` or an `https://` address. |
+| `CENTRAL_REFLECTION_PROJECT` | Slug of the project that gets tasks drafted from runner frictions (usually the auto-runner project). Unset: drafting is off (see Runner frictions). |
+| `CENTRAL_REFLECTION_ASSIGNEE` | E-mail of the account drafted tasks go to, when it is an enabled developer or above in that project; otherwise the project's first owner. |
+| `CENTRAL_REFLECTION_MIN_COUNT` | Occurrences in 30 days that draft a task (default 3). |
+| `CENTRAL_REFLECTION_MIN_PROJECTS` | Projects in 30 days that draft a task (default 2). |
+| `CENTRAL_REFLECTION_DAILY` | At most this many drafts a UTC day (default 3). A missing or unusable number takes the default. |
 
 ## Local run and tests
 
@@ -433,6 +438,20 @@ Delivery words for real pushes are **unverified** until push is tried live.
     (`signature`, `reason_was`).
   - Both need CSRF and confirm (a dialog with JavaScript, the confirm page without, `confirm=1`); an unknown signature
     is 404; a refused change (no reason, already muted, not muted) is 400 and audited as `<action>.refused`.
+  - The page says whether drafting is on (with its thresholds), or "Drafting is off: set CENTRAL_REFLECTION_PROJECT".
+- **Drafting** (`frictions.draft_due`, after ingest stores friction events and after a plan is sent back, once their own
+  changes are committed; a failure there is logged and never fails the push or the decision): when
+  `CENTRAL_REFLECTION_PROJECT` names a project, each `watching` or `fixed` signature with at least
+  `CENTRAL_REFLECTION_MIN_COUNT` occurrences or `CENTRAL_REFLECTION_MIN_PROJECTS` projects in the last 30 UTC days
+  (summed from `friction_day`; when `changed_at` is set by an unmute or a fix, only days after its UTC date count) gets
+  an open task there, at most `CENTRAL_REFLECTION_DAILY` a UTC day (counted from `friction.draft` audit rows):
+  - title "Runner friction: <signature>"; the description has the count, the number of projects (no project names),
+    first and last seen, and where to look for that kind (a fixed map, `frictions.CODE_AREAS`);
+  - assignee `CENTRAL_REFLECTION_ASSIGNEE` when that account is an enabled developer or above there, else the owner
+    member with the earliest `created_at` (ties by account id); `created_by` is that same account, as no person acts;
+  - the assignee gets an `assigned` notification; the signature becomes `drafted` with `task_project_id`/`task_number`;
+    audited `friction.draft` (`signature`, `task`, `count`, `projects`, `"via": "reflection"`).
+  A `drafted` or `muted` signature is never drafted again. Unverified on the live service.
 
 ## API
 

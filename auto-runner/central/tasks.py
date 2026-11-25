@@ -250,6 +250,8 @@ def decide(db, project, row, account, decision, comment, moment):
                              notifications.task_key(project, row["number"], "changes"), moment)
         frictions.record(db, project, "plan_changes", "", at)      # a plan sent back is a friction (record 0011)
     db.commit()
+    if status == "changes_requested":
+        frictions.draft_safely(db, moment)
     return get(db, project["id"], row["number"])
 
 

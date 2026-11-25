@@ -8,6 +8,11 @@
     <a href="{{ url_for('admin.accounts_page') }}">Back to Accounts</a></p></div>
 </div>
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+{% if drafting.project %}
+<p class="muted">Drafting is on: a signature seen {{ drafting.min_count }} times or in {{ drafting.min_projects }} projects in 30 days gets a task in <strong>{{ drafting.project }}</strong>, at most {{ drafting.daily }} a day.</p>
+{% else %}
+<p class="muted">Drafting is off: set CENTRAL_REFLECTION_PROJECT</p>
+{% endif %}
 
 <nav class="filter-chips" aria-label="Kind">
   <a href="{{ url_for('frictions.frictions_page', state=state or None) }}"{% if not kind %} aria-current="page"{% endif %}>Every kind</a>

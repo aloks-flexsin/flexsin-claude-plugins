@@ -13,10 +13,21 @@
   (`POST /frictions/mute` and `/frictions/unmute`, the signature in the form; CSRF in auth.py; audited `friction.mute`
   and `friction.unmute`). Unmute sets `watching`, clears the reason and sets `changed_at`, so, as after a fix, only
   occurrences after it count toward drafting (R8).
+- `draft_due(db, now)` runs after ingest stores friction events and after a plan is sent back. When
+  CENTRAL_REFLECTION_PROJECT names a project, each `watching` or `fixed` signature with at least
+  CENTRAL_REFLECTION_MIN_COUNT occurrences or CENTRAL_REFLECTION_MIN_PROJECTS projects in the last 30 UTC days
+  (`friction_day`; after an unmute or a fix only days after its UTC date) gets an open task there, at most
+  CENTRAL_REFLECTION_DAILY a UTC day. The task goes to CENTRAL_REFLECTION_ASSIGNEE when that account is an enabled member
+  who can run runners, else to the project's first owner, who is also `by` (no person acts: the audit row
+  `friction.draft` says `"via": "reflection"`) and gets an `assigned` notification. The signature becomes `drafted`
+  with the task linked.
 """
-from flask import Blueprint, abort, g, redirect, render_template, request, url_for
+import datetime
+import logging
 
-from . import audit, auth, ingest, sessions, ui
+from flask import Blueprint, abort, current_app, g, redirect, render_template, request, url_for
+
+from . import audit, auth, config, ingest, projects, sessions, ui
 from .admin import _require_admin
 from .db import get_db
 
@@ -66,6 +77,128 @@ def record(db, project, kind, subject, at):
         db.execute("INSERT INTO friction_signature (signature, kind, subject, state) VALUES (?, ?, ?, 'watching')",
                    (sig, kind, subject or ""))
     return sig
+
+
+# ---------- drafting a task when a signature keeps coming back (R8) ----------
+
+WINDOW_DAYS = 30
+DRAFTABLE = ("watching", "fixed")
+
+# Where to look first for each kind; written into the drafted task (a fixed map: no project content).
+CODE_AREAS = {
+    "permission_denied": "the `.claude/settings.json` allow list and `auto-runner/bin/autohook.py`",
+    "gate_stop": "the gates in `auto-runner/bin/auto_run.py` (docs: `autodocs.py`, browser: `autobrowser.py`,"
+                 " journey: `autojourney.py`, stale: `autostale.py`)",
+    "fix_round": "the suite and journey fix rounds in `auto-runner/bin/auto_run.py`",
+    "retry": "early-exit retries in `auto-runner/bin/auto_run.py`",
+    "usage_stop": "usage, budget and threshold stops in `auto-runner/bin/auto_run.py`",
+    "refused_start": "the start checks in `auto-runner/bin/autosafe.py` (`preflight_groups`) and"
+                     " `auto-runner/bin/autoupdate.py`",
+    "central_error": "the central calls in `auto-runner/bin/autotasks.py` and `auto-runner/bin/autodeliver.py`,"
+                     " and the matching route in `auto-runner/central/`",
+    "plan_changes": "the planner prompt and principles in `auto-runner/bin/autoplan.py`",
+}
+
+
+def window_counts(db, sig, since_day, changed_at=None):
+    """-> (occurrences, number of projects) of `sig` on days from `since_day` on; with `changed_at` (an unmute or a
+    fix) only days after its UTC date count, so the change day itself is left out."""
+    floor = since_day
+    if changed_at and changed_at[:10] >= floor:
+        floor = (datetime.date.fromisoformat(changed_at[:10]) + datetime.timedelta(days=1)).isoformat()
+    rows = db.query("SELECT project_id, count FROM friction_day WHERE signature = ? AND day >= ?", (sig, floor))
+    return sum(r["count"] for r in rows), len({r["project_id"] for r in rows if r["count"]})
+
+
+def _drafts_on(db, day):
+    return db.query_one("SELECT COUNT(*) AS n FROM audit WHERE action = 'friction.draft' AND at LIKE ?",
+                        (day + "%",))["n"]
+
+
+def _assignee(db, project, email):
+    """The configured account when it is an enabled member who can run runners, else the project's first owner."""
+    from . import accounts
+    if email:
+        account = accounts.find_by_email(db, email)
+        if account and accounts.is_enabled(account) and projects.allows(
+                projects.member_role(db, project["id"], account["id"]), "developer"):
+            return account
+    row = db.query_one("SELECT account_id FROM member WHERE project_id = ? AND role = 'owner'"
+                       " ORDER BY created_at, account_id LIMIT 1", (project["id"],))
+    return accounts.get(db, row["account_id"]) if row else None
+
+
+def _description(row, total, nprojects, settings):
+    seen = row.get("_seen") or {}
+    return "\n".join([
+        "The runner keeps hitting the friction `%s` (decision record 0011)." % row["signature"],
+        "",
+        "- Kind: %s; subject: %s" % (row["kind"], row["subject"] or "(none)"),
+        "- In the last %d days: %d time%s in %d project%s (thresholds: %d times or %d projects)"
+        % (WINDOW_DAYS, total, "" if total == 1 else "s", nprojects, "" if nprojects == 1 else "s",
+           settings["min_count"], settings["min_projects"]),
+        "- First seen: %s; last seen: %s" % (seen.get("first") or "unknown", seen.get("last") or "unknown"),
+        "- Where to look: %s" % CODE_AREAS.get(row["kind"], "the auto-runner plugin"),
+        "",
+        "Drafted by the reflection layer, not by a person. Reject the task to mute this signature.",
+    ])
+
+
+def draft_due(db, now, cfg=None):
+    """Draft an open task in CENTRAL_REFLECTION_PROJECT for each signature over the threshold; -> the signatures
+    drafted. Called after ingest and after a plan is sent back, once their own changes are committed; commits."""
+    from . import notifications, tasks                     # both import this module
+    settings = config.reflection(current_app.config if cfg is None else cfg)
+    if not settings["project"]:
+        return []
+    project = projects.get_by_slug(db, settings["project"])
+    if project is None:
+        return []
+    today = now.astimezone(datetime.timezone.utc).date()
+    since = (today - datetime.timedelta(days=WINDOW_DAYS - 1)).isoformat()
+    room = settings["daily"] - _drafts_on(db, today.isoformat())
+    drafted = []
+    for row in db.query("SELECT * FROM friction_signature WHERE state IN (?, ?) ORDER BY signature",
+                        DRAFTABLE):
+        if room <= 0:
+            break
+        total, nprojects = window_counts(db, row["signature"], since, row["changed_at"])
+        if total < settings["min_count"] and nprojects < settings["min_projects"]:
+            continue
+        assignee = _assignee(db, project, settings["assignee"])
+        if assignee is None:
+            return drafted
+        seen = db.query_one("SELECT MIN(first_seen) AS first, MAX(last_seen) AS last FROM friction_count"
+                            " WHERE signature = ?", (row["signature"],))
+        text = _description(dict(row, _seen=dict(seen) if seen else {}), total, nprojects, settings)
+        try:
+            task = tasks.create(db, project, assignee, assignee, "Runner friction: %s" % row["signature"], text, now)
+        except tasks.TaskError:
+            return drafted                                 # the assignee cannot run runners there; nothing to draft
+        at = sessions.iso(now)
+        db.execute("UPDATE friction_signature SET state = 'drafted', task_project_id = ?, task_number = ?,"
+                   " changed_by = ?, changed_at = ? WHERE signature = ?",
+                   (project["id"], task["number"], assignee["id"], at, row["signature"]))
+        notifications.notify(db, [assignee["id"]], project, "assigned", notifications.task_text("assigned", task),
+                             notifications.task_link(project, task["number"]),
+                             notifications.task_key(project, task["number"], "assigned"), now)
+        audit.record(db, "friction.draft", at, account_id=assignee["id"], project_id=project["id"],
+                     detail={"signature": row["signature"], "task": task["number"], "count": total,
+                             "projects": nprojects, "via": "reflection"})
+        db.commit()
+        drafted.append(row["signature"])
+        room -= 1
+    return drafted
+
+
+def draft_safely(db, now, cfg=None):
+    """draft_due for callers whose own work is already committed: a failure is logged and rolled back, never raised."""
+    try:
+        return draft_due(db, now, cfg)
+    except Exception:                                      # noqa: BLE001 - the push or decision already succeeded
+        db.rollback()
+        logging.getLogger(__name__).exception("drafting a friction task failed")
+        return []
 
 
 def set_sharing(db, project_id, share):
@@ -141,7 +274,8 @@ def _page(error=None, status=200):
     state = (request.args.get("state") or "").strip()[:16]
     rows = overview(db, kind or None, state or None)
     return render_template("frictions.html", rows=rows, kinds=ingest.FRICTION_KINDS, states=STATES, kind=kind,
-                           state=state, error=error, max_reason=MAX_REASON), status
+                           state=state, error=error, max_reason=MAX_REASON,
+                           drafting=config.reflection(current_app.config)), status
 
 
 def _target(db):

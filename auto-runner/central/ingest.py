@@ -321,4 +321,6 @@ def post_events():
         response = jsonify(error=e.message, **e.extra)
         response.status_code = e.status
         return response
+    if any(e.get("type") == "friction" and e.get("id") in accepted for e in events):
+        frictions.draft_safely(get_db(), moment)           # the events are stored; drafting never fails the push
     return jsonify(accepted=len(accepted), duplicates=len(duplicates), ids=accepted, duplicate_ids=duplicates)
