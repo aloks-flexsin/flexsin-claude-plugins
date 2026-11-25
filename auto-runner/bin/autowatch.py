@@ -77,6 +77,7 @@ STOP_FILE = Path('.auto') / 'STOP'
 LOCK_FILE = Path('.auto') / 'run' / 'watch.lock'
 SPEND_DIR = Path('.auto') / 'run'
 WAIT_SLICE = 5          # seconds: how often a wait looks for the STOP file
+IDLE_BEAT = 30          # seconds: how often the idle wait beats, so a `wake` (or pause, stop) is seen within this long
 WAITING_DETAIL = 'waits for an earlier branch to be merged'
 
 
@@ -166,7 +167,7 @@ def beat(project, state, task=None, spend=0.0, env=None, send=None):
     reply = autotasks._call(t, 'POST', '/api/v1/runners/beat', {'label': autotasks.runner_label(env), 'state': state,
                                                                  'task': task, 'spend_usd': round(spend, 4)})
     control = reply.get('control')
-    return control if control in ('pause', 'stop') else None
+    return control if control in ('pause', 'stop', 'wake') else None
 
 
 def _default_build(project, slug, claude, env, send):
@@ -344,6 +345,7 @@ def watch(project, claude=None, env=None, send=None, build=None, clock=time.time
 
 def _loop(project, stop, poll, daily, runner, claude, env, send, build, clock, sleep, out, max_steps):
     last, steps, paused, over_budget, beat_problem = None, 0, False, False, None
+    pending = None          # a control the idle wait's beat received; the next turn of the loop obeys it
 
     def say(text):
         print(f'[watch] {text}', file=out or sys.stdout, flush=True)
@@ -389,7 +391,9 @@ def _loop(project, stop, poll, daily, runner, claude, env, send, build, clock, s
             wait(min(until - clock(), poll))          # beat again each poll so the pages do not show it silent
             continue
         over_budget = False
-        control = report('paused' if paused else 'watching')
+        control, pending = pending or report('paused' if paused else 'watching'), None
+        if control == 'wake':
+            say('woken from the service: polling now')
         if control == 'stop':
             return stopped('stopped from the service.')
         if control == 'pause':
@@ -411,7 +415,11 @@ def _loop(project, stop, poll, daily, runner, claude, env, send, build, clock, s
             result = {'task': None, 'action': 'claim', 'ok': False, 'detail': f'could not claim a task: {e}'}
         if result is None:
             heartbeat(project, 'idle', clock(), last)
-            wait(poll)
+            end = clock() + poll
+            while not stop.exists() and clock() < end and not pending:       # beat now and then: a wake ends the wait
+                wait(min(IDLE_BEAT, end - clock()))
+                if not stop.exists() and clock() < end:
+                    pending = report('watching')
             continue
         last = {**result, 'at': _iso(clock())}
         what = f'task {result["task"]} ({result["action"]})' if result['task'] else result['action']

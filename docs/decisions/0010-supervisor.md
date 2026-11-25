@@ -1,8 +1,8 @@
 # 0010: A Supervisor that carries work from assignment to UAT
 
 Status: proposed (2026-11-24). Builds on 0007 (central tasks and claims) and **0009 (hands-free work: the watch loop,
-the headless planner, runner presence with Pause, Resume and Stop)**, which is accepted and built. Nothing in this
-record is built yet. It amends one decision of 0009 and replaces two team rules (see "Rules and decisions this
+the headless planner, runner presence with Pause, Resume and Stop)**, which is accepted and built. Parts of P0, P1
+and P1b are built (see "Progress"); the rest is not. It amends one decision of 0009 and replaces two team rules (see "Rules and decisions this
 changes") once accepted; each phase lands in its own pull request and records there what is tested.
 
 (First merged as `0009-supervisor.md` on the same day as 0009 hands-free work; renumbered to 0010.)
@@ -219,7 +219,30 @@ Each phase removes one kind of interruption. Progress is measured as human touch
 Tasks 6–8 (Claude identity, its follow-up, the 90% usage stop) feed this: the Supervisor needs to know which runner
 and Claude account did what, and how much of each plan is left.
 
+## Progress
+Built on the branch `alok/alok-flexsin9-claude-auto-runner/feat/task-19-supervisor-p0-p1-decision-reco-2`, one commit per
+item (B1 to B12), each with tests and with the READMEs updated in the same commit. Documented in
+`auto-runner/README.md` (gates, forge, pass) and `auto-runner/central/README.md` (routes, columns, migrations).
+
+| Phase | Built | Not built |
+|---|---|---|
+| P0 Foundations | Supervisor account role (`python -m central supervisor-create`, manager member only, never an assignee or task creator, not invitable); read API (`whoami`, `state`); `merged_at`; policy file `.claude/supervisor-policy.json` (keys `base`, `restricted_paths`, optional `merge`) | UAT environment, CI deploy of `main`, branch protection, the CLAUDE.md rule changes (wait for acceptance) |
+| P1 Watchdog and runner control | `supervisor` command and entry point (`AUTO_SUPERVISOR_*` environment, exit code 3 unless the role is `supervisor`); control step (pause on a red base, resume on green, wake a watcher); runner-control routes | restart, reschedule, reassign; usage limits across accounts; starting watchers |
+| P1b Queue | task `priority`, `depends_on`, `rank`; order step (`PUT /api/v1/supervisor/order`) | adding traced follow-up tasks |
+| P2 Decisions | plan gate and plan-decision route (round cap of two) | blocker answers by policy |
+| P3 Review and merge | forge adapter (no write to branches), merge gate, merge step and merge record route | independent review, change requests on PRs |
+| P4, P5 | nothing | all |
+
+**Policy is read from the base.** The policy file is read from the base ref (through an injected reader, with its blob
+SHA written to the audit rows), never from the working tree or the branch under review. A branch therefore cannot
+loosen the rules that judge it. A missing or invalid file means the Supervisor decides nothing and leaves the plan or
+the merge to a person.
+
+Unverified: everything above is tested with fakes (`FakeForge`, an injected HTTP function, the Flask test client). Nothing
+has run against a live central service, GitHub or UAT.
+
 ## Questions to settle before P0
+Answers marked *recommended* are proposals for the product owner; none is decided.
 1. **UAT:** does a UAT environment exist, or does P0 create one? With which hosting, and who gives the Supervisor's
    host its UAT-only credentials?
 2. **Branches:** `main` as the integration branch that deploys to UAT, production promoted by a person from a tag or
@@ -228,3 +251,14 @@ and Claude account did what, and how much of each plan is left.
    identity for it.
 4. **Limits:** the cost per task above which it stops and asks (0009 already caps a runner at 20 USD a day), and the licence allowlist (proposed: MIT, BSD,
    Apache-2.0, ISC).
+
+### Recommended answers
+1. **UAT:** P0 creates it (it does not exist yet): its own Vercel project and Supabase database, never production data,
+   and a mail sink. A person creates it and hands the Supervisor's host UAT-only credentials; the Supervisor never holds
+   production credentials.
+2. **Branches:** yes. `main` is the integration branch and deploys to UAT; a person promotes production from a tag or
+   release branch.
+3. **Where it runs:** one dedicated machine for the pilot, with its own Claude account and its own GitHub identity (a
+   machine account with the `supervisor` role on central). It merges only PRs it did not open.
+4. **Limits:** stop and ask when a task passes 10 USD (half of 0009's 20 USD daily cap per runner); licence allowlist MIT,
+   BSD, Apache-2.0, ISC as proposed. Anything off the list goes to a person.

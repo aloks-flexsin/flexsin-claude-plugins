@@ -363,3 +363,84 @@ def test_close_needs_a_reason_and_csrf(app, team, conn):
     assert tasks.get(conn, team['alpha']['id'], n)['status'] == 'open'
     resp = team['clients']['dev'].post('/projects/alpha/tasks/%d/close' % n, data={'reason': 'x', 'confirm': '1'})
     assert resp.status_code == 400 and tasks.get(conn, team['alpha']['id'], n)['status'] == 'open'
+
+
+# ---------- priority, dependencies and rank (queue order) ----------
+
+def _set(conn, team, number, **cols):
+    sets = ', '.join('%s = ?' % c for c in cols)
+    conn.execute('UPDATE project_task SET %s WHERE project_id = ? AND number = ?' % sets,
+                 tuple(cols.values()) + (team['alpha']['id'], number))
+    conn.commit()
+
+
+def _taken(app, team):
+    got = take(app, team)
+    return got['task']['number'] if got.get('task') else None
+
+
+def test_take_next_priority_lower_first_null_last(app, team, conn):
+    unset = add(team, title='no priority')
+    late = add(team, title='low urgency', priority='5')
+    urgent = add(team, title='urgent', priority='1')
+    assert _taken(app, team) == urgent
+    _set(conn, team, urgent, status='done', claim_id=None)
+    assert _taken(app, team) == late
+    _set(conn, team, late, status='done', claim_id=None)
+    assert _taken(app, team) == unset
+    assert tasks.get(conn, team['alpha']['id'], urgent)['priority'] == 1
+    assert tasks.get(conn, team['alpha']['id'], unset)['priority'] is None
+
+
+def test_take_next_rank_within_priority(app, team, conn):
+    first, second, third = add(team, title='a', priority='2'), add(team, title='b', priority='2'), add(team, title='c', priority='2')
+    _set(conn, team, third, rank=1)
+    _set(conn, team, second, rank=2)
+    assert _taken(app, team) == third                     # rank before number; unranked (first) after ranked
+    _set(conn, team, third, status='done', claim_id=None)
+    assert _taken(app, team) == second
+    _set(conn, team, second, status='done', claim_id=None)
+    assert _taken(app, team) == first
+
+
+def test_take_next_keeps_status_order_over_priority(app, team, conn):
+    add(team, title='urgent open', priority='0')
+    approved = add(team, title='approved', priority='9')
+    _set(conn, team, approved, status='approved')
+    assert _taken(app, team) == approved                  # priority orders only within a status
+
+
+def test_take_next_skips_unfinished_dependency(app, team, conn):
+    base = add(team, title='base')
+    child = add(team, title='child', priority='0', depends_on='%d' % base)
+    assert tasks.depends_of(tasks.get(conn, team['alpha']['id'], child)) == [base]
+    assert _taken(app, team) == base                      # the child is more urgent but waits
+    _set(conn, team, base, status='building')             # still not done
+    assert _taken(app, team) == base                      # resumes base; child still skipped
+    _set(conn, team, base, status='done', claim_id=None)
+    assert _taken(app, team) == child
+
+
+def test_create_rejects_unknown_or_self_dependency(app, team, conn):
+    first = add(team)
+    for deps, words in (('99', 'no such task'), ('2', 'cannot depend on itself'), ('x', 'list of task numbers')):
+        resp = post(team['clients']['dev'], '/projects/alpha/tasks', title='bad', depends_on=deps)
+        assert resp.status_code == 400 and words in resp.get_data(as_text=True)
+    resp = post(team['clients']['dev'], '/projects/alpha/tasks', title='bad', priority='soon')
+    assert resp.status_code == 400 and 'whole number' in resp.get_data(as_text=True)
+    assert tasks.get(conn, team['alpha']['id'], 2) is None
+    ok = add(team, title='good', depends_on='#%d, %d' % (first, first), priority=' 3 ')
+    row = tasks.get(conn, team['alpha']['id'], ok)
+    assert (row['priority'], tasks.depends_of(row)) == (3, [first])
+
+
+def test_api_record_takes_priority_and_depends_on(app, team, conn):
+    first = add(team)
+    ok = api(app, 'POST', '/api/v1/tasks', team['token']['dev'],
+             {'title': 'From terminal', 'runner': 'r', 'priority': 2, 'depends_on': [first]})
+    assert ok.status_code == 200
+    task = ok.get_json()['task']
+    assert (task['priority'], task['depends_on']) == (2, [first])
+    for body in ({'depends_on': [7]}, {'depends_on': [3]}, {'depends_on': 'x'}, {'priority': True}, {'priority': 1.5}):
+        resp = api(app, 'POST', '/api/v1/tasks', team['token']['dev'], dict(body, title='bad', runner='r'))
+        assert resp.status_code == 400, body

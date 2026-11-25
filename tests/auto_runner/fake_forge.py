@@ -7,10 +7,11 @@ from autoforge import Forge, ForgeError  # noqa: E402
 
 
 class FakeForge(Forge):
-    def __init__(self, prs=None):
+    def __init__(self, prs=None, base=None):
         # prs: {number: {pr: {...}, files: [...], checks: [...], reviews: [...]}}
         self.prs = prs or {}
         self.merges = []
+        self.base = base if base is not None else []      # CI on the base head: list of {name, state}
 
     def _get(self, number):
         if number not in self.prs:
@@ -25,6 +26,9 @@ class FakeForge(Forge):
 
     def checks(self, number):
         return list(self._get(number).get('checks', []))
+
+    def base_checks(self, branch):
+        return list(self.base)
 
     def reviews(self, number):
         return list(self._get(number).get('reviews', []))

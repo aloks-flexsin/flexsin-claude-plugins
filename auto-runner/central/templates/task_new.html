@@ -15,6 +15,10 @@
     <textarea id="t-desc" name="description" rows="6" maxlength="20000" placeholder="Who needs it, what they do today, what should change.">{{ form.description }}</textarea>
     <label for="t-done">How we know it's done <span class="optional">optional</span></label>
     <textarea id="t-done" name="done_when" rows="3" maxlength="20000" placeholder="A person can download the file; a test checks the columns.">{{ form.done_when }}</textarea>
+    <label for="t-prio">Priority <span class="optional">optional</span></label>
+    <input id="t-prio" type="number" name="priority" value="{{ form.priority }}" step="1" placeholder="1 is most urgent; empty sorts last">
+    <label for="t-deps">Waits for tasks <span class="optional">optional</span></label>
+    <input id="t-deps" type="text" name="depends_on" value="{{ form.depends_on }}" maxlength="200" placeholder="Task numbers, e.g. 3, 4">
     {% if is_admin %}
     <label for="t-who">For</label>
     <select id="t-who" name="assignee">

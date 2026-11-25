@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from central import accounts, audit, personal, projects, tasks
+from central import accounts, audit, personal, projects, runners, tasks
 from tests.auto_runner.test_runner import ar
 
 from .test_account_admin import new_client
@@ -152,7 +152,7 @@ def test_done_when_one_pass(app, team, conn, sup):
         assert 'Merged' in team['clients']['dev'].get(url).get_data(as_text=True)
     # a second pass does nothing: the task is merged and the plan is decided
     again = sup_mod.run_pass('alpha', http, reader(), 'origin/main', forge, MERGER)
-    assert again == dict(plans=[], merges=[]) and len(forge.merges) == 1
+    assert again['plans'] == [] and again['merges'] == [] and again['orders'] == [] and len(forge.merges) == 1
     assert len(audit_for(conn, 'supervisor.merge.decided')) == 1
 
 
@@ -227,3 +227,137 @@ def test_the_merge_route_is_supervisor_only_and_validates(app, team, conn, sup):
     again = api(app, 'POST', path, sup, dict(phase='done', sha='s')).get_json()
     assert again['already'] is True and len(audit_for(conn, 'supervisor.merge.done')) == 1
     assert api(app, 'POST', path, sup, body).status_code == 409                                  # already merged
+
+
+STATE_URL = '/api/v1/supervisor/state?project=alpha'
+ORDER_URL = '/api/v1/supervisor/order?project=alpha'
+
+
+def test_queue_order_j6(app, team, conn, sup, clock):
+    # J6: one pass ranks the open tasks (priority, then who unblocks others, then age) and writes only what changed
+    from datetime import timedelta
+    http = http_for(app, sup)
+    n = {}
+    for key, form in (('p2', dict(priority='2')), ('p1', dict(priority='1')), ('old', {}), ('young', {})):
+        clock.now = clock.now + timedelta(minutes=1)
+        n[key] = add(team, title=key, **form)
+    clock.now = clock.now + timedelta(minutes=1)
+    n['waits'] = add(team, title='waits', depends_on=str(n['young']))
+    want = [n[k] for k in ('p1', 'p2', 'young', 'old', 'waits')]
+    out = sup_mod.order_step('alpha', http)
+    assert [(o['task'], o['rank']) for o in out] == list(zip(want, range(1, 6)))
+    assert 'unblocks 1 task' in out[2]['reason']
+    ranks = {t['number']: t['rank'] for t in http('GET', STATE_URL)[1]['tasks']}
+    assert [ranks[x] for x in want] == [1, 2, 3, 4, 5]
+    rows = audit_for(conn, 'supervisor.order')
+    assert len(rows) == 5 and all(r['detail']['reason'] and r['detail']['from'] is None for r in rows)
+    # a second pass writes nothing; when a task is finished only the ranks that moved are written
+    assert sup_mod.order_step('alpha', http) == [] and len(audit_for(conn, 'supervisor.order')) == 5
+    conn.execute("UPDATE project_task SET status = 'done' WHERE number = ?", (n['p1'],))
+    conn.commit()
+    assert [o['task'] for o in sup_mod.order_step('alpha', http)] == want[1:]
+    assert len(audit_for(conn, 'supervisor.order')) == 9
+
+
+def test_the_order_route_is_supervisor_only_and_validates(app, team, conn, sup):
+    n = add(team, title='one')
+    dev = api(app, 'PUT', ORDER_URL, team['token']['dev'], dict(orders=[dict(number=n, rank=1)]))
+    assert dev.status_code == 403 and tasks.get(conn, team['alpha']['id'], n)['rank'] is None
+    head = {'Authorization': 'Bearer ' + sup}
+    for bad in (None, 'x', [dict(number=n, rank=0)], [dict(number=n, rank='1')], [dict(number=n, rank=True)],
+                [dict(number=n, rank=1), dict(number=n, rank=2)]):
+        assert new_client(app).put(ORDER_URL, json=dict(orders=bad), headers=head).status_code == 400
+    two = dict(orders=[dict(number=n, rank=1), dict(number=99, rank=2)])
+    assert new_client(app).put(ORDER_URL, json=two, headers=head).status_code == 404
+    assert tasks.get(conn, team['alpha']['id'], n)['rank'] is None
+    ok = new_client(app).put(ORDER_URL, json=dict(orders=[dict(number=n, rank=3, reason='why')]), headers=head)
+    assert ok.status_code == 200 and ok.get_json() == dict(changed=[n])
+    assert tasks.get(conn, team['alpha']['id'], n)['rank'] == 3
+    [row] = audit_for(conn, 'supervisor.order')
+    assert row['detail'] == {'number': n, 'from': None, 'to': 3, 'reason': 'why'}
+
+
+# ---------- the control step: journey J7 ----------
+
+RED = [dict(name='tests', state='failure')]
+GREEN = [dict(name='tests', state='success')]
+
+
+def control(http, forge):
+    return sup_mod.control_step('alpha', http, reader(), 'origin/main', forge)
+
+
+def controls(conn, team):
+    return {r['label']: (r['control'], r['control_role']) for r in runners.for_project(conn, team['alpha']['id'])}
+
+
+def test_pause_when_main_red_j7(app, team, conn, sup, clock):
+    from datetime import timedelta
+    from .test_runners import beat
+    http = http_for(app, sup)
+    forge = FakeForge(base=RED)
+    beat(app, team, label='dev-old')                                                 # will go silent
+    clock.now = clock.now + timedelta(hours=3)
+    beat(app, team, label='dev-1')
+    beat(app, team, label='dev-2')
+    beat(app, team, label='dev-busy', state='building #4', task=4)
+    beat(app, team, who='manager', label='mgr-1')
+    conn.execute("UPDATE runner SET control = 'pause', control_by = ? WHERE label = 'dev-2'",
+                 (team['accounts']['dev']['id'],))                                   # a person paused this one
+    conn.commit()
+    # main is red: every live runner without a control is paused; the person's pause and the silent runner are left
+    out = {c['runner']: c['action'] for c in control(http, forge)}
+    assert out == {'dev-old': 'silent', 'dev-1': 'pause', 'dev-busy': 'pause', 'mgr-1': 'pause'}
+    state = controls(conn, team)
+    assert state['dev-1'] == ('pause', 'supervisor') and state['dev-2'] == ('pause', 'user')
+    assert state['dev-old'] == (None, None)
+    assert len(audit_for(conn, 'supervisor.runner.pause')) == 3
+    assert beat(app, team, label='dev-1').get_json()['control'] == 'pause'
+    again = control(http, forge)                                                      # a second pass pauses nothing more
+    assert [c['action'] for c in again] == ['silent'] and len(audit_for(conn, 'supervisor.runner.pause')) == 3
+    # CI still running, or no checks yet: nothing is resumed
+    for checks in ([], [dict(name='tests', state='pending')]):
+        assert [c['action'] for c in control(http, FakeForge(base=checks))] == ['silent']
+    # main is green: only the runners the supervisor paused are resumed
+    out = {c['runner']: c['action'] for c in control(http, FakeForge(base=GREEN))}
+    assert out == {'dev-old': 'silent', 'dev-1': 'resume', 'dev-busy': 'resume', 'mgr-1': 'resume'}
+    state = controls(conn, team)
+    assert state['dev-2'] == ('pause', 'user') and state['dev-1'][0] is None and state['dev-old'][0] is None
+    assert len(audit_for(conn, 'supervisor.runner.resume')) == 3
+
+
+def test_wake_an_idle_watcher_when_a_task_is_ready(app, team, conn, sup, clock):
+    from datetime import timedelta
+    from .test_runners import beat
+    http = http_for(app, sup)
+    beat(app, team, label='dev-1')
+    beat(app, team, label='dev-busy', state='building #9', task=9)
+    beat(app, team, who='manager', label='mgr-1')
+    assert [c for c in control(http, FakeForge(base=GREEN)) if c['action']] == []     # nothing is ready
+    ready = add(team, title='Ready')
+    waits = add(team, title='Waits', depends_on=str(ready))
+    out = control(http, FakeForge(base=GREEN))
+    assert [(c['runner'], c['action'], c['error']) for c in out] == [('dev-1', 'wake', None)]   # not busy, not another person's
+    assert len(audit_for(conn, 'supervisor.runner.wake')) == 1
+    assert beat(app, team, label='dev-1').get_json()['control'] == 'wake'
+    assert control(http, FakeForge(base=GREEN))[0]['action'] == 'wake'                # said once, woken again while still ready
+    # once the ready task is claimed, the one that waits on it is not ready, so nobody is woken
+    assert take(app, team, runner='dev-busy')['task']['number'] == ready
+    assert [c for c in control(http, FakeForge(base=GREEN)) if c['action'] == 'wake'] == [] and waits
+    # red main: the runners are paused, never woken
+    assert sorted((c['runner'], c['action']) for c in control(http, FakeForge(base=RED))) == [
+        ('dev-1', 'pause'), ('dev-busy', 'pause'), ('mgr-1', 'pause')]
+
+
+def test_the_control_step_reports_failures_and_runs_in_the_pass(app, team, conn, sup):
+    from tests.auto_runner.fake_forge import FakeForge as F
+
+    class Broken(F):
+        def base_checks(self, branch):
+            raise sup_mod.autoforge.ForgeError('boom', 500)
+    http = http_for(app, sup)
+    [bad] = control(http, Broken())
+    assert bad['action'] is None and 'boom' in bad['error']
+    result = sup_mod.run_pass('alpha', http, reader(), 'origin/main', F(base=RED), MERGER)
+    assert result['controls'] == [] and 'control' not in ' '.join(sup_mod.summary(result))
+    assert sup_mod.control_step('alpha', lambda m, p, b=None: (403, {}), reader(), 'origin/main', F())[0]['error']
