@@ -467,6 +467,24 @@ def free_request_ids(d, qtext):
     return mapping
 
 
+def already_queued(d, qtext, auto):
+    """A central task's request (task.json) whose every item is in the queue `qtext` already, under its own ID or the one
+    free_request_ids moved it to -> True. That is the task's next run (the last one stopped before its items were all
+    done, and the watcher took the task again), not new work: adding it would build the task twice."""
+    items = d / 'items.md'
+    try:
+        number = json.loads((d / 'task.json').read_text(encoding='utf-8')).get('number')
+    except (OSError, ValueError, AttributeError):
+        return False
+    running = autotasks.current(auto)                  # only the task this branch is already building continues
+    if not items.exists() or not isinstance(number, int) or not running or running['number'] != number:
+        return False
+    ids = [i for i, _, _ in queue.parse_items(items.read_text(encoding='utf-8'))]
+    queued = {i for i, _, _ in queue.parse_items(qtext)}
+    names = queued | {old for new, old in load_renamed(auto).items() if new in queued}
+    return bool(ids) and all(i in names for i in ids)
+
+
 RENAMED_FILE = Path('run') / 'renamed.json'
 
 
@@ -1111,6 +1129,15 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
     if check_only:
         say(f'{autosafe.NO_TESTS} (check_only is set); results cannot be proven by a suite')
 
+    if enqueue and (auto / 'pending' / enqueue).is_dir():
+        qnow = wt / queue_rel if (wt / queue_rel).exists() else pq
+        if already_queued(auto / 'pending' / enqueue, qnow.read_text(encoding='utf-8') if qnow.exists() else '', auto):
+            dest = auto / 'applied' / f'{enqueue}-again-{datetime.now().strftime("%H%M%S")}'
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(auto / 'pending' / enqueue), str(dest))
+            say(f"request '{enqueue}' is a task whose items are already in the queue: continuing them, not adding a "
+                f'second copy (set aside in {AUTO_DIR}/applied)')
+            enqueue = ''
     if enqueue:
         req = auto / 'pending' / enqueue / 'items.md'
         if not req.exists():

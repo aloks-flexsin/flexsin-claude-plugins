@@ -1012,3 +1012,34 @@ def test_a_run_tells_central_which_task_items_its_renamed_items_are(project):
     states = [e for e in events if e['type'] == 'item_state']
     assert {e['item']: e['detail'].get('was') for e in states if e['item'] in ('B1', 'B2')} == {'B1': 'A1', 'B2': 'A2'}
     assert all('was' not in e['detail'] for e in states if e['item'] in ('A1', 'A2'))
+
+
+def test_a_tasks_next_run_continues_its_items_instead_of_adding_a_second_copy(project):
+    """The watcher takes a task again when its last run stopped before every item was done; the request it writes holds
+    the same items, already in the queue under their own IDs or the ones they were moved to."""
+    auto = project / '.auto'
+    qtext = QUEUE.replace('**A1 First thing.**', '**B1 First thing.**').replace('**A2 Second thing.**', '**B2 Second thing.**')
+    (auto / 'queue.md').write_text(qtext, encoding='utf-8')
+    ar.save_renamed(auto, {'B1': 'A1', 'B2': 'A2'})
+    req = auto / 'pending' / 'task-7-x'
+    req.mkdir(parents=True)
+    (req / 'items.md').write_text(CENTRAL_ITEMS, encoding='utf-8')
+    (req / 'task.json').write_text(json.dumps({'number': 7, 'claim': 'c'}), encoding='utf-8')
+    assert not ar.already_queued(req, qtext, auto)            # no run is building task 7: same IDs, but new work
+    (auto / 'run').mkdir(exist_ok=True)
+    (auto / 'run' / 'current-task.json').write_text(json.dumps({'number': 8, 'claim': 'c'}), encoding='utf-8')
+    assert not ar.already_queued(req, qtext, auto)            # the branch builds another task
+    (auto / 'run' / 'current-task.json').write_text(json.dumps({'number': 7, 'claim': 'c'}), encoding='utf-8')
+    assert ar.already_queued(req, qtext, auto)
+    assert not ar.already_queued(req, QUEUE.replace('A2', 'Q2'), auto.parent / 'elsewhere')    # A2 not queued anyway
+    ar.run(project, max_iterations=1, claude=fake_agent(), enqueue='task-7-x', allow_dirty=True)
+    assert not req.exists() and any(p.name.startswith('task-7-x-again-') for p in (auto / 'applied').iterdir())
+    pq = (auto / 'queue.md').read_text(encoding='utf-8')
+    assert '**C1' not in pq and pq.count('Clashing first') == 0                             # nothing added twice
+
+
+def test_a_request_a_person_wrote_is_never_taken_for_a_continuation(project):
+    req = project / '.auto' / 'pending' / 'mine'
+    req.mkdir(parents=True)
+    (req / 'items.md').write_text(CENTRAL_ITEMS, encoding='utf-8')
+    assert not ar.already_queued(req, QUEUE, project / '.auto')
