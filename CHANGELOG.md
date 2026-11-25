@@ -4,11 +4,40 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+### Fixed
+- Runner: re-enqueuing a request that is already queued (every item ID present with the same text) resumes it instead of
+  refusing it, so a central task stopped after its first item and taken again by watch mode works its remaining items
+  on the same branch and reports with its new claim. The pending folder is removed and its `task.json` adopted; while
+  another run holds the lock the request only waits, untouched. The test fake `FakeTasks` now hands out build tasks
+  with a fresh claim and takes `POST /api/v1/tasks/N/report`. Unverified against the live service.
+- Central: before `init-db` adds the runner-friction tables, event pushes with friction events, task reports, plan
+  decisions and closing a task failed with 503; the friction bookkeeping is now skipped (in a savepoint, with a
+  warning) until the migration runs, and everything else works.
+
 ### Added
 - Runner: `autotasks.py attachments N` downloads task N's screenshots again and prints the "Screenshots" block, without
   claiming the task (the same block as `next`; an unknown task prints `Not done: ...`, exit 1).
 - Runner: the headless planner downloads a task's screenshots and lists them in its prompt (a SCREENSHOTS section,
   with any that failed to download named), and `docs/planner-prompt.md` tells it to read them first.
+- Central: runner frictions close the loop (decision record 0011). Rejecting a drafted friction task (rejecting its plan
+  or closing it) mutes the signature with "task #N rejected"; a task reported done marks it `fixed`. A fixed signature
+  counts only days after the fix, and reaching the threshold again drafts "Runner friction came back: <signature>",
+  linking the earlier task (`previous_task_number`); the Frictions page shows Fixed and the earlier task's link.
+  Unverified on the live service.
+
+## [0.23.0] - 2026-11-25
+
+### Added
+- Runner self-reflection, first slice (decision record 0011): the runner records what got in its way as `friction`
+  events in event.v1, with one of eight closed kinds and a fixed-vocabulary subject, never project content; the central
+  service accepts and validates the same type. Recorded at most once per signature per item per run:
+  `permission_denied` (`Bash:<executable>` or the tool name), `gate_stop` (docs, changelog, browser, journey, suite,
+  stale), `fix_round` (suite, journey), `retry` (`exit_<code>`), `usage_stop` (limit, budget, threshold),
+  `refused_start` (`newer_installed` or the failed preflight group, from the new `autosafe.preflight_groups`) and
+  `central_error` (`http_<status>:<route>`, e.g. `http_409:/api/v1/tasks/N/heartbeat` for a lost claim, or
+  `unreachable`) for failed heartbeats, reports, wait notes and event pushes. `autotasks.beat`, `finish` and
+  `wait_note` take an optional `on_error(status, route)`; `autodeliver.push` also returns `skipped_status` and
+  `error_status`. Counting and drafting on the central side come in later items.
 - Central: a "turn on push" bar under the top bar of every signed-in page (not the Account page) when push is set up,
   shown once per browser: only when push is supported, not blocked, not yet subscribed here and not answered before
   (`localStorage["push-ask"]`). Turn on uses the same `enablePush` steps as the Account page; Not now hides it for

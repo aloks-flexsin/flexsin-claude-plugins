@@ -116,6 +116,11 @@ admins can use Pause, Resume and Stop. This record adds the Supervisor's identit
 `.auto/STOP` file keeps working for a person at the machine. Every command, every reorder and every added task is in
 the audit log with its reason, and a person can undo it from the page.
 
+**Noticing** is the source of much of this work: decision record
+[0011 Runner self-reflection](0011-runner-self-reflection.md) has every run record its frictions as content-free
+signatures, counts them on the central service and drafts a task on the auto-runner project when one keeps coming back.
+Until the Supervisor exists a person approves those tasks; then the Supervisor approves them like any plan.
+
 Tasks waiting in a runner's queue show as **Queued** on the page, not Building, and keep their claim alive while they
 wait. Today a task planned in the terminal shows Building, and its claim gets no heartbeat until its run starts.
 

@@ -4,12 +4,36 @@ import secrets
 
 VAPID_VARS = ("CENTRAL_VAPID_PUBLIC_KEY", "CENTRAL_VAPID_PRIVATE_KEY", "CENTRAL_VAPID_SUBJECT")
 
-ENV_VARS = ("SECRET_KEY", "DATABASE_URL", "CENTRAL_ENV", "PUBLIC_URL", "VERCEL_ENV") + VAPID_VARS
+REFLECTION_VARS = ("CENTRAL_REFLECTION_PROJECT", "CENTRAL_REFLECTION_ASSIGNEE", "CENTRAL_REFLECTION_MIN_COUNT",
+                   "CENTRAL_REFLECTION_MIN_PROJECTS", "CENTRAL_REFLECTION_DAILY")
+REFLECTION_DEFAULTS = {"min_count": 3, "min_projects": 2, "daily": 3}
+
+ENV_VARS = ("SECRET_KEY", "DATABASE_URL", "CENTRAL_ENV", "PUBLIC_URL", "VERCEL_ENV") + VAPID_VARS + REFLECTION_VARS
 
 
 def push_configured(cfg):
     """Browser push is set up when all three VAPID settings are present (public key, private key, subject)."""
     return all((cfg.get(name) or "").strip() for name in VAPID_VARS)
+
+
+def _positive_int(value, default):
+    try:
+        number = int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+    return number if number > 0 else default
+
+
+def reflection(cfg):
+    """Drafting settings for runner frictions (decision record 0011): `project` (a project slug, or None when drafting
+    is off), `assignee` (an account e-mail or None), `min_count`, `min_projects` and `daily` (whole numbers above 0; a
+    missing or unusable value takes the default: 3, 2 and 3)."""
+    return {"project": (cfg.get("CENTRAL_REFLECTION_PROJECT") or "").strip() or None,
+            "assignee": (cfg.get("CENTRAL_REFLECTION_ASSIGNEE") or "").strip() or None,
+            "min_count": _positive_int(cfg.get("CENTRAL_REFLECTION_MIN_COUNT"), REFLECTION_DEFAULTS["min_count"]),
+            "min_projects": _positive_int(cfg.get("CENTRAL_REFLECTION_MIN_PROJECTS"),
+                                          REFLECTION_DEFAULTS["min_projects"]),
+            "daily": _positive_int(cfg.get("CENTRAL_REFLECTION_DAILY"), REFLECTION_DEFAULTS["daily"])}
 
 MIN_SECRET_KEY_LENGTH = 32
 

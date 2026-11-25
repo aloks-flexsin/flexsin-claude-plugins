@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design: Settings – Central</title>
+<link rel="stylesheet" href="central.css">
+</head>
+<body>
+<!-- Approved design for the central service (sidebar redesign). Static mock-up with example data; not used by the app.
+     All design pages: index.html. -->
+<div class="app light" id="app">
+  <header class="top">
+    <a class="brand" href="my-work.html">auto-runner <span>central</span></a>
+    <span class="updated"><span class="live-dot" aria-hidden="true"></span>Updated 12 sec ago</span>
+    <div class="top-right">
+      <a class="bell" href="notifications.html" aria-label="Notifications, 3 waiting" title="Notifications">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 3a6 6 0 0 0-6 6v4l-2 3h16l-2-3V9a6 6 0 0 0-6-6zm-2 15a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path></svg>
+        <span class="pill attention">3</span>
+      </a>
+      <button class="user" type="button" aria-label="Account menu" aria-haspopup="menu"><span class="av" aria-hidden="true">AS</span><span>Alok</span>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </button>
+    </div>
+  </header>
+  <div class="shell">
+    <div class="side-slot"><nav class="side" aria-label="Main">
+    <div>
+      <a class="side-item head" href="my-work.html"><span class="grow">My work</span><span class="pill attention" title="3 decisions wait for you">3</span></a>
+      <a class="side-item sub" href="my-work.html"><span class="grow">All</span></a>
+      <a class="side-item sub" href="my-work.html"><span class="grow ellip">Auto-runner</span><span class="mk mk-bad" title="Blocked"><svg viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Blocked"><path d="M6 1l5.5 10H.5z" fill="currentColor"></path></svg></span></a>
+      <a class="side-item sub" href="my-work.html"><span class="grow ellip">Client portal</span><span class="mk mk-run" title="Running"><svg viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Running"><rect x="1" y="1" width="10" height="10" rx="1.5" fill="currentColor"></rect></svg></span></a>
+      <a class="side-item sub" href="my-work.html"><span class="grow ellip">Ops dashboards</span><span class="mk mk-attn" title="Waits for you"><svg viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Waits for you"><circle cx="6" cy="6" r="5" fill="currentColor"></circle></svg></span></a>
+    </div>
+    <div>
+      <div class="side-label">Projects</div>
+      <a class="side-item" href="project.html"><span class="grow ellip">Auto-runner</span></a>
+      <a class="side-item" href="project.html"><span class="grow ellip">Client portal</span></a>
+      <a class="side-item" href="project.html"><span class="grow ellip">Ops dashboards</span></a>
+      <a class="side-item side-more" href="projects.html"><span class="grow">See all 7 projects</span></a>
+    </div>
+    <div>
+      <div class="side-label">Admin</div>
+      <a class="side-item" href="admin.html"><span class="grow">Accounts</span></a>
+      <a class="side-item" href="admin.html"><span class="grow">Notification log</span></a>
+    </div>
+    <div class="side-foot">
+      <div class="seg" role="group" aria-label="Theme">
+        <button type="button" data-theme="light" aria-pressed="true"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.8"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg>Light</button>
+        <button type="button" data-theme="dark" aria-pressed="false"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path></svg>Dark</button>
+      </div>
+      <a class="side-item current" href="settings.html" aria-current="page"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg><span class="grow">Settings</span></a>
+      <button class="side-btn" type="button"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg><span class="grow">Log out</span></button>
+    </div>
+  </nav></div>
+    <main class="content">
+      <div class="page-head">
+        <div><h1>Settings</h1><p class="lead" style="margin: 4px 0 0">Alok · site admin</p></div>
+      </div>
+      <div class="toolbar">
+        <div class="toggle" role="group" aria-label="Settings section">
+          <button type="button" aria-pressed="true" data-act="tAccount">Account</button>
+          <button type="button" aria-pressed="false" data-act="tTokens">My tokens <span class="pill off">2</span></button>
+        </div>
+      </div>
+
+      <div data-if="isAccount">
+        <div class="cols">
+          <div class="stack">
+            <section class="panel">
+              <h2>Your name</h2>
+              <p class="muted small" style="margin: 6px 0 12px">Shown to your team instead of your email address.</p>
+              <div class="field"><label for="acc-name">Name</label><input id="acc-name" type="text" value="Alok"></div>
+              <div class="form-actions"><button class="btn primary" type="button">Save name</button></div>
+            </section>
+            <section class="panel">
+              <h2>Password</h2>
+              <p class="muted small" style="margin: 6px 0 12px">Changing it signs you out everywhere, including here.</p>
+              <div class="field"><label for="pw-cur">Current password</label><input id="pw-cur" type="password"></div>
+              <div class="field"><label for="pw-new">New password</label><div class="pw-field"><input id="pw-new" type="password"><button class="btn" type="button">Show</button></div></div>
+              <div class="field"><label for="pw-again">New password again</label><input id="pw-again" type="password"></div>
+              <ul class="checks" style="margin-bottom: 14px"><li>○ At least 12 characters</li><li>○ Both the same</li><li>○ Not a common password (checked when you save)</li></ul>
+              <div class="form-actions"><button class="btn primary" type="button">Change password</button></div>
+            </section>
+          </div>
+          <div class="stack">
+            <section class="panel">
+              <h2>Notifications on this browser</h2>
+              <p class="muted small" style="margin: 6px 0 12px">Get a notification on this device when a plan, a change or a blocker waits on you, even when Central is closed.</p>
+              <div class="row" style="border: 0; padding: 0"><span class="chip tone-ok"><span class="mark"></span>On in 2 browsers</span><span class="grow"></span><button class="btn" type="button">Turn off here</button></div>
+            </section>
+            <section class="panel">
+              <h2>Your Claude accounts</h2>
+              <p class="muted small" style="margin: 6px 0 8px">What your runners report when they start. Your sign-in is what proves who you are.</p>
+              <div class="table-box">
+                <table class="tbl">
+                  <thead><tr><th>Username</th><th>Claude account</th><th>Surface</th><th>Last seen</th></tr></thead>
+                  <tbody>
+                    <tr><td>alok</td><td>bhawish</td><td>auto-runner</td><td>now</td></tr>
+                    <tr><td>alok</td><td>alok-pers</td><td>desktop</td><td>4 min ago</td></tr>
+                    <tr><td>alok</td><td>alok-pers</td><td>cli</td><td>yesterday</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+
+      <div data-if="isTokens" hidden>
+        <div class="main-aside">
+          <section class="panel">
+            <div class="panel-head"><h2>Computers signed in</h2></div>
+            <div class="row"><span class="grow"><b>Alok’s laptop</b> <code>arp_Qw7x…</code><span class="sub">signed in 3 weeks ago · for alok with Claude account bhawish · last used now</span></span><span class="chip tone-ok"><span class="mark"></span>Active</span><button class="btn danger" type="button">Revoke</button></div>
+            <div class="row"><span class="grow"><b>Office desktop</b> <code>arp_M2cd…</code><span class="sub">signed in last month · for alok with Claude account alok-pers · last used 4 min ago</span></span><span class="chip tone-ok"><span class="mark"></span>Active</span><button class="btn danger" type="button">Revoke</button></div>
+            <div class="row"><span class="grow"><b>Old laptop</b> <code>arp_9KfL…</code><span class="sub">signed in 3 months ago · never used</span></span><span class="chip tone-neutral"><span class="mark square"></span>Revoked</span></div>
+          </section>
+          <aside class="panel">
+            <h3>About tokens</h3>
+            <p class="small">One token per computer you signed in from Claude. Each works for the projects where you are a developer or above and stops working after 30 days without use.</p>
+            <p class="small" style="margin: 0">To add a computer, run <code>/auto-runner:central</code> in Claude there.</p>
+          </aside>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+(function () {
+  var cfg = {"groups": {"tab": ["isAccount", "isTokens"]}, "acts": {"tAccount": ["tab", "isAccount"], "tTokens": ["tab", "isTokens"]}};
+  var app = document.getElementById('app');
+  function press(sel, btn) { document.querySelectorAll(sel).forEach(function (b) { b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); }); }
+  document.querySelectorAll('[data-theme]').forEach(function (b) {
+    b.addEventListener('click', function () { app.className = 'app ' + b.getAttribute('data-theme'); press('[data-theme]', b); });
+  });
+  document.querySelectorAll('[data-act]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var a = cfg.acts[b.getAttribute('data-act')];
+      if (!a) return;
+      if (a[0] === 'toggle') {
+        var el = document.querySelector('[data-if="' + a[1] + '"]');
+        el.hidden = !el.hidden;
+        document.querySelectorAll('[aria-expanded]').forEach(function (x) { if (cfg.acts[x.getAttribute('data-act')] === a) x.setAttribute('aria-expanded', el.hidden ? 'false' : 'true'); });
+      } else if (a[0] === 'filter') {
+        document.querySelectorAll('[data-kind]').forEach(function (li) { li.hidden = a[1] !== 'all' && li.getAttribute('data-kind') !== a[1]; });
+        press('[data-act^="f"]', b);
+      } else {
+        (cfg.groups[a[0]] || []).forEach(function (c) { var el = document.querySelector('[data-if="' + c + '"]'); if (el) el.hidden = c !== a[1]; });
+        document.querySelectorAll('[data-act]').forEach(function (x) { var xa = cfg.acts[x.getAttribute('data-act')]; if (xa && xa[0] === a[0] && x.hasAttribute('aria-pressed')) x.setAttribute('aria-pressed', xa[1] === a[1] ? 'true' : 'false'); });
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>

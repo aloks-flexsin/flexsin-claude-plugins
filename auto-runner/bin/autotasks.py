@@ -285,47 +285,70 @@ def current(auto_dir):
     return data
 
 
-def beat(t, auto_dir, state=None):
+def error_route(path):
+    """The request path for an error report: no query string, and each all-digit segment (a task number) as `N`, so
+    `/api/v1/tasks/12/heartbeat?project=x` -> `/api/v1/tasks/N/heartbeat`."""
+    return re.sub(r'(?<=/)\d+(?=/|$)', 'N', str(path).split('?', 1)[0])
+
+
+def _report(on_error, e, path):
+    """Tell `on_error(status, route)` about a failed call: status the HTTP code, or None when nothing answered."""
+    if on_error is not None:
+        status = getattr(e, 'status', None)
+        on_error(status if isinstance(status, int) else None, error_route(path))
+
+
+def beat(t, auto_dir, state=None, on_error=None):
     """-> 'none' (no current task), 'ok', 'lost' (released, reassigned or expired: stop) or 'unavailable'.
-    `state` ('queued' or 'building') is sent along when given, so the task page says what the claim is doing."""
+    `state` ('queued' or 'building') is sent along when given, so the task page says what the claim is doing.
+    `on_error(status, route)`, when given, is called on every failed call (a 409 included)."""
     task = current(auto_dir)
     if task is None:
         return 'none'
+    path = f'/api/v1/tasks/{task["number"]}/heartbeat'
     try:
-        t.request('POST', f'/api/v1/tasks/{task["number"]}/heartbeat',
-                  {'claim': task['claim'], **({'state': state} if state else {})})
+        t.request('POST', path, {'claim': task['claim'], **({'state': state} if state else {})})
         return 'ok'
     except (RuntimeError, ConnectionError) as e:        # TransportRefused / TransportUnavailable, whichever module copy
+        _report(on_error, e, path)
         if getattr(e, 'status', None) == 409:
             (Path(auto_dir) / CURRENT).unlink(missing_ok=True)
             return 'lost'
         return 'unavailable'
 
 
-def wait_note(t, request_dir, note):
+def wait_note(t, request_dir, note, on_error=None):
     """A request left waiting for a merge: tell the service why, on the request's own task (its task.json), which stays
-    queued and keeps its claim. Best effort: no task.json, a refusal or an unreachable service changes nothing -> bool."""
+    queued and keeps its claim. Best effort: no task.json, a refusal or an unreachable service changes nothing -> bool.
+    `on_error(status, route)`, when given, is called when the service refused the note or could not be reached."""
     try:
         data = json.loads((Path(request_dir) / 'task.json').read_text(encoding='utf-8'))
         if not (isinstance(data.get('number'), int) and data.get('claim')):
             return False
-        t.request('POST', f'/api/v1/tasks/{data["number"]}/heartbeat',
-                  {'claim': data['claim'], 'state': 'queued', 'note': note[:300]})
+    except (OSError, ValueError, AttributeError):
+        return False
+    path = f'/api/v1/tasks/{data["number"]}/heartbeat'
+    try:
+        t.request('POST', path, {'claim': data['claim'], 'state': 'queued', 'note': note[:300]})
         return True
-    except (OSError, ValueError, AttributeError, RuntimeError, ConnectionError):
+    except (RuntimeError, ConnectionError) as e:        # TransportRefused / TransportUnavailable, whichever module copy
+        _report(on_error, e, path)
         return False
 
 
-def finish(t, auto_dir, done, branch, pr_url, note):
-    """Report the end of a run on the current task -> a line to say, or None. Done clears the current task."""
+def finish(t, auto_dir, done, branch, pr_url, note, on_error=None):
+    """Report the end of a run on the current task -> a line to say, or None. Done clears the current task.
+    `on_error(status, route)`, when given, is called when the report failed."""
     task = current(auto_dir)
     if task is None:
         return None
+    path = f'/api/v1/tasks/{task["number"]}/report'
     try:
-        t.request('POST', f'/api/v1/tasks/{task["number"]}/report',
+        t.request('POST', path,
                   {'claim': task['claim'], 'result': 'done' if done else 'stopped', 'branch': branch, 'pr_url': pr_url,
                    'note': note})
     except (RuntimeError, ConnectionError) as e:        # TransportRefused / TransportUnavailable, whichever module copy
+        _report(on_error, e, path)
         if getattr(e, 'status', None) == 409:
             (Path(auto_dir) / CURRENT).unlink(missing_ok=True)
         return f'task {task["number"]}: could not report to the central service ({e})'
