@@ -23,6 +23,7 @@ The task API takes personal tokens only (a task is someone's), with the project 
 """
 import datetime
 import json
+import re
 import secrets
 
 from flask import Blueprint, abort, g, jsonify, make_response, redirect, render_template, request, url_for
@@ -90,8 +91,58 @@ def _can_run(db, project, account):
     return projects.allows(projects.effective_role(db, project, account), "developer")
 
 
-def create(db, project, by, assignee, title, description, moment, status="open", plan="", items="", runner=None):
-    """Add a task and commit -> its row. People add tasks for themselves; an admin for any member who can run runners."""
+MAX_DEPENDS = 50
+
+
+def parse_priority(value):
+    """The priority as an integer (lower is more urgent) or None when unset. Accepts an int or a numeric string."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        raise TaskError("the priority is a whole number")
+    try:
+        number = int(value.strip() if isinstance(value, str) else value)
+    except ValueError:
+        raise TaskError("the priority is a whole number")
+    if abs(number) > 1000000:
+        raise TaskError("the priority is a whole number between -1000000 and 1000000")
+    return number
+
+
+def parse_depends(value):
+    """The task numbers a task waits for, as a sorted list without repeats; [] when unset. Accepts a list of ints or a
+    string such as "3, 4" (the form)."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return []
+    if isinstance(value, str):
+        parts = [p for p in re.split(r"[\s,;]+", value.replace("#", " ").strip()) if p]
+    elif isinstance(value, list):
+        parts = value
+    else:
+        raise TaskError("depends_on is a list of task numbers")
+    numbers = set()
+    for part in parts:
+        if isinstance(part, bool) or not isinstance(part, (int, str)) or not str(part).strip().isdigit():
+            raise TaskError("depends_on is a list of task numbers; %r is not one" % (part,))
+        numbers.add(int(part))
+    if len(numbers) > MAX_DEPENDS:
+        raise TaskError("a task depends on at most %d others" % MAX_DEPENDS)
+    return sorted(numbers)
+
+
+def depends_of(row):
+    """The task numbers of `row`'s depends_on (stored as JSON text); [] when none or unreadable."""
+    try:
+        value = json.loads(row["depends_on"]) if row["depends_on"] else []
+    except ValueError:
+        return []
+    return [n for n in value if isinstance(n, int)] if isinstance(value, list) else []
+
+
+def create(db, project, by, assignee, title, description, moment, status="open", plan="", items="", runner=None,
+           priority=None, depends_on=None):
+    """Add a task and commit -> its row. People add tasks for themselves; an admin for any member who can run runners.
+    `priority` (an integer, lower is more urgent) and `depends_on` (task numbers of this project) are optional."""
     title = _text(title, MAX_TITLE, "the title", required=True)
     description = _text(description, MAX_TEXT, "the description")
     if by["role"] == accounts.SUPERVISOR:
@@ -100,16 +151,25 @@ def create(db, project, by, assignee, title, description, moment, status="open",
         raise TaskError("only an admin adds tasks for someone else", 403)
     if not _can_run(db, project, assignee):
         raise TaskError("%s is not a developer or above in this project, so no runner of theirs can take it" % assignee["email"])
+    priority, depends = parse_priority(priority), parse_depends(depends_on)
     at = _at(moment)
     for _ in range(3):                                     # the number is per project; a clash just takes the next one
         number = (db.query_one("SELECT MAX(number) AS n FROM project_task WHERE project_id = ?", (project["id"],))["n"] or 0) + 1
+        if number in depends:
+            raise TaskError("a task cannot depend on itself (task %d)" % number)
+        if depends:
+            known = {r["number"] for r in db.query("SELECT number FROM project_task WHERE project_id = ?", (project["id"],))}
+            missing = [n for n in depends if n not in known]
+            if missing:
+                raise TaskError("no such task to depend on: %s" % ", ".join("#%d" % n for n in missing))
         claim = secrets.token_urlsafe(16) if runner else None
         try:
             db.execute("INSERT INTO project_task (id, project_id, number, title, description, assignee_id, created_by, "
-                       "status, plan, items, claim_id, claim_runner, heartbeat_at, created_at, updated_at) "
-                       "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                       "status, plan, items, claim_id, claim_runner, heartbeat_at, created_at, updated_at, priority, depends_on) "
+                       "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                        (secrets.token_hex(16), project["id"], number, title, description, assignee["id"], by["id"],
-                        status, plan or None, items or None, claim, runner, at if runner else None, at, at))
+                        status, plan or None, items or None, claim, runner, at if runner else None, at, at,
+                        priority, json.dumps(depends) if depends else None))
         except Exception:
             db.rollback()
             continue
@@ -120,12 +180,21 @@ def create(db, project, by, assignee, title, description, moment, status="open",
 
 def take_next(db, project, account, runner, moment):
     """Claim the account's next task in this project for `runner` and commit -> (row, claim id) or (None, None).
-    Order: approved (build it), building (resume), changes requested, planning, open; oldest first within each."""
+    Order: approved (build it), building (resume), changes requested, planning, open; within each status by priority
+    (lower first, unset last), then rank (unset last), then number. A task is skipped while a task it depends on is not done."""
     rows = db.query("SELECT * FROM project_task WHERE project_id = ? AND assignee_id = ? AND status IN (%s)"
                     " ORDER BY number" % ", ".join("?" * len(TAKE_ORDER)), (project["id"], account["id"]) + TAKE_ORDER)
+    rows = sorted(rows, key=lambda r: (r["priority"] is None, r["priority"] or 0, r["rank"] is None, r["rank"] or 0, r["number"]))
+    waiting = {n for r in rows for n in depends_of(r)}
+    unfinished = set()
+    if waiting:
+        unfinished = {r["number"] for r in db.query("SELECT number, status FROM project_task WHERE project_id = ?",
+                                                    (project["id"],)) if r["number"] in waiting and r["status"] != "done"}
     at = _at(moment)
     for status in TAKE_ORDER:
         for row in [r for r in rows if r["status"] == status]:
+            if unfinished and unfinished.intersection(depends_of(row)):
+                continue                                   # waits for a task that is not done
             if claim_live(row, moment) and row["claim_runner"] != runner:
                 continue                                   # another runner of this person holds it
             claim = secrets.token_urlsafe(16)
@@ -307,7 +376,8 @@ def public(row, moment, full=False):
     """The task as the API shows it (never the claim id of someone else's claim)."""
     out = {"number": row["number"], "title": row["title"], "status": row["status"], "assignee": row["assignee_email"],
            "runner": row["claim_runner"] if claim_live(row, moment) else None, "branch": row["branch"],
-           "pr_url": row["pr_url"], "updated_at": row["updated_at"]}
+           "pr_url": row["pr_url"], "updated_at": row["updated_at"], "priority": row["priority"],
+           "depends_on": depends_of(row), "rank": row["rank"]}
     if full:
         out.update(description=row["description"] or "", plan=row["plan"] or "", items=row["items"] or "",
                    comment=row["decision_comment"] or "", note=row["note"] or "")
@@ -403,7 +473,8 @@ def api_record():
         plan = _text(body.get("plan"), MAX_PLAN, "the plan", required=on_page)
         items = _text(body.get("items"), MAX_PLAN, "the items", required=on_page)
         row = create(db, g.token_project, account, account, body.get("title"), body.get("description"), moment,
-                     status="plan_review" if on_page else "queued", plan=plan, items=items, runner=runner)
+                     status="plan_review" if on_page else "queued", plan=plan, items=items, runner=runner,
+                     priority=body.get("priority"), depends_on=body.get("depends_on"))
         _note_identity(db, account, runner, moment)
         audit.record(db, "task.create", _at(moment), account_id=account["id"], project_id=g.token_project["id"],
                      detail={"number": row["number"], "via": "terminal", "approval": approval})
@@ -592,12 +663,15 @@ def task_add(slug):
             abort(404)
     description = with_done_when(request.form.get("description"), request.form.get("done_when"))
     try:
-        row = create(db, g.project, g.account, assignee, request.form.get("title"), description, moment)
+        row = create(db, g.project, g.account, assignee, request.form.get("title"), description, moment,
+                     priority=request.form.get("priority"), depends_on=request.form.get("depends_on"))
     except TaskError as e:
         return _new_page(error=str(e), status=e.status,
                          form={"title": (request.form.get("title") or "")[:MAX_TITLE],
                                "description": (request.form.get("description") or "")[:MAX_TEXT],
-                               "done_when": (request.form.get("done_when") or "")[:MAX_TEXT], "assignee": chosen})
+                               "done_when": (request.form.get("done_when") or "")[:MAX_TEXT], "assignee": chosen,
+                               "priority": (request.form.get("priority") or "")[:20],
+                               "depends_on": (request.form.get("depends_on") or "")[:200]})
     audit.record(db, "task.create", _at(moment), account_id=g.account["id"], project_id=g.project["id"],
                  detail={"number": row["number"], "assignee": row["assignee_email"]})
     if row["assignee_id"] != g.account["id"]:

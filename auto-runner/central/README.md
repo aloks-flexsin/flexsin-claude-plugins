@@ -193,6 +193,21 @@ may not stick over plain http. The API endpoints do not use the cookie.
   (it adds the column to an existing database and keeps all data); until then the new routes answer with the
   "database update needed" error. **Rollback:** deploy the previous code; the unused nullable column is harmless and may stay
   (to remove it: `ALTER TABLE project_task DROP COLUMN merged_at`).
+- **Task priority and dependencies** (`project_task.priority`, `depends_on`, `rank`; all nullable). `priority` is an integer,
+  lower is more urgent, NULL sorts last. `depends_on` is a list of task numbers of the same project (stored as JSON text,
+  returned by the task API as a list). `rank` is the queue position within a priority; nothing writes it yet (the
+  supervisor's order step will), and NULL sorts last. `priority` and `depends_on` are optional when a task is created: the
+  "Priority" and "Waits for tasks" fields of the new-task form (numbers separated by commas, `#3, 4` also works) and the
+  `priority` / `depends_on` keys of `POST /api/v1/tasks`. Create answers 400 for a priority that is not a whole number,
+  a `depends_on` that is not a list of task numbers, a number that is no task of the project, or the task's own number.
+  `POST /api/v1/tasks/next` keeps the status order (approved, building, changes requested, planning, open) and orders by
+  priority, then rank, then number within each status; it skips a task while any task in its `depends_on` is not `done`
+  (a rejected task never counts as done, so a person closes or edits the dependency). With none of the three set, the
+  order is the old one (by number). The task API's task objects now carry `priority`, `depends_on` and `rank`.
+  Tests: `tests/central/test_tasks.py`. **Migration:** run `python -m central init-db` once (it adds the three columns to
+  an existing database and keeps all data); until then task queries answer with the "database update needed" error.
+  **Rollback:** deploy the previous code; the unused nullable columns are harmless and may stay (to remove them:
+  `ALTER TABLE project_task DROP COLUMN priority`, and the same for `depends_on` and `rank`).
 
 ## Task screenshots (`attachments.py`)
 

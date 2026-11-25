@@ -217,6 +217,9 @@ CREATE TABLE IF NOT EXISTS project_task (
     pr_url VARCHAR(500),
     note TEXT,
     merged_at VARCHAR(32),
+    priority INTEGER,          -- lower is more urgent; NULL sorts last
+    depends_on TEXT,           -- JSON list of task numbers of the same project
+    rank INTEGER,              -- queue order within a priority (written by the supervisor)
     created_at VARCHAR(32) NOT NULL,
     updated_at VARCHAR(32) NOT NULL,
     UNIQUE (project_id, number)
