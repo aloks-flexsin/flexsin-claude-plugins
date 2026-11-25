@@ -4,6 +4,11 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+### Fixed
+- Central: before `init-db` adds the runner-friction tables, event pushes with friction events, task reports, plan
+  decisions and closing a task failed with 503; the friction bookkeeping is now skipped (in a savepoint, with a
+  warning) until the migration runs, and everything else works.
+
 ### Added
 - Central: runner frictions close the loop (decision record 0011). Rejecting a drafted friction task (rejecting its plan
   or closing it) mutes the signature with "task #N rejected"; a task reported done marks it `fixed`. A fixed signature
