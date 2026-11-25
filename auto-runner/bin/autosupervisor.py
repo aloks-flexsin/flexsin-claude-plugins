@@ -1,4 +1,4 @@
-"""The Supervisor's pass (decision 0010). Today: the plan step. Standard library only; all I/O is injected.
+"""The Supervisor's pass (decision 0010). Today: the plan step and the merge step (`run_pass` does both). Standard library only; all I/O is injected.
 
 `plan_step(project, http, read, base_ref)` reads the project's state (`GET /api/v1/supervisor/state`), loads the policy from
 the base ref through `read(ref, path) -> (text, blob_sha) | None` (autogates.load_policy), runs `plan_gate` on every task
@@ -14,7 +14,7 @@ pass goes on with the next task.
 import importlib.util
 import sys
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 HERE = Path(__file__).resolve().parent
 
@@ -30,6 +30,7 @@ def _load(name, file):
 
 
 gates = _load('autorunner_gates', 'autogates.py')
+autoforge = _load('autoforge', 'autoforge.py')
 
 STATE = '/api/v1/supervisor/state?project=%s'
 DECISION = '/api/v1/supervisor/tasks/%d/plan-decision?project=%s'
@@ -57,3 +58,65 @@ def plan_step(project, http, read, base_ref):
                     'decision': body.get('decision') if ok else None, 'status': code,
                     'error': None if ok else (body.get('error') if isinstance(body, dict) else None) or 'refused'})
     return out
+
+
+MERGE = '/api/v1/supervisor/tasks/%d/merge?project=%s'
+
+
+def pr_number(url):
+    """The pull request number at the end of `https://host/owner/repo/pull/<n>`, or None."""
+    parts = urlsplit(url or '').path.rstrip('/').split('/')
+    return int(parts[-1]) if len(parts) >= 2 and parts[-2] == 'pull' and parts[-1].isdigit() else None
+
+
+def merge_step(project, http, read, base_ref, forge, merger):
+    """Merge the done tasks whose pull request passes `autogates.merge_gate`. -> list of {"task", "verdict", "outcome",
+    "reasons"} for the tasks it acted on; `outcome` is "merged", "refused", "failed" or "error".
+
+    Only a task that is `done`, has a PR and no `merged_at` is looked at, so a merged task is skipped. For each: read the
+    PR, its files, checks and reviews from the forge, run the gate, then record through the merge route: `refused` with
+    the reasons (the service drops a repeat of the same refusal), or `decided` before the forge call and `done` / `failed`
+    after it. The forge merges at the evaluated head SHA only, so a head that moved is refused by the forge and recorded
+    as `failed`. A forge or service error on one task is reported and the pass goes on."""
+    status, state = http('GET', STATE % quote(project, safe=''))
+    if status != 200 or not isinstance(state, dict):
+        return [{'task': None, 'verdict': None, 'outcome': 'error', 'reasons': ['could not read the state']}]
+    loaded = gates.load_policy(read, base_ref)
+    out = []
+    for task in state.get('tasks', []):
+        number, pr = task.get('number'), pr_number(task.get('pr_url'))
+        if task.get('status') != 'done' or task.get('merged_at') or pr is None:
+            continue
+        path = MERGE % (number, quote(project, safe=''))
+        try:
+            info = forge.pr(pr)
+            verdict = gates.merge_gate(task, info, forge.checks(pr), forge.reviews(pr), loaded['policy'], merger,
+                                       forge.changed_files(pr))
+        except autoforge.ForgeError as e:
+            out.append({'task': number, 'verdict': None, 'outcome': 'error', 'reasons': [str(e)]})
+            continue
+        reasons = ([loaded['error']] if loaded['error'] else []) + verdict['reasons']
+        base = {'sha': verdict['sha'], 'method': verdict['method'], 'evidence': verdict['evidence'], 'reasons': reasons}
+        if verdict['verdict'] != 'merge':
+            http('POST', path, dict(base, phase='refused'))
+            out.append({'task': number, 'verdict': 'refuse', 'outcome': 'refused', 'reasons': reasons})
+            continue
+        code, _body = http('POST', path, dict(base, phase='decided'))
+        if code != 200:
+            out.append({'task': number, 'verdict': 'merge', 'outcome': 'error', 'reasons': ['the merge was not recorded']})
+            continue
+        try:
+            result = forge.merge(pr, verdict['sha'], verdict['method'])
+        except autoforge.ForgeError as e:
+            http('POST', path, dict(base, phase='failed', reasons=[str(e)]))
+            out.append({'task': number, 'verdict': 'merge', 'outcome': 'failed', 'reasons': [str(e)]})
+            continue
+        http('POST', path, dict(base, phase='done', reasons=[], merge_sha=result.get('sha')))
+        out.append({'task': number, 'verdict': 'merge', 'outcome': 'merged', 'reasons': []})
+    return out
+
+
+def run_pass(project, http, read, base_ref, forge, merger):
+    """One Supervisor pass: the plan step, then the merge step. -> {"plans": [...], "merges": [...]}."""
+    return {'plans': plan_step(project, http, read, base_ref),
+            'merges': merge_step(project, http, read, base_ref, forge, merger)}

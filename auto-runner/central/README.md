@@ -180,7 +180,16 @@ may not stick over plain http. The API endpoints do not use the cookie.
   converted). **Re-running is safe:** when the current plan post already has a supervisor decision the call changes
   nothing and answers 200 with `"already": true`. Tests: `tests/central/test_supervisor_api.py`,
   `tests/central/test_supervisor_e2e.py`.
-- Column `project_task.merged_at` (nullable; nothing writes it yet). **Migration:** run `python -m central init-db` once
+- **Merge record** `POST /api/v1/supervisor/tasks/<n>/merge?project=<slug>` with
+  `{"phase": "decided" | "done" | "failed" | "refused", "sha": "...", "method": "...", "reasons": [...], "evidence": {...},
+  "merge_sha": "..."}`. Supervisor role only (403 otherwise, 401 without a token). It merges nothing: the supervisor's pass
+  calls the forge between `decided` and `done` / `failed`. Each call writes one `supervisor.merge.<phase>` audit row (detail:
+  number, sha, method, reasons, evidence, merge_sha); `done` also sets `project_task.merged_at`. `sha` is required except for
+  `refused`. `decided` for a merged task answers 409; `done` and `failed` need an earlier `decided` for the same SHA (else
+  409). **Re-running is safe:** a `refused` that repeats the task's previous row (same SHA and reasons) and a `done` for a
+  merged task change nothing and answer 200 with `"already": true`. The task page and the task list show "Merged <time>"
+  once `merged_at` is set. Tests: `tests/central/test_supervisor_e2e.py`, `tests/central/test_tasks_pages.py`.
+- Column `project_task.merged_at` (nullable; written by the merge route's `done` phase). **Migration:** run `python -m central init-db` once
   (it adds the column to an existing database and keeps all data); until then the new routes answer with the
   "database update needed" error. **Rollback:** deploy the previous code; the unused nullable column is harmless and may stay
   (to remove it: `ALTER TABLE project_task DROP COLUMN merged_at`).

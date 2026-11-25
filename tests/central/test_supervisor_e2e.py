@@ -8,7 +8,7 @@ from tests.auto_runner.test_runner import ar
 
 from .test_account_admin import new_client
 from .test_repo_url import AT, conn, world  # noqa: F401  (fixtures)
-from .test_tasks import PW, START, add, api, clock, take, team  # noqa: F401  (fixtures)
+from .test_tasks import PW, START, add, api, clock, decide, take, team  # noqa: F401  (fixtures)
 
 sup_mod = ar._load('autorunner_supervisor', 'autosupervisor.py')
 
@@ -99,3 +99,131 @@ def test_an_unreadable_state_is_reported_and_decides_nothing(app, team, conn, su
     out = sup_mod.plan_step('alpha', lambda m, p, b=None: (403, {'error': 'no'}), reader(), 'origin/main')
     assert out[0]['task'] is None and out[0]['status'] == 403
     assert audit.rows(conn, 'supervisor.plan.approve') == []
+
+
+# ---------- the merge step: journeys J3, J4 and J5 ----------
+
+from tests.auto_runner.fake_forge import FakeForge  # noqa: E402
+
+MERGER = 'sup-bot'
+
+
+def finish(app, team, n, pr, runner='alok/bhawish-claude-auto-runner'):
+    """Take the task, plan it, approve it as a person, build it and report it done with pull request `pr`."""
+    post_plan(app, team, n, GOOD, runner)
+    assert decide(team, n, 'approve').status_code == 302
+    got = take(app, team, runner=runner)
+    assert got['action'] == 'build'
+    resp = api(app, 'POST', '/api/v1/tasks/%d/report' % n, team['token']['dev'],
+               dict(claim=got['claim'], result='done', branch='b/%d' % n, pr_url='https://github.com/o/r/pull/%d' % pr))
+    assert resp.get_json()['task']['status'] == 'done'
+
+
+def pr_entry(sha='s1', author='runner', files=('auto-runner/bin/thing.py',), checks='success', approve=True, base='main'):
+    return dict(pr=dict(number=0, state='open', draft=False, merged=False, head_sha=sha, base=base, author=author),
+                files=list(files), checks=[dict(name='tests', state=checks)],
+                reviews=[dict(user='reviewer', state='APPROVED', commit_id=sha)] if approve else [])
+
+
+def audit_for(conn, action):
+    return list(audit.rows(conn, action))
+
+
+def test_done_when_one_pass(app, team, conn, sup):
+    # J5 (and J3): one pass approves a passing plan and merges a green, approved PR at its exact SHA
+    http = http_for(app, sup)
+    merged = add(team, title='Merged one')
+    finish(app, team, merged, 11)
+    waiting = add(team, title='Plan one')
+    post_plan(app, team, waiting, GOOD, 'alok/second-claude-auto-runner')
+    forge = FakeForge({11: pr_entry(sha='abc')})
+    out = sup_mod.run_pass('alpha', http, reader(), 'origin/main', forge, MERGER)
+    assert [(p['task'], p['decision']) for p in out['plans']] == [(waiting, 'approve')]
+    assert [(m['task'], m['outcome']) for m in out['merges']] == [(merged, 'merged')]
+    assert forge.merges == [(11, 'abc', 'squash')]
+    assert tasks.get(conn, team['alpha']['id'], merged)['merged_at']
+    assert len(audit_for(conn, 'supervisor.plan.approve')) == 1
+    [decided] = audit_for(conn, 'supervisor.merge.decided')
+    [done] = audit_for(conn, 'supervisor.merge.done')
+    assert decided['at'] <= done['at'] and decided['detail']['sha'] == 'abc' == done['detail']['sha']
+    assert done['detail']['evidence']['approvals'] == ['reviewer'] and done['detail']['merge_sha'] == 'merge-abc'
+    # J3: both pages say when it was merged
+    for url in ('/projects/alpha/tasks/%d' % merged, '/projects/alpha/tasks?state=done&view=list'):
+        assert 'Merged' in team['clients']['dev'].get(url).get_data(as_text=True)
+    # a second pass does nothing: the task is merged and the plan is decided
+    again = sup_mod.run_pass('alpha', http, reader(), 'origin/main', forge, MERGER)
+    assert again == dict(plans=[], merges=[]) and len(forge.merges) == 1
+    assert len(audit_for(conn, 'supervisor.merge.decided')) == 1
+
+
+def test_unsafe_prs_refused(app, team, conn, sup):
+    # J4: red CI, a restricted path, no approval and a PR authored by the merger are all refused with their reasons
+    http = http_for(app, sup)
+    cases = {
+        'red': (pr_entry(checks='failure'), 'not green'),
+        'path': (pr_entry(files=['migrations/0001.sql']), 'restricted'),
+        'review': (pr_entry(approve=False), 'approving review'),
+        'self': (pr_entry(author=MERGER), 'different identity'),
+    }
+    numbers = {}
+    for i, name in enumerate(cases):
+        n = add(team, title=name)
+        finish(app, team, n, 20 + i, 'alok/r%d-claude-auto-runner' % i)
+        numbers[name] = n
+    forge = FakeForge({20 + i: cases[name][0] for i, name in enumerate(cases)})
+    out = sup_mod.merge_step('alpha', http, reader(), 'origin/main', forge, MERGER)
+    assert sorted(m['outcome'] for m in out) == ['refused'] * 4 and forge.merges == []
+    rows = {r['detail']['number']: r for r in audit_for(conn, 'supervisor.merge.refused')}
+    assert len(rows) == 4
+    for name, (_entry, word) in cases.items():
+        assert any(word in reason for reason in rows[numbers[name]]['detail']['reasons']), name
+        assert tasks.get(conn, team['alpha']['id'], numbers[name])['merged_at'] is None
+    assert audit_for(conn, 'supervisor.merge.decided') == []
+    # a further pass finds the same state and writes no second refusal
+    sup_mod.merge_step('alpha', http, reader(), 'origin/main', forge, MERGER)
+    assert len(audit_for(conn, 'supervisor.merge.refused')) == 4
+
+
+def test_a_missing_policy_merges_nothing(app, team, conn, sup):
+    http = http_for(app, sup)
+    n = add(team)
+    finish(app, team, n, 31)
+    forge = FakeForge({31: pr_entry()})
+    [out] = sup_mod.merge_step('alpha', http, reader(None), 'origin/main', forge, MERGER)
+    assert out['outcome'] == 'refused' and forge.merges == []
+
+
+def test_a_head_that_moved_is_recorded_as_failed(app, team, conn, sup):
+    http = http_for(app, sup)
+    n = add(team)
+    finish(app, team, n, 41)
+    forge = FakeForge({41: pr_entry(sha='old')})
+    real = forge.merge
+
+    def moved(pr, sha, method):
+        forge.prs[pr]['pr']['head_sha'] = 'new'
+        return real(pr, sha, method)
+    forge.merge = moved
+    [out] = sup_mod.merge_step('alpha', http, reader(), 'origin/main', forge, MERGER)
+    assert out['outcome'] == 'failed' and tasks.get(conn, team['alpha']['id'], n)['merged_at'] is None
+    assert len(audit_for(conn, 'supervisor.merge.decided')) == 1 and len(audit_for(conn, 'supervisor.merge.failed')) == 1
+    assert audit_for(conn, 'supervisor.merge.done') == []
+
+
+def test_the_merge_route_is_supervisor_only_and_validates(app, team, conn, sup):
+    n = add(team)
+    finish(app, team, n, 51)
+    path = '/api/v1/supervisor/tasks/%d/merge' % n
+    body = dict(phase='decided', sha='s')
+    assert api(app, 'POST', path, team['token']['dev'], body).status_code == 403
+    assert api(app, 'POST', path, 'nope', body).status_code == 401
+    assert api(app, 'POST', path, sup, dict(phase='merged', sha='s')).status_code == 400
+    assert api(app, 'POST', path, sup, dict(phase='decided')).status_code == 400
+    assert api(app, 'POST', path, sup, dict(phase='done', sha='s')).status_code == 409           # nothing was decided
+    assert api(app, 'POST', '/api/v1/supervisor/tasks/99/merge', sup, body).status_code == 404
+    assert api(app, 'POST', path, sup, body).status_code == 200
+    assert api(app, 'POST', path, sup, dict(phase='done', sha='other')).status_code == 409       # a different SHA
+    assert api(app, 'POST', path, sup, dict(phase='done', sha='s')).status_code == 200
+    again = api(app, 'POST', path, sup, dict(phase='done', sha='s')).get_json()
+    assert again['already'] is True and len(audit_for(conn, 'supervisor.merge.done')) == 1
+    assert api(app, 'POST', path, sup, body).status_code == 409                                  # already merged

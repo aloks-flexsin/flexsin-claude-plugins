@@ -165,3 +165,73 @@ def plan_decision(number):
                          "round": mark["rounds"] + (1 if decision == "changes" else 0)})
     db.commit()
     return jsonify(task=tasks.public(updated, moment), decision=decision, already=False, converted=converted)
+
+
+MERGE_PHASES = ("decided", "done", "failed", "refused")
+
+
+def merge_marks(db, project_id, number):
+    """-> the task's `supervisor.merge.*` audit rows as (phase, detail), oldest first."""
+    found = db.query("SELECT action, detail FROM audit WHERE project_id = ? AND action LIKE 'supervisor.merge.%' "
+                     "ORDER BY at, id", (project_id,))
+    out = []
+    for row in found:
+        try:
+            detail = json.loads(row["detail"] or "{}")
+        except (TypeError, ValueError):
+            continue
+        if isinstance(detail, dict) and detail.get("number") == number:
+            out.append((row["action"].rsplit(".", 1)[1], detail))
+    return out
+
+
+@bp.post("/api/v1/supervisor/tasks/<int:number>/merge")
+def merge_record(number):
+    """The supervisor records a merge in phases, with `?project=<slug>` and `{"phase": "decided" | "done" | "failed" |
+    "refused", "sha", "method", "reasons", "evidence", "merge_sha"}`. It merges nothing itself (the pass calls the forge
+    between `decided` and `done`/`failed`); it writes one `supervisor.merge.<phase>` audit row per call, and `done` also
+    sets `project_task.merged_at`. `decided` is refused (409) for a task already merged; `done` and `failed` need an
+    earlier `decided` for the same SHA. A `refused` that repeats the previous row (same SHA and reasons) and a `done`
+    for a merged task are no-ops (`already: true`)."""
+    db = get_db()
+    account = _caller(db)
+    if account is None or account["role"] != accounts.SUPERVISOR:
+        tokens._fail(403, "merge records need a supervisor account")
+    project = projects.get_by_slug(db, request.args.get("project"))
+    if project is None:
+        return _error("no such project", 404)
+    body = request.get_json(silent=True)
+    body = body if isinstance(body, dict) else {}
+    phase = body.get("phase")
+    if phase not in MERGE_PHASES:
+        return _error('phase is "decided", "done", "failed" or "refused"', 400)
+    row = tasks.get(db, project["id"], number)
+    if row is None:
+        return _error("no such task", 404)
+    sha = body.get("sha") if isinstance(body.get("sha"), str) else None
+    if phase != "refused" and not sha:
+        return _error("sha is required", 400)
+    moment = auth.now()
+    reasons = _reasons(body.get("reasons"))
+    marks = merge_marks(db, project["id"], number)
+    if (phase == "refused" and marks and marks[-1][0] == "refused" and marks[-1][1].get("sha") == sha
+            and marks[-1][1].get("reasons") == reasons):
+        return jsonify(task=tasks.public(row, moment), phase=phase, already=True)
+    if phase == "decided" and row["merged_at"]:
+        return _error("task %d is already merged" % number, 409)
+    if phase in ("done", "failed"):
+        if not any(p == "decided" and d.get("sha") == sha for p, d in marks):
+            return _error("no merge was decided for that SHA", 409)
+        if phase == "done" and row["merged_at"]:
+            return jsonify(task=tasks.public(row, moment), phase=phase, already=True)
+    evidence = body.get("evidence") if isinstance(body.get("evidence"), dict) else {}
+    merge_sha = body.get("merge_sha") if isinstance(body.get("merge_sha"), str) else None
+    method = body.get("method") if isinstance(body.get("method"), str) else None
+    if phase == "done":
+        db.execute("UPDATE project_task SET merged_at = ? WHERE id = ?", (sessions.iso(moment), row["id"]))
+        row = tasks.get(db, project["id"], number)
+    audit.record(db, "supervisor.merge." + phase, sessions.iso(moment), account_id=account["id"], project_id=project["id"],
+                 detail={"number": number, "sha": sha, "method": method, "reasons": reasons, "evidence": evidence,
+                         "merge_sha": merge_sha})
+    db.commit()
+    return jsonify(task=tasks.public(row, moment), phase=phase, already=False)

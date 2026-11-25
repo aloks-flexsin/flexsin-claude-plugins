@@ -285,7 +285,7 @@ Test layout: central tests go in `tests/central/`. Runner and gate tests go in `
   *Slice:* 2 Merge green PRs
   *Kind:* feature
 
-- [ ] **B7 Merge step, record route and Merged display.** Add `POST /api/v1/supervisor/tasks/<n>/merge` to write `merged_at` (the column exists from B2) plus the audit rows (`decided` before the forge call, `done` or `failed` after, and `refused` with the reasons). Add the merge step to the pass: it merges at the evaluated SHA and skips a task already merged. The task page and the task list show "Merged <time>" when `merged_at` is set. Update both READMEs in the same commit (the route string and the merge step).
+- [x] **B7 Merge step, record route and Merged display.** Add `POST /api/v1/supervisor/tasks/<n>/merge` to write `merged_at` (the column exists from B2) plus the audit rows (`decided` before the forge call, `done` or `failed` after, and `refused` with the reasons). Add the merge step to the pass: it merges at the evaluated SHA and skips a task already merged. The task page and the task list show "Merged <time>" when `merged_at` is set. Update both READMEs in the same commit (the route string and the merge step).
   *Acceptance:* `tests/central/test_supervisor_e2e.py::test_done_when_one_pass` (J5) and `::test_unsafe_prs_refused` (J4) pass. `tests/central/test_tasks_pages.py::test_merged_task_shows_merged_time` passes (task page and task list, J3).
   *Slice:* 2 Merge green PRs
   *Kind:* feature
