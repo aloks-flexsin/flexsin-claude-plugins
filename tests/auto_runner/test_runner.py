@@ -1029,6 +1029,9 @@ def test_a_tasks_next_run_continues_its_items_instead_of_adding_a_second_copy(pr
     (auto / 'run').mkdir(exist_ok=True)
     (auto / 'run' / 'current-task.json').write_text(json.dumps({'number': 8, 'claim': 'c'}), encoding='utf-8')
     assert not ar.already_queued(req, qtext, auto)            # the branch builds another task
+    # a finished run clears its current task: the worktree branch made for task 7 still says which task it builds
+    assert ar.already_queued(req, qtext, auto, 'alok/a-claude-auto-runner/feat/task-7-x-2')
+    assert not ar.already_queued(req, qtext, auto, 'alok/a-claude-auto-runner/feat/task-77-x')
     (auto / 'run' / 'current-task.json').write_text(json.dumps({'number': 7, 'claim': 'c'}), encoding='utf-8')
     assert ar.already_queued(req, qtext, auto)
     assert not ar.already_queued(req, QUEUE.replace('A2', 'Q2'), auto.parent / 'elsewhere')    # A2 not queued anyway

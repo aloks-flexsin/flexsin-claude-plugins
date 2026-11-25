@@ -467,7 +467,7 @@ def free_request_ids(d, qtext):
     return mapping
 
 
-def already_queued(d, qtext, auto):
+def already_queued(d, qtext, auto, branch=''):
     """A central task's request (task.json) whose every item is in the queue `qtext` already, under its own ID or the one
     free_request_ids moved it to -> True. That is the task's next run (the last one stopped before its items were all
     done, and the watcher took the task again), not new work: adding it would build the task twice."""
@@ -476,8 +476,12 @@ def already_queued(d, qtext, auto):
         number = json.loads((d / 'task.json').read_text(encoding='utf-8')).get('number')
     except (OSError, ValueError, AttributeError):
         return False
-    running = autotasks.current(auto)                  # only the task this branch is already building continues
-    if not items.exists() or not isinstance(number, int) or not running or running['number'] != number:
+    # only the task this branch is already building continues: the run's current task, or (that record is cleared when a
+    # run ends) the worktree branch made for it, `.../task-<N>-<brief>[-k]`
+    running = autotasks.current(auto)
+    building = (running is not None and running['number'] == number) or \
+        bool(isinstance(number, int) and re.search(rf'/task-{number}-', branch or ''))
+    if not items.exists() or not isinstance(number, int) or not building:
         return False
     ids = [i for i, _, _ in queue.parse_items(items.read_text(encoding='utf-8'))]
     queued = {i for i, _, _ in queue.parse_items(qtext)}
@@ -1131,7 +1135,9 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
 
     if enqueue and (auto / 'pending' / enqueue).is_dir():
         qnow = wt / queue_rel if (wt / queue_rel).exists() else pq
-        if already_queued(auto / 'pending' / enqueue, qnow.read_text(encoding='utf-8') if qnow.exists() else '', auto):
+        wt_branch = git(wt, 'branch', '--show-current', check=False) if wt.exists() else ''
+        if already_queued(auto / 'pending' / enqueue, qnow.read_text(encoding='utf-8') if qnow.exists() else '', auto,
+                          wt_branch):
             dest = auto / 'applied' / f'{enqueue}-again-{datetime.now().strftime("%H%M%S")}'
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(auto / 'pending' / enqueue), str(dest))
