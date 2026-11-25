@@ -97,6 +97,7 @@ autocentral = _load('autorunner_central', 'autocentral.py')
 AUTO_DIR = '.auto'
 STALE_NOTE = '(stale artifact)'
 UNAVAILABLE_NOTE = '(delivery unavailable)'
+EVENTS_ROUTE = '/api/v1/events'           # where push() sends the ledger (the route of its central_error frictions)
 BASE_ALLOWED = ['Bash(git add:*)', 'Bash(git commit:*)']
 
 
@@ -447,9 +448,18 @@ def update_base(project, remote, base, dry_run=False):
     return start
 
 
+TASK_FOLDER = re.compile(r'task-(\d+)(?:-|$)')
+
+
+def _request_order(d):
+    """`task-<N>-...` folders first, by their number (task-9 before task-10), then the others by name."""
+    m = TASK_FOLDER.match(d.name)
+    return (0, int(m.group(1)), d.name) if m else (1, 0, d.name)
+
+
 def pending_requests(project):
-    pending = project / AUTO_DIR / 'pending'
-    return sorted(p for p in pending.iterdir() if p.is_dir()) if pending.exists() else []
+    pending = Path(project) / AUTO_DIR / 'pending'
+    return sorted((p for p in pending.iterdir() if p.is_dir()), key=_request_order) if pending.exists() else []
 
 
 def free_request_ids(d, qtext):
@@ -465,28 +475,6 @@ def free_request_ids(d, qtext):
         say(f"request '{d.name}': item IDs already in the queue were moved to a free letter: "
             + ', '.join(f'{a} -> {b}' for a, b in mapping.items()))
     return mapping
-
-
-def already_queued(d, qtext, auto, branch=''):
-    """A central task's request (task.json) whose every item is in the queue `qtext` already, under its own ID or the one
-    free_request_ids moved it to -> True. That is the task's next run (the last one stopped before its items were all
-    done, and the watcher took the task again), not new work: adding it would build the task twice."""
-    items = d / 'items.md'
-    try:
-        number = json.loads((d / 'task.json').read_text(encoding='utf-8')).get('number')
-    except (OSError, ValueError, AttributeError):
-        return False
-    # only the task this branch is already building continues: the run's current task, or (that record is cleared when a
-    # run ends) the worktree branch made for it, `.../task-<N>-<brief>[-k]`
-    running = autotasks.current(auto)
-    building = (running is not None and running['number'] == number) or \
-        bool(isinstance(number, int) and re.search(rf'/task-{number}-', branch or ''))
-    if not items.exists() or not isinstance(number, int) or not building:
-        return False
-    ids = [i for i, _, _ in queue.parse_items(items.read_text(encoding='utf-8'))]
-    queued = {i for i, _, _ in queue.parse_items(qtext)}
-    names = queued | {old for new, old in load_renamed(auto).items() if new in queued}
-    return bool(ids) and all(i in names for i in ids)
 
 
 RENAMED_FILE = Path('run') / 'renamed.json'
@@ -519,6 +507,29 @@ def request_errors(d, qtext, cfg):
         jfile = d / 'journeys.md'
         errors = request_journeys(itext, jfile.read_text(encoding='utf-8') if jfile.exists() else '')[2]
     return itext, errors
+
+
+def item_text(block):
+    """An item's text for comparing a request with the queue: the block without its tick, without any status line the
+    runner added, without blank lines and trailing spaces."""
+    lines = [line.rstrip() for line in block.splitlines() if line.strip() and not queue.STATUS.match(line)]
+    if lines:
+        lines[0] = re.sub(r'^- \[[ x]\] ', '', lines[0])
+    return '\n'.join(lines)
+
+
+def already_queued(qtext, itext, renamed=None):
+    """True when the request `itext` has items and every one of them is already in the queue `qtext` with the same item
+    text (a request taken again after a run of it stopped part-way: it resumes instead of being refused). `renamed`
+    ({queue id: task's id}, load_renamed) covers a central task whose clashing IDs free_request_ids moved: its fresh
+    request still says S1 where the queue says B1, so the request is read with the moved IDs first."""
+    queued = {i for i, _, _ in queue.parse_items(qtext)}
+    moved = {old: new for new, old in (renamed or {}).items() if new in queued}
+    if moved:
+        itext = re.sub(r'\b([A-Z]{1,3}\d+)\b', lambda m: moved.get(m.group(1), m.group(1)), itext)
+    asked = queue.parse_items(itext)
+    have = {i: item_text(b) for i, _, b in queue.parse_items(qtext)}
+    return bool(asked) and all(have.get(i) == item_text(b) for i, _, b in asked)
 
 
 def first_valid_request(project, cfg, qtext):
@@ -1102,6 +1113,24 @@ def project_slug(project, cfg):
     return cfg['central']['project'].strip() if autosafe.central_enabled(cfg) else Path(project).name
 
 
+def record_refused_start(project, group, cfg=None):
+    """Write a run-level `friction` event (refused_start:<group>, item null) to the project's ledger, so the next push sends
+    it (decision record 0011). `group` is a fixed code (`newer_installed` or a preflight group), never a message. Recording
+    never changes the refusal: a ledger that cannot be written is skipped."""
+    try:
+        if cfg is None:
+            cfg = autocfg.load(project)
+        slug = project_slug(project, cfg)
+    except (autocfg.ConfigError, KeyError, AttributeError):
+        slug = Path(project).name
+    run_id = f'{datetime.now().strftime("%Y%m%d-%H%M")}-{uuid.uuid4().hex[:6]}'
+    try:
+        autoevents.Ledger(Path(project) / AUTO_DIR, run_id, slug).emit(
+            'friction', None, autoevents.friction_detail('refused_start', group))
+    except OSError:
+        pass
+
+
 def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False, allow_dirty=False,
         claude=run_claude, tests=run_tests, transport=None, browser_runner=None, pr_runner=None, sleep=time.sleep,
         journey_hooks=None):
@@ -1115,6 +1144,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
     newer = autoupdate.newer_installed()
     if newer:
         mine = autoupdate.installed_version()
+        record_refused_start(project, 'newer_installed')
         raise RunnerError(f'This runner is auto-runner {mine}, but {newer[0]} is installed. Start the installed one instead: '
                           f'python "{Path(newer[1]) / "bin" / "auto_run.py"}" (or restart Claude so /auto-runner:auto uses it).')
     cfg = autocfg.load(project)
@@ -1125,30 +1155,37 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
     if not git(project, 'rev-parse', '--git-dir', check=False):
         raise RunnerError(f'{project} is not a git repository.')
     base = autocfg.detect_base_branch(project, cfg)
-    problems = autosafe.preflight(project, cfg, base)
-    if problems:
+    groups = autosafe.preflight_groups(project, cfg, base)
+    if groups:
+        record_refused_start(project, groups[0][0], cfg)
+        problems = [message for _, message in groups]
         raise RunnerError('Preflight refused to start:\n- ' + '\n- '.join(problems))
     wt = worktree_path(project, cfg)
     check_only = cfg['check_only'] or not cfg['test_command']
     if check_only:
         say(f'{autosafe.NO_TESTS} (check_only is set); results cannot be proven by a suite')
 
-    if enqueue and (auto / 'pending' / enqueue).is_dir():
-        qnow = wt / queue_rel if (wt / queue_rel).exists() else pq
-        wt_branch = git(wt, 'branch', '--show-current', check=False) if wt.exists() else ''
-        if already_queued(auto / 'pending' / enqueue, qnow.read_text(encoding='utf-8') if qnow.exists() else '', auto,
-                          wt_branch):
-            dest = auto / 'applied' / f'{enqueue}-again-{datetime.now().strftime("%H%M%S")}'
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(auto / 'pending' / enqueue), str(dest))
-            say(f"request '{enqueue}' is a task whose items are already in the queue: continuing them, not adding a "
-                f'second copy (set aside in {AUTO_DIR}/applied)')
-            enqueue = ''
     if enqueue:
         req = auto / 'pending' / enqueue / 'items.md'
         if not req.exists():
             raise RunnerError(f'No request at {req} (expected items.md).')
         qsrc = wt / queue_rel if (wt / queue_rel).exists() else pq
+        waiting = (f"a run is in progress. Request '{enqueue}' is checked and waiting; it starts on a new branch in a "
+                   "later run (one request per branch).")
+        if already_queued(qsrc.read_text(encoding='utf-8') if qsrc.exists() else '', req.read_text(encoding='utf-8'),
+                          load_renamed(auto)):
+            if lock.held():                 # the run that holds it works on it: touch neither the folder nor the task
+                say(waiting)
+                return 0
+            on = (git(wt, 'branch', '--show-current', check=False) if wt.exists() else '') or \
+                (git(project, 'branch', '--show-current', check=False) or 'HEAD')
+            say(f"request '{enqueue}' is already queued on {on}: resuming it")
+            if not dry_run:
+                # the claim autotasks.start wrote last is the one this run beats and reports with
+                autotasks.adopt(auto, req.parent)
+                shutil.rmtree(req.parent)
+            enqueue = ''
+    if enqueue:
         free_request_ids(req.parent, qsrc.read_text(encoding='utf-8'))
         _, errors = queue.validate(qsrc.read_text(encoding='utf-8'), req.read_text(encoding='utf-8'),
                                    require_kind=autocfg.changelog(cfg)['enabled'],
@@ -1160,8 +1197,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             say('Not added:\n- ' + '\n- '.join(errors))
             return 1
         if lock.held():
-            say(f"a run is in progress. Request '{enqueue}' is checked and waiting; it starts on a new branch in a later run "
-                "(one request per branch).")
+            say(waiting)
             return 0
     if not dry_run:
         if claude is run_claude and not shutil.which('claude'):
@@ -1208,7 +1244,8 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             say(f"request '{d.name}' waits: {branch} is not merged into {start} yet (one request per branch; "
                 'it starts on a new branch in the first run after the merge)')
             if pusher is not None:
-                autotasks.wait_note(pusher, d, f'waits: {branch} is not merged into {start} yet')
+                autotasks.wait_note(pusher, d, f'waits: {branch} is not merged into {start} yet',
+                                    on_error=central_error)
 
     prompt = build_prompt(cfg, queue_rel, principles=principles_text(project, cfg))
     allowed = (list(BASE_ALLOWED) + ([f'Bash({cfg["test_command"]}:*)'] if cfg['test_command'] else [])
@@ -1267,6 +1304,22 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             ledger.emit('item_state', item, {'from': prev, 'to': state,
                                              **({'was': renamed[item]} if item in renamed else {})})
 
+    frictions = set()                       # (item, signature) already recorded in this run
+
+    def friction(item, kind, subject=''):
+        """Record what got in the run's way as a `friction` event, at most once per signature per item per run
+        (decision record 0011). The subject is a fixed-vocabulary word, never project content."""
+        detail = autoevents.friction_detail(kind, subject)
+        key = (item, autoevents.signature(detail))
+        if key not in frictions:
+            frictions.add(key)
+            ledger.emit('friction', item, detail)
+
+    def central_error(status, route):
+        """`on_error` of the central calls: a run-level `central_error` friction, `http_<status>:<route>` or `unreachable`."""
+        subject = f'http_{status}:{route}' if isinstance(status, int) else 'unreachable'
+        friction(None, 'central_error', subject if autoevents.FRICTION_SUBJECT.match(subject) else f'http_{status}')
+
     source = transport or central_transport(cfg) or autodeliver.LocalTransport(auto)
     pusher = source if isinstance(source, autodeliver.HttpTransport) else None
 
@@ -1276,18 +1329,22 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             return
         try:
             sent = autodeliver.push(pusher, auto, slug)
-        except (OSError, ValueError) as e:
-            sent = {'skipped': [], 'error': type(e).__name__}
+        except (OSError, ValueError) as e:              # the local ledger or cursor, not the service
+            sent = {'skipped': [], 'error': type(e).__name__, 'local': True}
         if sent['skipped']:
             say(f"central service refused event(s) {', '.join(sent['skipped'])}: skipped")
+            central_error(sent.get('skipped_status'), EVENTS_ROUTE)
         if sent['error']:
             say(f"events not sent to the central service ({sent['error']}): will try again at the next push")
+            if not sent.get('local'):
+                central_error(sent.get('error_status'), EVENTS_ROUTE)
 
     def hold_stale(item, paths):
         detail = f'{STALE_NOTE} {", ".join(paths)}: revalidate (autostale.py revalidate) before it resumes'
         if statuses.get(item) != ('blocked', detail):
             say(f'item {item} not resumed: stale artifact(s) {", ".join(paths)}')
             ledger.emit('blocker', item, {'action': 'stale', 'artifacts': list(paths)})
+            friction(item, 'gate_stop', 'stale')
         set_state(item, 'blocked', detail)
 
     def deliver():
@@ -1337,7 +1394,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             apply_pending(project, wt, cfg, queue_rel, limit=1)
             if pusher is not None and task_number is not None:
                 # the request was taken on a new branch: its task stops being Queued and becomes Building
-                if autotasks.beat(pusher, auto, 'building') == 'lost':
+                if autotasks.beat(pusher, auto, 'building', on_error=central_error) == 'lost':
                     say(f'task {task_number}: claim lost; carrying on without a central task')
         report_waiting()
         known = {i: (s, d) for i, s, d in queue.statuses(pq.read_text(encoding='utf-8'))} if pq.exists() else {}
@@ -1413,6 +1470,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 rounds = {}
             if res['status'] == 'invalid':
                 say(f'journey check after slice {n} could not be done: ' + '; '.join(res['errors']) + f' (log: {jlog})')
+                friction(item, 'gate_stop', 'journey')
                 return False
             if res['status'] == 'pass':
                 for j in journeys:
@@ -1454,7 +1512,9 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                     say(f'journey {f["id"]} still fails after {jcfg["max_fix_rounds"]} fix round(s): raised a blocker '
                         f'and stopping (evidence: {f["screenshot"]})')
                     stop_now = True
+                    friction(item, 'gate_stop', 'journey')
                     continue
+                friction(item, 'fix_round', 'journey')
                 fix_id = next_item_id(wq.read_text(encoding='utf-8'), letter)
                 wq.write_text(queue.insert(wq.read_text(encoding='utf-8'),
                                            autojourney.fix_item(fix_id, j, f, n, name, autocfg.changelog(cfg)['enabled']),
@@ -1488,7 +1548,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 break
             if i > 1:
                 deliver()
-            if pusher is not None and autotasks.beat(pusher, auto) == 'lost':
+            if pusher is not None and autotasks.beat(pusher, auto, on_error=central_error) == 'lost':
                 say('the central task this run works on was released, reassigned or its claim expired: stopping. '
                     'Its work so far stays on the branch.')
                 exit_code, reason = 1, 'claim_lost'
@@ -1550,6 +1610,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             if hit is None and git(wt, 'rev-parse', 'HEAD') == head:
                 hit = usage_limit(out, soft=True)                  # a soft cut-off: no error flag, and nothing committed
             if hit is None and budget_stop(out):
+                friction(item, 'usage_stop', 'budget')
                 handovers[item] = handovers.get(item, 0) + 1
                 if handovers[item] <= MAX_BUDGET_HANDOVERS:
                     kept = set_aside(wt, cfg, item, stamp, 'at a budget stop')
@@ -1567,6 +1628,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             if hit is None:
                 mark_account()                                     # this attempt got through: lanes waiting may retry
             if hit is not None:
+                friction(item, 'usage_stop', 'limit')
                 kept = set_aside(wt, cfg, item, stamp)
                 entry.update(result='usage_limit', duration_s=round(time.time() - t0, 1),
                              commit=(lambda h: h[:10] if h != head else None)(git(wt, 'rev-parse', 'HEAD')))
@@ -1601,6 +1663,8 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             if denied:
                 log_text += '\n--- refused for lack of permission ---\n' + '\n'.join(denied) + '\n'
                 say(f'{item}: the agent was refused permission for ' + '; '.join(denied[:3]))
+                for call in denied:
+                    friction(item, 'permission_denied', autoevents.friction_subject(call))
             red = False
             if not check_only:
                 tcode, tout = tests(cfg['test_command'], wt)
@@ -1701,6 +1765,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 set_state(item, 'blocked', blocked_detail(raised))
             elif denied and code != 0:                 # an early exit, not a refusal the agent stopped on: retry
                 set_state(item, 'queued', f'agent exited with {code}; retried next iteration')
+                friction(item, 'retry', f'exit_{code}')
             elif denied:
                 set_state(item, 'blocked', f'needs permission for {"; ".join(denied[:3])}: allow it in .claude/settings.json, '
                                            f'or put the tool on PATH with "path_prepend"')
@@ -1712,6 +1777,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 say(f'claude exited with {code}; see the log.')
             if red and stage is not None and stage['status'] != 'pass':
                 say(f'browser acceptance {stage_summary(stage)}: treated as a red suite, stopping so a person can look.')
+                friction(item, 'gate_stop', 'browser')
                 exit_code, reason = 1, 'red'
                 return 1
             if red:
@@ -1723,6 +1789,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                     fix_rounds[item] = rounds_now
                     pending_fix[item] = fix_note(cfg['test_command'], tail, rounds_now, max_fix)
                     set_state(item, 'queued', f'suite red; fix round {rounds_now} of {max_fix}')
+                    friction(item, 'fix_round', 'suite')
                     sync_back(wq, pq, statuses)
                     budget[0] += 1                                  # the fix round gets its own iteration
                     say(f'the suite is RED after {item}: reopened it for fix round {rounds_now} of {max_fix}'
@@ -1743,6 +1810,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 set_state(item, 'blocked', f'suite red after {max_fix} fix round(s); see the log')
                 sync_back(wq, pq, statuses)
                 say(f'the suite is still RED after {max_fix} fix round(s) of {item}: raised a blocker and stopping.')
+                friction(item, 'gate_stop', 'suite')
                 exit_code, reason = 1, 'red'
                 return 1
             if leaked:
@@ -1758,10 +1826,12 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             if entry['result'] == 'docs':
                 say(f'item {item}: the docs gate failed: stopping so a person can look.')
                 say('\n'.join(gate['failures']))
+                friction(item, 'gate_stop', 'docs')
                 exit_code, reason = 1, 'docs'
                 return 1
             if entry['result'] == 'changelog':
                 say(f'item {item}: no valid changelog sentence ({"; ".join(change["errors"])}): stopping so a person can look.')
+                friction(item, 'gate_stop', 'changelog')
                 exit_code, reason = 1, 'changelog'
                 return 1
             if entry['result'] == 'done' and autosafe.journeys_enabled(cfg) and not journey_check(item):
@@ -1791,6 +1861,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                         waited += max(pause, 0) - left
                         continue
                     usage_stop = {'window': window, 'utilization': w['utilization'], 'resets_at': w['resets_at']}
+                    friction(item, 'usage_stop', 'threshold')
                     exit_code, reason = USAGE_LIMIT_EXIT, 'usage_threshold'
                     return USAGE_LIMIT_EXIT
         else:
@@ -1815,9 +1886,13 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         if pusher is not None and autotasks.current(auto) is not None:
             wq_end = wt / queue_rel
             done = exit_code == 0 and wq_end.exists() and queue.open_count(wq_end.read_text(encoding='utf-8')) == 0
-            line = autotasks.finish(pusher, auto, done, branch, (published or {}).get('pr_url'), reason)
+            before = len(frictions)
+            line = autotasks.finish(pusher, auto, done, branch, (published or {}).get('pr_url'), reason,
+                                    on_error=central_error)
             if line:
                 say(line)
+            if len(frictions) > before:               # a failed report: send its friction now, not at the next run
+                push()
         lock.release()
         PATH_PREPEND.clear()
         if last_suite:

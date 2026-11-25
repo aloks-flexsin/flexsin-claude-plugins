@@ -43,6 +43,18 @@ one-time link. Someone who is not a member of a project gets "not found" on its 
 4. Tell teammates the service address (and, for `/auto-runner:join`, the slug). That replaces sharing clone commands: `/auto-runner:join <slug>`
    reads the repository URL from the service.
 
+## Admin: runner frictions (unverified on the live service)
+**Runner frictions** (linked from Accounts) lists where unattended runs got stuck, across the projects that share
+them. To have the service draft a task when one keeps coming back, set `CENTRAL_REFLECTION_PROJECT` to the slug of the
+project that should get it (usually the auto-runner project); without it the page says "Drafting is off". A signature
+seen 3 times, or in 2 projects, in 30 days then becomes an open task "Runner friction: <signature>" with the evidence,
+assigned to `CENTRAL_REFLECTION_ASSIGNEE` (a member developer or above) or else that project's first owner, who gets a
+notification. It is planned and approved like any other task. At most 3 are drafted a day; the numbers can be changed
+with `CENTRAL_REFLECTION_MIN_COUNT`, `CENTRAL_REFLECTION_MIN_PROJECTS` and `CENTRAL_REFLECTION_DAILY`. **Mute** a
+signature to stop it being drafted; after **Unmute** only new days count. Rejecting or closing a drafted task mutes its
+signature ("task #N rejected"); when the task is done the signature shows **Fixed**, and if it comes back on later days
+a new task "Runner friction came back: <signature>" is drafted, linked to the earlier one on the page.
+
 ## Teammate: the quick way
 Open Claude Code in the project folder (or any folder, to clone) and run **`/auto-runner:central`**. It checks what is
 missing and, with your yes at each step:

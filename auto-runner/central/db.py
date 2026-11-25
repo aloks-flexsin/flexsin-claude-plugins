@@ -11,11 +11,11 @@ TABLES = (
     "account", "session", "project", "member", "token", "event", "task",
     "plan", "blocker", "decision", "delivery", "issue", "audit", "invite", "device_login", "personal_token",
     "project_task", "claude_identity", "runner", "notification", "push_subscription",
-    "task_attachment",
+    "task_attachment", "friction_count", "friction_day", "friction_signature",
 )
 
 # Columns added to a table after it first shipped: (table, column, type). init_db adds each one that is missing
-# (nullable, so existing rows stay valid). Keep schema.sql's CREATE TABLE in step.
+# (nullable, or NOT NULL with a DEFAULT, so existing rows stay valid). Keep schema.sql's CREATE TABLE in step.
 COLUMNS_ADDED = (
     ("project", "repo_url", "VARCHAR(500)"),
     ("project", "repo_key", "VARCHAR(500)"),
@@ -25,6 +25,8 @@ COLUMNS_ADDED = (
     ("device_login", "claude_account", "VARCHAR(64)"),
     ("personal_token", "runner_user", "VARCHAR(64)"),
     ("personal_token", "claude_account", "VARCHAR(64)"),
+    ("project_task", "merged_at", "VARCHAR(32)"),
+    ("project", "share_frictions", "INTEGER NOT NULL DEFAULT 1"),
 )
 REPO_KEY_INDEX = "CREATE UNIQUE INDEX IF NOT EXISTS project_repo_key ON project (repo_key)"
 

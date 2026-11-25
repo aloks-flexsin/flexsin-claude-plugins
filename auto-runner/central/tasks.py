@@ -27,7 +27,7 @@ import secrets
 
 from flask import Blueprint, abort, g, jsonify, make_response, redirect, render_template, request, url_for
 
-from . import accounts, audit, auth, identities, notifications, projects, sessions, tokens, ui
+from . import accounts, audit, auth, frictions, identities, notifications, projects, sessions, tokens, ui
 from .access import project_access
 from .db import get_db
 
@@ -85,6 +85,8 @@ def for_project(db, project_id):
 
 
 def _can_run(db, project, account):
+    if account["role"] == accounts.SUPERVISOR:             # a supervisor never runs tasks
+        return False
     return projects.allows(projects.effective_role(db, project, account), "developer")
 
 
@@ -92,6 +94,8 @@ def create(db, project, by, assignee, title, description, moment, status="open",
     """Add a task and commit -> its row. People add tasks for themselves; an admin for any member who can run runners."""
     title = _text(title, MAX_TITLE, "the title", required=True)
     description = _text(description, MAX_TEXT, "the description")
+    if by["role"] == accounts.SUPERVISOR:
+        raise TaskError("a supervisor account does not create tasks", 403)
     if assignee["id"] != by["id"] and by["role"] != projects.ADMIN:
         raise TaskError("only an admin adds tasks for someone else", 403)
     if not _can_run(db, project, assignee):
@@ -219,6 +223,8 @@ def report(db, project, number, claim, result, branch, pr_url, note, moment):
                " heartbeat_at = ?, updated_at = ?, claim_id = CASE WHEN ? = 'done' THEN NULL ELSE claim_id END"
                " WHERE id = ?", ("done" if result == "done" else "building", _text(branch, 300, "the branch") or None,
                                  pr_url, _text(note, 2000, "the note") or None, _at(moment), _at(moment), result, row["id"]))
+    if result == "done":
+        frictions.task_ended(db, project, row, "done", row["assignee_id"], _at(moment))   # a drafted friction is fixed
     db.commit()
     return get(db, project["id"], number)
 
@@ -248,7 +254,12 @@ def decide(db, project, row, account, decision, comment, moment):
         notifications.notify(db, [row["assignee_id"]], project, "changes", notifications.task_text("changes", row),
                              notifications.task_link(project, row["number"]),
                              notifications.task_key(project, row["number"], "changes"), moment)
+        frictions.record(db, project, "plan_changes", "", at)      # a plan sent back is a friction (record 0011)
+    if status == "rejected":
+        frictions.task_ended(db, project, row, "rejected", account["id"], at)    # mutes a drafted friction (R9)
     db.commit()
+    if status == "changes_requested":
+        frictions.draft_safely(db, moment)
     return get(db, project["id"], row["number"])
 
 
@@ -275,6 +286,7 @@ def close(db, project, row, account, reason, moment):
                (reason, account["id"], at, at, row["id"]))
     for kind in ("plan", "changes"):
         notifications.resolve(db, notifications.task_key(project, row["number"], kind), moment)
+    frictions.task_ended(db, project, row, "rejected", account["id"], at)        # mutes a drafted friction (R9)
     return reason
 
 

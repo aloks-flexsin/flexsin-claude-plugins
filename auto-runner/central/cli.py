@@ -16,6 +16,8 @@ def build_parser():
     sub = parser.add_subparsers(dest="command", required=True)
     admin = sub.add_parser("create-admin", help="create an admin account (asks for the password twice)")
     admin.add_argument("--email", required=True)
+    supervisor = sub.add_parser("supervisor-create", help="create a supervisor account (asks for the password twice)")
+    supervisor.add_argument("email")
     sub.add_parser("init-db", help="apply schema.sql to DATABASE_URL and add columns an older database lacks (safe to run again)")
     return parser
 
@@ -39,7 +41,7 @@ def init_db(url, out=sys.stdout, err=sys.stderr):
     return 0
 
 
-def create_admin(email, url, out=sys.stdout, err=sys.stderr):
+def create_admin(email, url, out=sys.stdout, err=sys.stderr, role="admin"):
     first = getpass.getpass("Password: ")
     if getpass.getpass("Password again: ") != first:
         print("the two passwords differ; nothing was created", file=err)
@@ -51,13 +53,13 @@ def create_admin(email, url, out=sys.stdout, err=sys.stderr):
         return 1
     conn = db.connect(url)
     try:
-        account = accounts.create(conn, email, first, role="admin")
+        account = accounts.create(conn, email, first, role=role)
     except accounts.AccountError as exc:
         print(str(exc), file=err)
         return 1
     finally:
         conn.close()
-    print("created admin %s" % account["email"], file=out)
+    print("created %s %s" % (role, account["email"]), file=out)
     return 0
 
 
@@ -70,6 +72,8 @@ def main(argv=None, environ=None, out=sys.stdout, err=sys.stderr):
         return 2
     if args.command == "create-admin":
         return create_admin(args.email, url, out=out, err=err)
+    if args.command == "supervisor-create":
+        return create_admin(args.email, url, out=out, err=err, role=accounts.SUPERVISOR)
     if args.command == "init-db":
         return init_db(url, out=out, err=err)
     return 2

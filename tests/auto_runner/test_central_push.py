@@ -86,7 +86,8 @@ def cursor(tmp_path):
 def test_push_sends_new_lines_once_and_keeps_a_cursor(central, tmp_path):
     led = ledger(tmp_path)
     first = [led.emit('run_start', detail={'branch': 'b'}), led.emit('item_state', 'A1', {'from': 'queued', 'to': 'running'})]
-    assert ad.push(central.transport(), tmp_path / '.auto', SLUG) == {'sent': 2, 'skipped': [], 'error': None}
+    assert ad.push(central.transport(), tmp_path / '.auto', SLUG) == {'sent': 2, 'skipped': [], 'error': None,
+                                                                      'skipped_status': None, 'error_status': None}
     assert central.stored_ids() == {e['id'] for e in first} and cursor(tmp_path)['lines'] == 2
 
     assert ad.push(central.transport(), tmp_path / '.auto', SLUG)['sent'] == 0     # nothing new: no request at all
@@ -98,7 +99,8 @@ def test_push_sends_new_lines_once_and_keeps_a_cursor(central, tmp_path):
 
 
 def test_push_without_a_ledger_sends_nothing(central, tmp_path):
-    assert ad.push(central.transport(), tmp_path / '.auto', SLUG) == {'sent': 0, 'skipped': [], 'error': None}
+    assert ad.push(central.transport(), tmp_path / '.auto', SLUG) == {'sent': 0, 'skipped': [], 'error': None,
+                                                                      'skipped_status': None, 'error_status': None}
     assert central.calls == []
 
 
@@ -133,7 +135,7 @@ def test_an_event_the_service_will_never_take_is_skipped_and_the_rest_arrive(cen
         f.write(json.dumps(bad) + '\n')
     after = led.emit('run_end', detail={'exit': 0, 'reason': 'done'})
     out = ad.push(central.transport(), tmp_path / '.auto', SLUG)
-    assert out == {'sent': 2, 'skipped': [bad['id']], 'error': None}
+    assert out == {'sent': 2, 'skipped': [bad['id']], 'error': None, 'skipped_status': 400, 'error_status': None}
     assert central.stored_ids() == {before['id'], after['id']}
     assert cursor(tmp_path)['lines'] == 3 and cursor(tmp_path)['skipped'] == [bad['id']]
 

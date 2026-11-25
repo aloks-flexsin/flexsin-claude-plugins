@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design: B-0042 blocker – Central</title>
+<link rel="stylesheet" href="central.css">
+</head>
+<body>
+<!-- Approved design for the central service (sidebar redesign). Static mock-up with example data; not used by the app.
+     All design pages: index.html. -->
+<div class="app light" id="app">
+  <header class="top">
+    <a class="brand" href="my-work.html">auto-runner <span>central</span></a>
+    <span class="updated"><span class="live-dot" aria-hidden="true"></span>Updated 12 sec ago</span>
+    <div class="top-right">
+      <a class="bell" href="notifications.html" aria-label="Notifications, 3 waiting" title="Notifications">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 3a6 6 0 0 0-6 6v4l-2 3h16l-2-3V9a6 6 0 0 0-6-6zm-2 15a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path></svg>
+        <span class="pill attention">3</span>
+      </a>
+      <button class="user" type="button" aria-label="Account menu" aria-haspopup="menu"><span class="av" aria-hidden="true">AS</span><span>Alok</span>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </button>
+    </div>
+  </header>
+  <div class="shell">
+    <div class="side-slot"><nav class="side" aria-label="Main">
+    <div>
+      <a class="side-item head" href="my-work.html"><span class="grow">My work</span><span class="pill attention" title="3 decisions wait for you">3</span></a>
+      <a class="side-item sub" href="my-work.html"><span class="grow">All</span></a>
+      <a class="side-item sub" href="my-work.html"><span class="grow ellip">Auto-runner</span><span class="mk mk-bad" title="Blocked"><svg viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Blocked"><path d="M6 1l5.5 10H.5z" fill="currentColor"></path></svg></span></a>
+      <a class="side-item sub" href="my-work.html"><span class="grow ellip">Client portal</span><span class="mk mk-run" title="Running"><svg viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Running"><rect x="1" y="1" width="10" height="10" rx="1.5" fill="currentColor"></rect></svg></span></a>
+      <a class="side-item sub" href="my-work.html"><span class="grow ellip">Ops dashboards</span><span class="mk mk-attn" title="Waits for you"><svg viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Waits for you"><circle cx="6" cy="6" r="5" fill="currentColor"></circle></svg></span></a>
+    </div>
+    <div>
+      <div class="side-label">Projects</div>
+      <a class="side-item current" href="project.html" aria-current="page"><span class="grow ellip">Auto-runner</span></a>
+      <a class="side-item" href="project.html"><span class="grow ellip">Client portal</span></a>
+      <a class="side-item" href="project.html"><span class="grow ellip">Ops dashboards</span></a>
+      <a class="side-item side-more" href="projects.html"><span class="grow">See all 7 projects</span></a>
+    </div>
+    <div>
+      <div class="side-label">Admin</div>
+      <a class="side-item" href="admin.html"><span class="grow">Accounts</span></a>
+      <a class="side-item" href="admin.html"><span class="grow">Notification log</span></a>
+    </div>
+    <div class="side-foot">
+      <div class="seg" role="group" aria-label="Theme">
+        <button type="button" data-theme="light" aria-pressed="true"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.8"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg>Light</button>
+        <button type="button" data-theme="dark" aria-pressed="false"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path></svg>Dark</button>
+      </div>
+      <a class="side-item" href="settings.html"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg><span class="grow">Settings</span></a>
+      <button class="side-btn" type="button"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg><span class="grow">Log out</span></button>
+    </div>
+  </nav></div>
+    <main class="content">
+      <div class="proj-head">
+        <div>
+          <div class="crumb"><a href="project.html">Auto-runner</a> / <a href="blockers.html">Blockers</a> /</div>
+          <h1>Should the Board view remember the last filter per browser?</h1>
+          <div class="meta"><span class="chip tone-bad"><span class="mark square"></span>Open</span><span>B-0042 · item <code>3</code> · <a href="task.html">task #16</a> · Alok (bhawish account)’s runner is waiting · raised 6 min ago</span></div>
+        </div>
+      </div>
+      <div class="main-aside">
+        <form class="panel">
+          <p class="impact"><strong>Holding up:</strong> item 3, “Board filters”. The runner works on items 4 to 7 meanwhile.</p>
+          <fieldset class="options">
+            <legend>Choose an option</legend>
+            <label class="option"><input type="radio" name="opt" checked><span><b>Remember per browser <span class="chip tone-ok" style="margin-left: 6px"><span class="mark"></span>Recommended</span></b><span class="trade">Stored in a cookie. No database change; a new browser starts with no filter.</span></span></label>
+            <label class="option"><input type="radio" name="opt"><span><b>Remember per account</b><span class="trade">Same filter on every device. Needs a new column and a migration.</span></span></label>
+            <label class="option"><input type="radio" name="opt"><span><b>Do not remember</b><span class="trade">Simplest. Every visit starts with no filter.</span></span></label>
+          </fieldset>
+          <div class="field"><label for="b-text">Instructions <span class="optional">optional</span></label><textarea id="b-text" rows="3" placeholder="Anything the runner should know when it picks this up."></textarea></div>
+          <div class="decision" style="border-color: var(--line); background: var(--bg); margin: 0">
+            <span class="muted small" style="flex: 1 1 320px">The answer is data for the runner’s next step, never a command. It reaches the runner the next time it pulls, and cannot be changed afterwards.</span>
+            <button class="btn primary" type="button">Send answer</button>
+          </div>
+        </form>
+        <aside class="stack">
+          <section class="panel">
+            <h3>If the answer is late</h3>
+            <p class="small">Item 3 stays open; the pull request ships without board filters.</p>
+            <h3>If the answer is wrong</h3>
+            <p class="small">A follow-up task moves the setting; about an hour of work.</p>
+            <h3>Assumptions</h3>
+            <ul class="small" style="margin: 0; padding-left: 18px"><li>Filters are search text and “Mine only”.</li><li>The theme is already kept in a cookie.</li></ul>
+          </section>
+          <section class="panel">
+            <h3>Answers</h3>
+            <p class="muted small" style="margin: 0">No answer yet. A manager, owner or admin answers it.</p>
+          </section>
+        </aside>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+(function () {
+  var cfg = {"groups": {}, "acts": {}};
+  var app = document.getElementById('app');
+  function press(sel, btn) { document.querySelectorAll(sel).forEach(function (b) { b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); }); }
+  document.querySelectorAll('[data-theme]').forEach(function (b) {
+    b.addEventListener('click', function () { app.className = 'app ' + b.getAttribute('data-theme'); press('[data-theme]', b); });
+  });
+  document.querySelectorAll('[data-act]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var a = cfg.acts[b.getAttribute('data-act')];
+      if (!a) return;
+      if (a[0] === 'toggle') {
+        var el = document.querySelector('[data-if="' + a[1] + '"]');
+        el.hidden = !el.hidden;
+        document.querySelectorAll('[aria-expanded]').forEach(function (x) { if (cfg.acts[x.getAttribute('data-act')] === a) x.setAttribute('aria-expanded', el.hidden ? 'false' : 'true'); });
+      } else if (a[0] === 'filter') {
+        document.querySelectorAll('[data-kind]').forEach(function (li) { li.hidden = a[1] !== 'all' && li.getAttribute('data-kind') !== a[1]; });
+        press('[data-act^="f"]', b);
+      } else {
+        (cfg.groups[a[0]] || []).forEach(function (c) { var el = document.querySelector('[data-if="' + c + '"]'); if (el) el.hidden = c !== a[1]; });
+        document.querySelectorAll('[data-act]').forEach(function (x) { var xa = cfg.acts[x.getAttribute('data-act')]; if (xa && xa[0] === a[0] && x.hasAttribute('aria-pressed')) x.setAttribute('aria-pressed', xa[1] === a[1] ? 'true' : 'false'); });
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>

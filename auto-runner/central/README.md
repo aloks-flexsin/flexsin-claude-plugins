@@ -32,7 +32,7 @@ and an owner, manager or admin answers it there.
 | `notifications.py` | In-app notifications: `notify` (members only, no duplicates), `resolve`, `unread_count`, `for_account`, `delivery`, `recent`; the Notifications page, open and read-all (the admins' log is in `admin.py`) |
 | `push.py` | Browser push subscriptions: `POST /push/subscribe`, `POST /push/unsubscribe`, the Account page's push section |
 | `attachments.py` | Task screenshots (`task_attachment`): `add`, `for_task`, `get`, `delete`; upload, view and delete routes; the 4 MB request cap and its 413 page |
-| `cli.py` | `python -m central init-db` and `python -m central create-admin --email X` |
+| `cli.py` | `python -m central init-db`, `python -m central create-admin --email X` and `python -m central supervisor-create X` |
 | `api/index.py`, `vercel.json` | Vercel entry point; every route is rewritten to it |
 | `templates/`, `static/style.css` | The pages (`base.html` holds the top bar) and their one stylesheet, served by Flask at `/static/style.css` because the CSP allows only same-origin styles; no inline styles or scripts |
 
@@ -49,6 +49,11 @@ Listed in `.env.example`; no value is ever kept in the repo.
 | `CENTRAL_VAPID_PUBLIC_KEY` | VAPID public key for browser push (shown to the page). Optional: push is off unless all three VAPID settings are set. |
 | `CENTRAL_VAPID_PRIVATE_KEY` | VAPID private key that signs pushes; never shown on a page. |
 | `CENTRAL_VAPID_SUBJECT` | Contact for push services, `mailto:...` or an `https://` address. |
+| `CENTRAL_REFLECTION_PROJECT` | Slug of the project that gets tasks drafted from runner frictions (usually the auto-runner project). Unset: drafting is off (see Runner frictions). |
+| `CENTRAL_REFLECTION_ASSIGNEE` | E-mail of the account drafted tasks go to, when it is an enabled developer or above in that project; otherwise the project's first owner. |
+| `CENTRAL_REFLECTION_MIN_COUNT` | Occurrences in 30 days that draft a task (default 3). |
+| `CENTRAL_REFLECTION_MIN_PROJECTS` | Projects in 30 days that draft a task (default 2). |
+| `CENTRAL_REFLECTION_DAILY` | At most this many drafts a UTC day (default 3). A missing or unusable number takes the default. |
 
 ## Local run and tests
 
@@ -86,6 +91,11 @@ may not stick over plain http. The API endpoints do not use the cookie.
 - There is no self sign-up. Five failed sign-ins lock an account for 15 minutes.
 - Sessions expire after 12 hours, or 2 hours idle. A password change or reset signs the person out everywhere.
 - Global roles `admin` and `user`; project roles `owner`, `manager`, `developer`, `viewer`. Non-members get 404.
+- A third global role, `supervisor`, is for the supervisor account (it reviews and merges; see decision 0010). Create it with
+  `python -m central supervisor-create <email>` (asks for the password twice, like `create-admin`). Add it to a project as a
+  **manager** member. It is never an assignee and never creates tasks (`tasks._can_run` and `tasks.create` refuse it).
+  Invites and the add-account form do not offer or accept it (`accounts.INVITE_ROLES`), and `/admin/accounts` shows the role
+  but refuses to give it to anyone or take it away (the command line is the only way in). Existing roles and routes are unchanged.
 - Every sign-in (success and failure, never the password) and every account, token, membership and decision action is audited.
 - **One project per repository.** On the create form the admin pastes the repository URL; the slug and name may be left
   empty and are then filled in from it (`projects.slug_from_repo`: the repository's name, lower case, other characters as
@@ -157,6 +167,37 @@ may not stick over plain http. The API endpoints do not use the cookie.
   when no plan waits; 404 for an unknown task); it records `task.plan.<decision>` with `"via": "api"`, so the Activity
   line ends "(through the API)", and returns `{task}`.
 - Table `project_task` (init-db creates it).
+- **Supervisor read API** (`supervisor.py`, personal tokens, read-only): `GET /api/v1/supervisor/whoami` returns
+  `{role, email}` for any valid token (role is `null` for a project token). `GET /api/v1/supervisor/state?project=<slug>`
+  needs the `supervisor` account role (403 for any other role, 401 without a token, 404 only for an unknown project once the
+  role is accepted). It returns `{project, tasks, runners, blockers}`: each task has the `/api/v1/tasks/<N>` fields plus
+  `plan_rounds` (the count of the task's `supervisor.plan.changes` audit rows), `plan_decided` (the supervisor's decision
+  on the task's current plan post, or null; a new plan post starts afresh) and `merged_at`; runners use the runner API
+  shape; blockers are the open ones (`OPEN`, `ESCALATED`). No claim ids appear and nothing is written.
+- **Plan decision** `POST /api/v1/supervisor/tasks/<n>/plan-decision?project=<slug>` with
+  `{"decision": "approve" | "changes" | "escalate", "reasons": [...], "policy_sha": "...", "comment": "..."}`. Needs the
+  `supervisor` account role (403 otherwise, 401 without a token) and, for approve and changes, membership as manager (it
+  calls `tasks.decide`, so the same rules apply: the plan must be waiting, else 409). `changes` without a comment uses the
+  reasons as the comment. **Round cap:** the round count is the number of `supervisor.plan.changes` audit rows for the task
+  (no column); a `changes` when it is already 2 becomes `escalate` (`"converted": true`). `escalate` does not call
+  `tasks.decide`: the plan stays in review, the managers are notified (the usual "plan waiting" notification) and a person
+  decides. Every call writes one `supervisor.plan.<decision>` audit row (detail: number, policy_sha, reasons, round,
+  converted). **Re-running is safe:** when the current plan post already has a supervisor decision the call changes
+  nothing and answers 200 with `"already": true`. Tests: `tests/central/test_supervisor_api.py`,
+  `tests/central/test_supervisor_e2e.py`.
+- **Merge record** `POST /api/v1/supervisor/tasks/<n>/merge?project=<slug>` with
+  `{"phase": "decided" | "done" | "failed" | "refused", "sha": "...", "method": "...", "reasons": [...], "evidence": {...},
+  "merge_sha": "..."}`. Supervisor role only (403 otherwise, 401 without a token). It merges nothing: the supervisor's pass
+  calls the forge between `decided` and `done` / `failed`. Each call writes one `supervisor.merge.<phase>` audit row (detail:
+  number, sha, method, reasons, evidence, merge_sha); `done` also sets `project_task.merged_at`. `sha` is required except for
+  `refused`. `decided` for a merged task answers 409; `done` and `failed` need an earlier `decided` for the same SHA (else
+  409). **Re-running is safe:** a `refused` that repeats the task's previous row (same SHA and reasons) and a `done` for a
+  merged task change nothing and answer 200 with `"already": true`. The task page and the task list show "Merged <time>"
+  once `merged_at` is set. Tests: `tests/central/test_supervisor_e2e.py`, `tests/central/test_tasks_pages.py`.
+- Column `project_task.merged_at` (nullable; written by the merge route's `done` phase). **Migration:** run `python -m central init-db` once
+  (it adds the column to an existing database and keeps all data); until then the new routes answer with the
+  "database update needed" error. **Rollback:** deploy the previous code; the unused nullable column is harmless and may stay
+  (to remove it: `ALTER TABLE project_task DROP COLUMN merged_at`).
 
 ## Task screenshots (`attachments.py`)
 
@@ -420,6 +461,64 @@ Delivery words for real pushes are **unverified** until push is tried live.
   the blocker shows RESUMED once the runner reports that it took the item up again. A blocker cannot be answered twice
   from the page.
 
+## Runner frictions (decision record 0011; `frictions.py`)
+
+- Before `python -m central init-db` adds the friction tables and `project.share_frictions`, friction bookkeeping is
+  skipped, not failed: `frictions.record` and `frictions.task_ended` run in a savepoint, and a missing table or column
+  (`db.schema_missing`) rolls back only those writes and logs a warning. Event pushes, task reports, plan decisions
+  and closing a task keep working; counting starts once the migration has run. Any other error is raised as before.
+  The Frictions page and the Share setting still answer 503 "needs a database update" until then.
+
+- Counting happens at ingest, into tables shared by all projects. A friction's signature is `kind` or `kind:subject`.
+  - `friction_count` (key signature + project): `count`, `first_seen`, `last_seen`.
+  - `friction_day` (key signature + project + `day`, a UTC date `YYYY-MM-DD`): the count that day, for the 30-day window
+    and for counting only what came after a fix or an unmute.
+  - `friction_signature` (key signature): `kind`, `subject`, `state` (`watching`, `drafted`, `muted`, `fixed`), the
+    drafted task (`task_project_id`, `task_number`, `previous_task_number`), `changed_by`, `changed_at`, `reason`. A new
+    signature starts `watching` with no `changed_at`; counting never changes an existing row's state.
+- Each newly stored `friction` event adds one to all three; a duplicate event id changes nothing. A plan sent back
+  ("changes" decision, on the page or through the API) counts `plan_changes` the same way.
+- Times and days are the service's own clock (when the event arrived), not the runner's.
+- Per-project opt-out: `project.share_frictions` (on by default). Owners and admins switch "Share runner frictions with
+  the auto-runner project" on Settings › Repository (`POST /projects/<slug>/share-frictions` with `share` = `1` or `0`,
+  CSRF, audited `project.share_frictions` with `from`/`to`; anyone else gets 404). Events of a project that does not
+  share are still stored as events, but not counted.
+- **Runner frictions page** (`GET /frictions`, admins only, anyone else 404; linked from Accounts' header): one row per
+  signature with its kind, total count, number of projects (their names on hover), first and last seen, state chip and
+  linked task, newest last-seen first. Filter chips narrow it by kind (`?kind=`) and state (`?state=`).
+  - **Mute** (`POST /frictions/mute`, form `signature` and `reason`, required, at most 500 characters): state `muted`
+    with the reason, `changed_by`, `changed_at`; it is still counted but never drafted. Audited `friction.mute`
+    (`signature`, `from`, `reason`).
+  - **Unmute** (`POST /frictions/unmute`, form `signature`, only for a muted row): state `watching`, reason cleared,
+    `changed_at` set, so, as after a fix, only occurrences after it count toward drafting. Audited `friction.unmute`
+    (`signature`, `reason_was`).
+  - Both need CSRF and confirm (a dialog with JavaScript, the confirm page without, `confirm=1`); an unknown signature
+    is 404; a refused change (no reason, already muted, not muted) is 400 and audited as `<action>.refused`.
+  - The page says whether drafting is on (with its thresholds), or "Drafting is off: set CENTRAL_REFLECTION_PROJECT".
+- **Drafting** (`frictions.draft_due`, after ingest stores friction events and after a plan is sent back, once their own
+  changes are committed; a failure there is logged and never fails the push or the decision): when
+  `CENTRAL_REFLECTION_PROJECT` names a project, each `watching` or `fixed` signature with at least
+  `CENTRAL_REFLECTION_MIN_COUNT` occurrences or `CENTRAL_REFLECTION_MIN_PROJECTS` projects in the last 30 UTC days
+  (summed from `friction_day`; when `changed_at` is set by an unmute or a fix, only days after its UTC date count) gets
+  an open task there, at most `CENTRAL_REFLECTION_DAILY` a UTC day (counted from `friction.draft` audit rows):
+  - title "Runner friction: <signature>"; the description has the count, the number of projects (no project names),
+    first and last seen, and where to look for that kind (a fixed map, `frictions.CODE_AREAS`);
+  - assignee `CENTRAL_REFLECTION_ASSIGNEE` when that account is an enabled developer or above there, else the owner
+    member with the earliest `created_at` (ties by account id); `created_by` is that same account, as no person acts;
+  - the assignee gets an `assigned` notification; the signature becomes `drafted` with `task_project_id`/`task_number`;
+    audited `friction.draft` (`signature`, `task`, `count`, `projects`, `"via": "reflection"`).
+  A `drafted` or `muted` signature is never drafted again. Unverified on the live service.
+- **Closing the loop** (`frictions.task_ended`, R9), for the task linked to a `drafted` signature:
+  - rejected, through `tasks.decide` (reject, from plan review) or `tasks.close` (an open or other closable task): state
+    `muted` with the reason "task #N rejected", `changed_by` the person, `changed_at`; audited `friction.mute`
+    (`"via": "task"`). It is not drafted again until someone unmutes it;
+  - reported `done` (`tasks.report`): state `fixed`, `changed_at` = then, `changed_by` the assignee; audited
+    `friction.fixed` (`signature`, `task`, `"via": "task"`). A `stopped` report changes nothing;
+  - a `fixed` signature counts only `friction_day` rows after the fix's UTC date; reaching the threshold again drafts
+    "Runner friction came back: <signature>" (the description names the earlier task), with the earlier task's number
+    moved to `previous_task_number` first; the `friction.draft` audit row then also has `previous_task`.
+  - The Frictions page shows the Fixed chip, the task link and, after a regression, "Earlier task #N" linking the first.
+
 ## API
 
 Send a token as `Authorization: Bearer ...`. A missing, wrong or revoked token gets 401; a token without the needed scope
@@ -465,7 +564,7 @@ The task page shows the claim through the `ui.runner` macro.
 
 | Endpoint | Scope | What it does |
 | --- | --- | --- |
-| `POST /api/v1/events` | `ingest` | One `event.v1` object or a list. Replies `accepted`, `duplicates`, `ids`, `duplicate_ids`. The same id with a different body gets 409, an unknown schema or bad event 400, a body over 256 KB 413, more than 120 requests a minute per token 429 (counted per process). The event's `project` must be the token's project. Run-level events (`run_start`, `run_end`, `publish`) have no item. Secrets in `detail` are redacted before storing. |
+| `POST /api/v1/events` | `ingest` | One `event.v1` object or a list. Replies `accepted`, `duplicates`, `ids`, `duplicate_ids`. The same id with a different body gets 409, an unknown schema or bad event 400, a body over 256 KB 413, more than 120 requests a minute per token 429 (counted per process). The event's `project` must be the token's project. Run-level events (`run_start`, `run_end`, `publish`) have no item; a `friction` event (decision record 0011) has a null item or an item ID, and its detail is exactly `{"kind", "subject"}`: kind one of `permission_denied`, `gate_stop`, `fix_round`, `retry`, `usage_stop`, `refused_start`, `central_error`, `plan_changes`, subject matching `^[A-Za-z0-9_.+:/-]{0,80}$`, anything else 400 (the same rules as the plugin, held equal by a parity test). Secrets in `detail` are redacted before storing. A newly stored friction event of a project that shares frictions is counted (see Runner frictions). |
 | `GET /api/v1/projects` | personal token, no project | `{"account", "projects": [{"slug", "name", "repo_url", "role", "can_run"}]}`: the signed-in person's projects (every project for an admin), for the plugin's "my projects" and clone. Project tokens get 401. |
 | `GET /api/v1/project` | any | `{"slug", "name", "repo_url", "account"}` of the token's project (`account`: the signed-in email for a personal token, else null) (`repo_url` is null for a project made before the column existed). The plugin's init and join use it to check they are pointed at the right repository. |
 | `GET /api/v1/deliveries/pending` | `pull` | `{"deliveries": [...]}`: the project's answers not yet acknowledged, oldest first; each is marked delivered. |
@@ -487,12 +586,15 @@ None of these steps has been tried. Check each result before going on.
    ```
    (`pip install -r central/requirements.txt` first, for psycopg.) It is safe to run again; it creates any table an older
    database lacks (for example `invite`). On a database made by an older
-   version it also adds the columns listed in `db.COLUMNS_ADDED` (`project.repo_url`, `project.repo_key`) and prints each
-   one, fills `repo_key` from each project's repository URL and creates the unique index `project_repo_key`.
+   version it also adds the columns listed in `db.COLUMNS_ADDED` (`project.repo_url`, `project.repo_key`,
+   `project.share_frictions` as `INTEGER NOT NULL DEFAULT 1`, so every existing project shares frictions until an owner
+   switches it off) and prints each one, creates the three friction tables, fills `repo_key` from each project's repository URL and creates the unique index `project_repo_key`.
    **If two projects already name the same repository it stops before changing anything** (exit code 3) and lists them as
    `host/owner/repo: slug, slug`; keep one (move its members and tokens, delete the others) and run it again. The same
    change by hand: `ALTER TABLE project ADD COLUMN IF NOT EXISTS repo_url VARCHAR(500);`,
-   `ALTER TABLE project ADD COLUMN IF NOT EXISTS repo_key VARCHAR(500);`, fill `repo_key`, then
+   `ALTER TABLE project ADD COLUMN IF NOT EXISTS repo_key VARCHAR(500);`,
+   `ALTER TABLE project ADD COLUMN IF NOT EXISTS share_frictions INTEGER NOT NULL DEFAULT 1;`, the friction tables'
+   `CREATE TABLE` statements from `schema.sql`, fill `repo_key`, then
    `CREATE UNIQUE INDEX IF NOT EXISTS project_repo_key ON project (repo_key);`.
 2. **Vercel project.** Create a new Vercel project from this repository with the root directory `auto-runner/central`.
    Set the environment variables for Production: `SECRET_KEY` (from

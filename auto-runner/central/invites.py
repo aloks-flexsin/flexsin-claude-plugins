@@ -39,8 +39,8 @@ def has_password(account):
 
 def create_account(db, email, role="user", now=None):
     """Create and commit an account that has no password yet; return its row."""
-    if role not in accounts.ROLES:
-        raise accounts.AccountError("role must be one of %s" % ", ".join(accounts.ROLES))
+    if role not in accounts.INVITE_ROLES:
+        raise accounts.AccountError("role must be one of %s" % ", ".join(accounts.INVITE_ROLES))
     email = accounts.normalize_email(email)
     if accounts.find_by_email(db, email) is not None:
         raise accounts.AccountError("an account with that email already exists")

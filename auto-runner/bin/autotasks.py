@@ -5,6 +5,8 @@ Central tasks from the plugin's side (decision record 0007, step 4). Needs the c
     python autotasks.py next   [--project DIR]                      # claim my next task; print what to do (plan or build)
                                                                     # and download its screenshots (paths printed under
                                                                     # "Screenshots", in .auto/run/tasks/<N>/attachments/)
+    python autotasks.py attachments N [--project DIR]               # download task N's screenshots again and print the
+                                                                    # "Screenshots" block, without claiming anything
     python autotasks.py plan N --plan FILE --items FILE [--project DIR]   # post the plan of task N; it waits for approval
     python autotasks.py start N [--project DIR]                     # an approved task N -> .auto/pending/task-N-<brief>/
     python autotasks.py record --slug SLUG --title T --plan FILE --items FILE [--project DIR]
@@ -112,6 +114,20 @@ def reopen_build(project, number, env=None, send=None):
               {'claim': _claim(project, number), 'state': 'building'})
     except Exception:
         pass                                            # best effort: the claim expires and the task is taken again
+
+
+def check_claim(project, number, claim, env=None, send=None):
+    """Is `claim` still this computer's hold on task `number`? -> 'ok' or 'lost' (409: released, reassigned or expired).
+    Beats the task with state 'queued' (never 'building': the task stays Queued until its run begins). Any other refusal
+    raises TaskError; an unreachable service raises TransportUnavailable."""
+    try:
+        transport(project, env, send).request('POST', f'/api/v1/tasks/{int(number)}/heartbeat',
+                                              {'claim': claim, 'state': 'queued'})
+    except autodeliver.TransportRefused as e:
+        if getattr(e, 'status', None) == 409:
+            return 'lost'
+        raise TaskError(str(e)) from None
+    return 'ok'
 
 
 SAFE_CHARS = re.compile(r'[^A-Za-z0-9._-]')
@@ -283,47 +299,70 @@ def current(auto_dir):
     return data
 
 
-def beat(t, auto_dir, state=None):
+def error_route(path):
+    """The request path for an error report: no query string, and each all-digit segment (a task number) as `N`, so
+    `/api/v1/tasks/12/heartbeat?project=x` -> `/api/v1/tasks/N/heartbeat`."""
+    return re.sub(r'(?<=/)\d+(?=/|$)', 'N', str(path).split('?', 1)[0])
+
+
+def _report(on_error, e, path):
+    """Tell `on_error(status, route)` about a failed call: status the HTTP code, or None when nothing answered."""
+    if on_error is not None:
+        status = getattr(e, 'status', None)
+        on_error(status if isinstance(status, int) else None, error_route(path))
+
+
+def beat(t, auto_dir, state=None, on_error=None):
     """-> 'none' (no current task), 'ok', 'lost' (released, reassigned or expired: stop) or 'unavailable'.
-    `state` ('queued' or 'building') is sent along when given, so the task page says what the claim is doing."""
+    `state` ('queued' or 'building') is sent along when given, so the task page says what the claim is doing.
+    `on_error(status, route)`, when given, is called on every failed call (a 409 included)."""
     task = current(auto_dir)
     if task is None:
         return 'none'
+    path = f'/api/v1/tasks/{task["number"]}/heartbeat'
     try:
-        t.request('POST', f'/api/v1/tasks/{task["number"]}/heartbeat',
-                  {'claim': task['claim'], **({'state': state} if state else {})})
+        t.request('POST', path, {'claim': task['claim'], **({'state': state} if state else {})})
         return 'ok'
     except (RuntimeError, ConnectionError) as e:        # TransportRefused / TransportUnavailable, whichever module copy
+        _report(on_error, e, path)
         if getattr(e, 'status', None) == 409:
             (Path(auto_dir) / CURRENT).unlink(missing_ok=True)
             return 'lost'
         return 'unavailable'
 
 
-def wait_note(t, request_dir, note):
+def wait_note(t, request_dir, note, on_error=None):
     """A request left waiting for a merge: tell the service why, on the request's own task (its task.json), which stays
-    queued and keeps its claim. Best effort: no task.json, a refusal or an unreachable service changes nothing -> bool."""
+    queued and keeps its claim. Best effort: no task.json, a refusal or an unreachable service changes nothing -> bool.
+    `on_error(status, route)`, when given, is called when the service refused the note or could not be reached."""
     try:
         data = json.loads((Path(request_dir) / 'task.json').read_text(encoding='utf-8'))
         if not (isinstance(data.get('number'), int) and data.get('claim')):
             return False
-        t.request('POST', f'/api/v1/tasks/{data["number"]}/heartbeat',
-                  {'claim': data['claim'], 'state': 'queued', 'note': note[:300]})
+    except (OSError, ValueError, AttributeError):
+        return False
+    path = f'/api/v1/tasks/{data["number"]}/heartbeat'
+    try:
+        t.request('POST', path, {'claim': data['claim'], 'state': 'queued', 'note': note[:300]})
         return True
-    except (OSError, ValueError, AttributeError, RuntimeError, ConnectionError):
+    except (RuntimeError, ConnectionError) as e:        # TransportRefused / TransportUnavailable, whichever module copy
+        _report(on_error, e, path)
         return False
 
 
-def finish(t, auto_dir, done, branch, pr_url, note):
-    """Report the end of a run on the current task -> a line to say, or None. Done clears the current task."""
+def finish(t, auto_dir, done, branch, pr_url, note, on_error=None):
+    """Report the end of a run on the current task -> a line to say, or None. Done clears the current task.
+    `on_error(status, route)`, when given, is called when the report failed."""
     task = current(auto_dir)
     if task is None:
         return None
+    path = f'/api/v1/tasks/{task["number"]}/report'
     try:
-        t.request('POST', f'/api/v1/tasks/{task["number"]}/report',
+        t.request('POST', path,
                   {'claim': task['claim'], 'result': 'done' if done else 'stopped', 'branch': branch, 'pr_url': pr_url,
                    'note': note})
     except (RuntimeError, ConnectionError) as e:        # TransportRefused / TransportUnavailable, whichever module copy
+        _report(on_error, e, path)
         if getattr(e, 'status', None) == 409:
             (Path(auto_dir) / CURRENT).unlink(missing_ok=True)
         return f'task {task["number"]}: could not report to the central service ({e})'
@@ -333,9 +372,21 @@ def finish(t, auto_dir, done, branch, pr_url, note):
     return f'task {task["number"]} reported stopped ({note})'
 
 
+def print_screenshots(paths, problems):
+    """Print the `--- Screenshots ---` block of `next` and `attachments`; nothing when there is nothing to say.
+    It neither catches nor raises."""
+    if paths or problems:
+        print('--- Screenshots ---')
+        for p in paths:
+            print(p)
+        for p in problems:
+            print(f'Not downloaded: {p}')
+        print()
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('cmd', choices=('next', 'plan', 'start', 'record', 'propose', 'list', 'decide'))
+    ap.add_argument('cmd', choices=('next', 'attachments', 'plan', 'start', 'record', 'propose', 'list', 'decide'))
     ap.add_argument('number', nargs='?', type=int)
     ap.add_argument('decision', nargs='?', choices=tuple(DECISIONS))
     ap.add_argument('--comment', default='')
@@ -347,6 +398,8 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if a.cmd == 'decide' and (a.number is None or a.decision is None):
         ap.error('decide needs the task number and approve, changes or reject')
+    if a.cmd == 'attachments' and a.number is None:
+        ap.error('attachments needs the task number')
     read = lambda p: Path(p).read_text(encoding='utf-8') if p else ''   # noqa: E731
     try:
         if a.cmd == 'next':
@@ -363,13 +416,9 @@ def main(argv=None):
                 paths, problems = fetch_attachments(a.project, task['number'])
             except (TaskError, autodeliver.TransportUnavailable, OSError) as e:
                 paths, problems = [], [f'could not list them ({e})']
-            if paths or problems:
-                print('--- Screenshots ---')
-                for p in paths:
-                    print(p)
-                for p in problems:
-                    print(f'Not downloaded: {p}')
-                print()
+            print_screenshots(paths, problems)
+        elif a.cmd == 'attachments':
+            print_screenshots(*fetch_attachments(a.project, a.number))
         elif a.cmd == 'plan':
             task = post_plan(a.project, a.number, read(a.plan), read(a.items))
             print(f'Task {task["number"]}: the plan waits for approval on the central page (Tasks).')
