@@ -318,13 +318,18 @@ per signature per item per run:
 | `retry` | `exit_<code>` | the agent exited early after a refusal and the item is retried |
 | `usage_stop` | `limit`, `budget`, `threshold` | a usage limit, the attempt's `--max-budget-usd`, or the plan-usage threshold stops the item or the run |
 | `refused_start` | `newer_installed`, or the first failed preflight group | the runner refuses to start (also with `--dry-run`); `item` is null and the event is written to `.auto/events.jsonl` before the error, so the next push sends it. The refusal message is unchanged |
+| `central_error` | `http_<status>:<route>` (e.g. `http_409:/api/v1/tasks/N/heartbeat`, `http_400:/api/v1/events`), or `unreachable` | a call to the central service failed: a task heartbeat (a 409 means the claim was lost: released, reassigned or expired), the end-of-run report, a wait note, or an event push that stopped (`error_status`) or skipped an event (`skipped_status`). `item` is null; the route is the request path with task numbers as `N` and no query string (`autotasks.error_route`). A failed end-of-run report is pushed at once. Since 0.23.0 |
 
 The preflight groups come from `autosafe.preflight_groups(project, cfg, base)`, which returns `[(group, message)]` with one
 fixed code per check: `worktree`, `runner_name`, `model`, `base_url`, `journey`, `central`, `env_file`, `path_prepend`,
 `publish`, `principles`, `capability`, `no_commit`, `no_tests`, `settings`. `autosafe.preflight()` returns the same messages
 without the groups.
 
-`central_error` and `plan_changes` are emitted by later items.
+`autotasks.beat`, `finish` and `wait_note` take an optional `on_error(status, route)` (status the HTTP code, or None when
+the service could not be reached), called on every failed call; their return values are unchanged. `autodeliver.push`
+returns `{sent, skipped, error, skipped_status, error_status}`: the HTTP status of the first event skipped in that call, and
+of the failure that stopped it (None when nothing answered). `plan_changes` is counted by the central service, not the
+runner.
 
 ## Modules (all stdlib, all unverified beyond fakes)
 Every child process (the agent, the test command, git) is read as UTF-8, with an undecodable byte replaced rather than

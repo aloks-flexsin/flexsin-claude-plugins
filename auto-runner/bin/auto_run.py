@@ -97,6 +97,7 @@ autocentral = _load('autorunner_central', 'autocentral.py')
 AUTO_DIR = '.auto'
 STALE_NOTE = '(stale artifact)'
 UNAVAILABLE_NOTE = '(delivery unavailable)'
+EVENTS_ROUTE = '/api/v1/events'           # where push() sends the ledger (the route of its central_error frictions)
 BASE_ALLOWED = ['Bash(git add:*)', 'Bash(git commit:*)']
 
 
@@ -1159,7 +1160,8 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             say(f"request '{d.name}' waits: {branch} is not merged into {start} yet (one request per branch; "
                 'it starts on a new branch in the first run after the merge)')
             if pusher is not None:
-                autotasks.wait_note(pusher, d, f'waits: {branch} is not merged into {start} yet')
+                autotasks.wait_note(pusher, d, f'waits: {branch} is not merged into {start} yet',
+                                    on_error=central_error)
 
     prompt = build_prompt(cfg, queue_rel, principles=principles_text(project, cfg))
     allowed = (list(BASE_ALLOWED) + ([f'Bash({cfg["test_command"]}:*)'] if cfg['test_command'] else [])
@@ -1226,6 +1228,11 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             frictions.add(key)
             ledger.emit('friction', item, detail)
 
+    def central_error(status, route):
+        """`on_error` of the central calls: a run-level `central_error` friction, `http_<status>:<route>` or `unreachable`."""
+        subject = f'http_{status}:{route}' if isinstance(status, int) else 'unreachable'
+        friction(None, 'central_error', subject if autoevents.FRICTION_SUBJECT.match(subject) else f'http_{status}')
+
     source = transport or central_transport(cfg) or autodeliver.LocalTransport(auto)
     pusher = source if isinstance(source, autodeliver.HttpTransport) else None
 
@@ -1235,12 +1242,15 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             return
         try:
             sent = autodeliver.push(pusher, auto, slug)
-        except (OSError, ValueError) as e:
-            sent = {'skipped': [], 'error': type(e).__name__}
+        except (OSError, ValueError) as e:              # the local ledger or cursor, not the service
+            sent = {'skipped': [], 'error': type(e).__name__, 'local': True}
         if sent['skipped']:
             say(f"central service refused event(s) {', '.join(sent['skipped'])}: skipped")
+            central_error(sent.get('skipped_status'), EVENTS_ROUTE)
         if sent['error']:
             say(f"events not sent to the central service ({sent['error']}): will try again at the next push")
+            if not sent.get('local'):
+                central_error(sent.get('error_status'), EVENTS_ROUTE)
 
     def hold_stale(item, paths):
         detail = f'{STALE_NOTE} {", ".join(paths)}: revalidate (autostale.py revalidate) before it resumes'
@@ -1297,7 +1307,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             apply_pending(project, wt, cfg, queue_rel, limit=1)
             if pusher is not None and task_number is not None:
                 # the request was taken on a new branch: its task stops being Queued and becomes Building
-                if autotasks.beat(pusher, auto, 'building') == 'lost':
+                if autotasks.beat(pusher, auto, 'building', on_error=central_error) == 'lost':
                     say(f'task {task_number}: claim lost; carrying on without a central task')
         report_waiting()
         known = {i: (s, d) for i, s, d in queue.statuses(pq.read_text(encoding='utf-8'))} if pq.exists() else {}
@@ -1451,7 +1461,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 break
             if i > 1:
                 deliver()
-            if pusher is not None and autotasks.beat(pusher, auto) == 'lost':
+            if pusher is not None and autotasks.beat(pusher, auto, on_error=central_error) == 'lost':
                 say('the central task this run works on was released, reassigned or its claim expired: stopping. '
                     'Its work so far stays on the branch.')
                 exit_code, reason = 1, 'claim_lost'
@@ -1789,9 +1799,13 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         if pusher is not None and autotasks.current(auto) is not None:
             wq_end = wt / queue_rel
             done = exit_code == 0 and wq_end.exists() and queue.open_count(wq_end.read_text(encoding='utf-8')) == 0
-            line = autotasks.finish(pusher, auto, done, branch, (published or {}).get('pr_url'), reason)
+            before = len(frictions)
+            line = autotasks.finish(pusher, auto, done, branch, (published or {}).get('pr_url'), reason,
+                                    on_error=central_error)
             if line:
                 say(line)
+            if len(frictions) > before:               # a failed report: send its friction now, not at the next run
+                push()
         lock.release()
         PATH_PREPEND.clear()
         if last_suite:
