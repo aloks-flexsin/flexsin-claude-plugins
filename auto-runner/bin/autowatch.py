@@ -7,11 +7,19 @@ the terminal.
 Each step:
 1. Stops when `.auto/STOP` exists (checked before every claim and while waiting; the file is left for the person to
    delete, so a second watcher started by mistake stops too).
-2. Claims the next task (`autotasks.take_next`). The service says what to do with it:
+2. Resumes a waiting request first: when the first of `auto_run.pending_requests` (task folders by number, then the
+   others by name) is a `task-<N>-...` folder whose `task.json` claim is the one in `.auto/run/tasks/<N>.json`, the
+   claim is checked (`autotasks.check_claim`, heartbeat `queued`) and the request is built again without a new claim
+   (no `autotasks.start`, no `take_next`). A lost claim (409) drops the claim file and the folder and the step claims as
+   below; any other refusal or an unreachable service fails the step (the loop waits one poll).
+   Otherwise it claims the next task (`autotasks.take_next`). The service says what to do with it:
    - `plan`: the headless planner (`autoplan.plan`) plans it and posts the plan; it then waits for approval on the page.
    - `build`: the approved task becomes a request folder (`autotasks.start`) and the runner works it
      (`auto_run.run(..., enqueue=<slug>)`), which beats the claim and reports the task done or stopped itself.
-3. Reports: one line on stdout and the step's outcome under `last` in `.auto/run/watch.json`.
+3. Reports: one line on stdout and the step's outcome under `last` in `.auto/run/watch.json`. A build that exited 0
+   but left `.auto/pending/<slug>/` in place only waited (an earlier branch is not merged yet): its outcome is `ok`
+   and `waiting`, the line says "waiting", the heartbeat is `waiting_for_merge` and the loop waits one poll. A build
+   that exited non-zero, hit the usage limit or raised keeps its failed outcome and pause, pending or not.
 When there is nothing to do it writes the local heartbeat `.auto/run/watch.json` (`state`, `at`, `last`) and waits
 `watch.poll_seconds` (default 300). A failed step (planner refused, a build that stopped or crashed, the service
 unreachable) is reported and the loop waits one poll before the next claim: one failed task never ends the loop.
@@ -40,6 +48,8 @@ import datetime
 import importlib.util
 import json
 import os
+import re
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -67,6 +77,7 @@ STOP_FILE = Path('.auto') / 'STOP'
 LOCK_FILE = Path('.auto') / 'run' / 'watch.lock'
 SPEND_DIR = Path('.auto') / 'run'
 WAIT_SLICE = 5          # seconds: how often a wait looks for the STOP file
+WAITING_DETAIL = 'waits for an earlier branch to be merged'
 
 
 def _iso(seconds):
@@ -171,11 +182,79 @@ def _default_build(project, slug, claude, env, send):
     return auto_run.run(project, enqueue=slug, transport=transport, **kw)
 
 
-def step(project, claude=None, env=None, send=None, build=None, meter=None, on_start=None):
+def _build(project, slug, out, claude, env, send, build, meter):
+    """Run the request `slug` and put the result in `out`. A run that exited 0 (no usage limit) but left its request
+    pending only waited for an earlier branch to be merged: `ok` and `waiting`."""
+    code = (build or _default_build)(project, slug, claude, env, send)
+    out.update(ok=code == 0, detail=f'runner exit {code}', exit=code)
+    limited = meter is not None and meter.limit
+    if code == 0 and not limited and (Path(project) / '.auto' / 'pending' / slug).is_dir():
+        out.update(waiting=True, detail=WAITING_DETAIL)     # the run only waited: the request is still pending
+
+
+def _read_claim(path):
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+        return data.get('number'), data.get('claim')
+    except (OSError, ValueError, AttributeError):
+        return None, None
+
+
+def _waiting_request(project):
+    """The first pending request, when it is a central task's (`task-<N>-...` with task.json) whose claim is the one
+    this computer holds in `.auto/run/tasks/<N>.json` -> (number, folder, claim), else None."""
+    pending = _runner().pending_requests(Path(project))
+    if not pending:
+        return None
+    folder = pending[0]
+    m = re.match(r'task-(\d+)(?:-|$)', folder.name)
+    if not m:
+        return None
+    number = int(m.group(1))
+    in_folder, claim = _read_claim(folder / 'task.json')
+    _, held = _read_claim(Path(project) / '.auto' / 'run' / 'tasks' / f'{number}.json')
+    if in_folder != number or not isinstance(claim, str) or not claim or claim != held:
+        return None
+    return number, folder, claim
+
+
+def _plan_title(folder):
+    """The first heading of the request's plan.md, or ''."""
+    try:
+        lines = (folder / 'plan.md').read_text(encoding='utf-8').splitlines()
+    except OSError:
+        return ''
+    return next((line.lstrip('#').strip() for line in lines if line.startswith('#')), '')
+
+
+def step(project,claude=None, env=None, send=None, build=None, meter=None, on_start=None):
     """Claim the next task and plan or build it -> the outcome {'task', 'action', 'ok', 'detail'} (and 'exit' for a
     build), or None when there is nothing to do. Never raises for a failed task: the failure is the outcome. With a
     `meter`, every `claude -p` of the step goes through it (spend and usage limit); `on_start(number, action)` is called
-    once the task is claimed, before it is planned or built (the loop beats from it)."""
+    once the task is claimed, before it is planned or built (the loop beats from it).
+    A task request already waiting in `.auto/pending/` (first in line, its claim still the one this computer holds) is
+    built again before anything new is claimed; a claim the service says is lost drops the claim file and the folder.
+    When that resumed build only waits, the next task is claimed in the same step (`_while_waiting`)."""
+    base = claude
+    waiting = _waiting_request(project)
+    if waiting:
+        number, folder, claim = waiting
+        if autotasks.check_claim(project, number, claim, env, send) == 'lost':
+            (Path(project) / '.auto' / 'run' / 'tasks' / f'{number}.json').unlink(missing_ok=True)
+            shutil.rmtree(folder, ignore_errors=True)
+        else:
+            if on_start:
+                on_start(number, 'build')
+            out = {'task': number, 'action': 'build', 'title': _plan_title(folder), 'ok': False, 'detail': ''}
+            if meter:
+                claude = meter.wrap(claude or _runner().run_claude, number, 'build')
+            try:
+                _build(project, folder.name, out, claude, env, send, build, meter)
+            except Exception as e:              # one failed task never ends the loop; the task stays Queued
+                out['detail'] = f'{type(e).__name__}: {e}'
+            if out.get('waiting'):
+                return _while_waiting(project, out, base, env, send, meter, on_start)
+            return out
     reply = autotasks.take_next(project, env, send)
     task = reply.get('task')
     if not task:
@@ -189,16 +268,54 @@ def step(project, claude=None, env=None, send=None, build=None, meter=None, on_s
         claude = meter.wrap(base, number, action)
     try:
         if action == 'plan':
-            r = autoplan.plan(project, number, claude, env, send)
-            out.update(ok=r['status'] == 'posted', detail=r['status'] + (f': {r["reason"]}' if r['reason'] else ''))
+            _plan(project, number, out, claude, env, send)
         else:
             slug = autotasks.start(project, number, env, send)
-            code = (build or _default_build)(project, slug, claude, env, send)
-            out.update(ok=code == 0, detail=f'runner exit {code}', exit=code)
+            _build(project, slug, out, claude, env, send, build, meter)
     except Exception as e:                      # one failed task never ends the loop
         out['detail'] = f'{type(e).__name__}: {e}'
         if action != 'plan':
             autotasks.reopen_build(project, number, env, send)      # still Queued: make it takeable again
+    return out
+
+
+def _plan(project, number, out, claude, env, send):
+    """Plan task `number` and put the result in `out` (raises what autoplan.plan raises)."""
+    r = autoplan.plan(project, number, claude, env, send)
+    out.update(ok=r['status'] == 'posted', detail=r['status'] + (f': {r["reason"]}' if r['reason'] else ''))
+
+
+def _while_waiting(project, waited, claude, env, send, meter, on_start):
+    """A resumed build only waited (`waited`): claim the next task so planning goes on meanwhile -> the outcome.
+    A `plan` answer is planned as usual; its outcome, when it succeeds, is marked `waiting` (the loop then waits one
+    poll), and a failed plan's outcome is returned unchanged. A `build` answer is only started (its own pending folder,
+    heartbeat `queued`: no `on_start`, no build) and later steps resume it once it is first in line; if starting it
+    fails it is reopened. No task, a build answer, or a claim the service refused or could not answer -> `waited`."""
+    try:
+        reply = autotasks.take_next(project, env, send)
+    except (autotasks.TaskError, autodeliver.TransportUnavailable, autocfg.ConfigError, OSError):
+        return waited                           # the resumed build's outcome stands; the next step claims again
+    task = reply.get('task')
+    if not task:
+        return waited
+    number, action = task['number'], reply.get('action') or 'plan'
+    if action != 'plan':
+        try:
+            autotasks.start(project, number, env, send)
+        except Exception:
+            autotasks.reopen_build(project, number, env, send)      # still Queued: make it takeable again
+        return waited
+    if on_start:
+        on_start(number, 'plan')
+    out = {'task': number, 'action': 'plan', 'title': task.get('title', ''), 'ok': False, 'detail': ''}
+    if meter:
+        claude = meter.wrap(claude or autoplan._run_claude, number, 'plan')
+    try:
+        _plan(project, number, out, claude, env, send)
+    except Exception as e:                      # one failed task never ends the loop
+        out['detail'] = f'{type(e).__name__}: {e}'
+    if out['ok']:
+        out['waiting'] = True                   # a request still waits: the loop waits one poll before the next step
     return out
 
 
@@ -298,8 +415,12 @@ def _loop(project, stop, poll, daily, runner, claude, env, send, build, clock, s
             continue
         last = {**result, 'at': _iso(clock())}
         what = f'task {result["task"]} ({result["action"]})' if result['task'] else result['action']
-        say(f'{what}: {"done" if result["ok"] else "failed"}, {result["detail"]}')
-        if meter.limit or result.get('exit') == runner.USAGE_LIMIT_EXIT:
+        verdict = 'waiting' if result.get('waiting') else 'done' if result['ok'] else 'failed'
+        say(f'{what}: {verdict}, {result["detail"]}')
+        if result.get('waiting'):
+            heartbeat(project, 'waiting_for_merge', clock(), last)
+            wait(poll)
+        elif meter.limit or result.get('exit') == runner.USAGE_LIMIT_EXIT:
             reset = meter.limit['reset'] if meter.limit else None
             cap = runner.LIMIT_POLL_MINUTES * 60
             pause = min(max(reset.timestamp() - clock() + 60, 0), cap) if reset else cap
