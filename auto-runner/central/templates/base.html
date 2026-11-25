@@ -38,7 +38,7 @@
     <button type="submit" class="theme-toggle">{{ "Light mode" if theme == "dark" else "Dark mode" }}</button>
   </form>
 </div></header>
-<main>
+<main class="{% block main_class %}{% endblock %}">
 {% block content %}{% endblock %}
 </main>
 </body>

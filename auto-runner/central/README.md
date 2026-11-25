@@ -108,6 +108,8 @@ may not stick over plain http. The API endpoints do not use the cookie.
   or `state` the cookie is used when it is exactly `board` or `list`, else the board (unverified). The Done column shows
   the 20 most recently updated tasks after the `mine`/`q` filters, its heading count is the filtered total, and a
   "Show all N in the list" link goes to `?view=list&state=done`.
+  The board page is wider (`main.wide`, 1440 px) and the board scrolls sideways by itself, so the page never does;
+  long titles wrap, and a card shows its runner and pull request on their own lines (unverified for looks).
   Marked **unverified** until used live.
 - `/projects/<slug>/tasks/new`: people who can run runners (developer and above) add a task for themselves; admins for
   any such member. "How we know it's done" is stored as a `Done when:` section of the description (no column of its own).
