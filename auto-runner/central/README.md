@@ -31,6 +31,7 @@ and an owner, manager or admin answers it there.
 | `runners.py` | Runner presence: `POST /api/v1/runners/beat`, silent after 2 hours, pause/stop returned; Pause, Resume and Stop on the pages |
 | `notifications.py` | In-app notifications: `notify` (members only, no duplicates), `resolve`, `unread_count`, `for_account`, `delivery`, `recent`; the Notifications page, open and read-all (the admins' log is in `admin.py`) |
 | `push.py` | Browser push subscriptions: `POST /push/subscribe`, `POST /push/unsubscribe`, the Account page's push section |
+| `attachments.py` | Task screenshots (`task_attachment`): `add`, `for_task`, `get`, `delete`; upload, view and delete routes; the 4 MB request cap and its 413 page |
 | `cli.py` | `python -m central init-db` and `python -m central create-admin --email X` |
 | `api/index.py`, `vercel.json` | Vercel entry point; every route is rewritten to it |
 | `templates/`, `static/style.css` | The pages (`base.html` holds the top bar) and their one stylesheet, served by Flask at `/static/style.css` because the CSP allows only same-origin styles; no inline styles or scripts |
@@ -101,6 +102,19 @@ may not stick over plain http. The API endpoints do not use the cookie.
 - `/projects/<slug>/tasks` (any member): the project's tasks under state tabs with counts (`?state=approval|progress|open|done`;
   with none chosen, the first tab that has tasks), "Mine only" (`?mine=1`) and a title search (`?q=`); each row shows the
   person, state, runner, build progress, pull request and when it last changed.
+  The board is the default view (`?view=board`): six columns (Open, Planning, Needs approval, Ready, Building, Done),
+  newest change first, with a Board | List toggle that keeps `mine` and `q`; `?view=list` or a `?state=` gives the list.
+  A `?view=board|list` sets the `task_view` cookie (one year, `path=/`, Secure, HttpOnly, SameSite=Lax); with no `view`
+  or `state` the cookie is used when it is exactly `board` or `list`, else the board (unverified). The Done column shows
+  the 20 most recently updated tasks after the `mine`/`q` filters, its heading count is the filtered total, and a
+  "Show all N in the list" link goes to `?view=list&state=done`.
+  The board page is wider (`main.wide`, 1440 px) and the board scrolls sideways by itself, so the page never does;
+  long titles wrap, and a card shows its runner and pull request on their own lines (unverified for looks).
+  Marked **unverified** until used live.
+  Labels that say what is true (unverified for looks): an item no run has touched reads "Not started"; on a done task an
+  item with no run state shows no badge; a rejected task's note sits under "Why it was closed" with who closed it and
+  when (from its `task.close` audit row); the screenshot upload form is hidden on done and rejected tasks; the runner
+  line reads "No runner has taken it yet"; the Tasks tab count is labelled "open tasks" and the attention pill reads "N to approve".
 - `/projects/<slug>/tasks/new`: people who can run runners (developer and above) add a task for themselves; admins for
   any such member. "How we know it's done" is stored as a `Done when:` section of the description (no column of its own).
 - `/projects/<slug>/tasks/<N>`: a step tracker (Open → Planned → Approval → Building → Done), the decision bar while the
@@ -111,7 +125,19 @@ may not stick over plain http. The API endpoints do not use the cookie.
   Pages showing work in progress reload every 30 seconds while nobody is typing.
 - States: `open` → `planning` (a runner claimed it) → `plan_review` → `approved` → `building` → `done`; or
   `changes_requested` (back to the runner with a comment) and `rejected`. A task typed in the terminal is recorded as
-  `building` (its plan was approved there).
+  `queued` (its plan was approved there; shown as "Queued" under In progress). Its claim stays alive while it is
+  queued, like a plan waiting for approval. A heartbeat with no state, or `"state": "building"`, moves `queued` to
+  `building`; `"state": "queued"` moves an approved or building task back to `queued`. `report` accepts a queued task, the
+  next-task call never takes one, and an admin release moves it to `approved`.
+  A queued task's heartbeat may carry a `note` (at most 300 characters) saying why it waits, such as "waits:
+  <branch> is not merged into origin/main yet"; the task page shows it under the Queued line. The note is cleared when
+  the task moves to `building` (a heartbeat or the next-task call) or is released (unverified until seen live).
+- **Close a task** from its page (unverified until used live): `POST /projects/<slug>/tasks/<n>/close` with a required
+  `reason` (at most 500 characters), by the assignee or a project manager, owner or admin, after a confirm step. It works
+  for `open`, `planning`, `changes_requested`, `approved` and `queued` tasks: the task becomes `rejected`, the reason is
+  stored in `note`, the claim ends and `task.close` is audited. A `building` task is refused ("stop its runner first");
+  final states are refused too. The task page shows the Close form for those states and roles only, and its Activity
+  says who closed it and why.
 - **Plan approval** on the task page: Approve, Request changes (a comment is required) or Reject, by the assignee or a
   project manager, owner or admin. Audited.
 - **Claims:** only the runner holding a task's claim may post its plan, beat or report. A claim lives while its runner
@@ -122,11 +148,51 @@ may not stick over plain http. The API endpoints do not use the cookie.
 - **API** (personal tokens only, the project named as for every call): `GET /api/v1/tasks` (every task, with the runner
   working on each, never a claim id), `GET /api/v1/tasks/<N>`, `POST /api/v1/tasks/next` (`{runner}` → claims the account's
   next task: approved, building, changes requested, planning, then open; returns the task, the claim and `action`
-  plan|build), `POST /api/v1/tasks` (record a terminal task as `building`; with `"approval": "page"`
+  plan|build), `POST /api/v1/tasks` (record a terminal task as `queued`; with `"approval": "page"`
   it is proposed instead: stored as `plan_review` with its plan and items, claimed by the runner, approved on the page), `POST /api/v1/tasks/<N>/plan` (`{claim, plan, items}`),
-  `.../heartbeat` (`{claim}`), `.../report` (`{claim, result: done|stopped, branch, pr_url, note}`). 409 = this runner no
+  `.../heartbeat` (`{claim, state?: queued|building, note?}`), `.../report` (`{claim, result: done|stopped, branch, pr_url, note}`). 409 = this runner no
   longer holds the task.
+  `POST /api/v1/tasks/<N>/decide` (`{decision: approve|changes|reject, comment}`) decides on a waiting plan as the
+  token's person, with the same rules as the task page (assignee or manager and above; `changes` needs a comment; 409
+  when no plan waits; 404 for an unknown task); it records `task.plan.<decision>` with `"via": "api"`, so the Activity
+  line ends "(through the API)", and returns `{task}`.
 - Table `project_task` (init-db creates it).
+
+## Task screenshots (`attachments.py`)
+
+- Images attached to a task, stored in the database (table `task_attachment`, data as `BYTEA`; init-db adds the table to
+  an existing database). Only **PNG, JPEG, GIF and WebP** are kept, recognised by their first bytes (never by the name or
+  the type the browser sends); at most **4 MB** each and **10 per task**. The name is kept as shown (last path part only).
+- `POST /projects/<slug>/tasks/<N>/attachments` (multipart `file`, one or more; members except viewers, so developer and
+  up; CSRF as every form): each good image is stored and audited (`task.attachment.add`); refused files are named with the
+  reason on the task page (status 400) while the good ones are kept. Viewers get 403, non-members 404.
+- `GET /projects/<slug>/tasks/<N>/attachments/<id>` (any member): the bytes with the stored content type,
+  `X-Content-Type-Options: nosniff`, `Content-Disposition: inline` and `Cache-Control: private`.
+- `POST .../attachments/<id>/delete`: the uploader or an admin, after a confirm step; audited (`task.attachment.delete`).
+- **For the runner** (task API, personal tokens of a developer or above, the project named as for every call):
+  `GET /api/v1/tasks/<N>` lists `attachments` (`id`, `filename`, `content_type`, `size`; no bytes), and
+  `GET /api/v1/tasks/<N>/attachments/<id>` returns the bytes with the same headers as the page route. A project token gets
+  403, a screenshot of another project's task (or an unknown id) 404. `autotasks.py next` downloads them (see the plugin
+  README). Unverified until used against the live service.
+- **Every request is capped at 4 MB** (`MAX_CONTENT_LENGTH`): a larger one gets 413 with a page (JSON under `/api/`)
+  that names the limit. So one upload request carries at most 4 MB of files in total.
+- The task page has a **Screenshots** section: a thumbnail of each image (the image itself, sized by CSS in
+  `static/style.css`) linking to the full image, its filename, uploader and time, and a delete button under "⋯" for the
+  uploader and admins (confirm step). Members except viewers get an upload form (`multipart/form-data`, `multiple`,
+  `accept` limited to the four types) with the limits in words; viewers see the screenshots but no form. A refused file
+  shows the reason above the page, which stays usable.
+- **While adding a task**: the New task form (`multipart/form-data`) has the same file input for members except viewers.
+  `tasks.task_add` creates the task first, then stores the files (`attachments.store_files`, audited as above), so a
+  refused file never loses the task. The browser is sent on to the task page with the refusals in `?refused=`, signed
+  with `SECRET_KEY` and bound to that task (itsdangerous, which ships with Flask), and the page names each refused file
+  and why; a tampered value or one from another task shows nothing. The 4 MB request cap covers the whole form.
+- **Paste and drag-and-drop** (`static/app.js`): forms with `data-paste-images` (the New task form and the task page's
+  upload form) take pasted or dropped PNG/JPEG/GIF/WebP images into their file input through `DataTransfer` (pasted
+  images are named `pasted-<n>.<ext>`), list the chosen files with their sizes, and warn when together they are over
+  `data-max-bytes`. Text pastes are left alone; on a page with one such form a paste anywhere goes to it. Without
+  JavaScript the plain file input still works. The browser behaviour is unverified until tried live (tests check the
+  HTML and that the handlers exist).
+- Postgres storage is unverified until used live (tests run on SQLite).
 
 ## Runner presence (decision record 0009; `runners.py`)
 
@@ -203,6 +269,16 @@ browser and posts its endpoint to the unsubscribe URL. Requests go only to same-
 works under the CSP (`default-src 'self'` covers the worker and `fetch`). Not yet tried in a real browser
 (**unverified**); the tests check the headers and that the handlers exist.
 
+**Ask once per browser.** When push is set up (all three VAPID settings), every signed-in page except the Account page
+(which has its own section) carries a hidden bar under the top bar, `<div class="push-ask" data-push-ask>` with the
+public key, the CSRF token and the subscribe URL, the text "Get a notification when a plan or blocker waits for you."
+and the buttons **Turn on** and **Not now** (`shell.py` adds `push_ask_key` to the page context; `base.html` renders
+it). `static/app.js` shares `enablePush(box)` (permission, register `/sw.js`, subscribe, post) between the Account page
+and the bar, and shows the bar only when the browser supports push, `Notification.permission` is not `denied`, this
+browser has no subscription yet and `localStorage["push-ask"]` is unset (storage errors keep the bar hidden). Turn on
+subscribes, hides the bar and stores `done`; a refusal shows the same "blocked" message in the bar; Not now hides it
+and stores `dismissed`. Not yet tried in a real browser (**unverified**).
+
 **Sending pushes.** `notifications.notify` pushes each notification it adds to every subscription of its recipient
 (`push.send_to_account`), with the payload `{"title": project name, "body": text, "link": link, "tag": key}`, through
 `push_sender(subscription, payload, vapid, timeout=5)`: in production `push.push_sender`, which uses `pywebpush` (in
@@ -234,7 +310,7 @@ Delivery words for real pushes are **unverified** until push is tried live.
 - `ui.py` gives every page one way to show things: `ago` / `when_abs` (relative and absolute time, from the injectable
   clock), one status vocabulary with tone and shape (`STATUS`), runner reasons in words (`reason_text`, `next_step`),
   people (`display_name`, `initials`; `account.name` when set, else the email's local part), runners
-  (`runner_label`), and `md`, an escape-first Markdown subset for plans (no HTML, no links). `templates/_ui.html` holds
+  (`runner_label`), and `md`, an escape-first Markdown subset for plans: headings, lists, bold, italic, code, fenced code blocks, pipe tables (in a sideways-scrolling `.table-wrap`) and `http(s)` links (`rel="noopener noreferrer"`; other URLs stay text); no HTML. `templates/_ui.html` holds
   the matching macros (status chip, person, runner, time, progress, copy field, empty state, danger form).
 - **Actions that cannot be undone ask first:** remove a member, disable an account, revoke all of an account's tokens,
   revoke a personal or machine token, replace a machine token, reject a plan, take a task back or give it to someone
@@ -244,6 +320,10 @@ Delivery words for real pushes are **unverified** until push is tried live.
 - **Theme: light by default.** Pages render `<html data-theme="light">` whatever the system setting; dark colours apply
   only under `:root[data-theme="dark"]` in `static/style.css`. `ui.theme()` reads the `theme` cookie (`dark` switches,
   anything else is light) and a context processor hands it to `base.html`.
+- **Contrast rule.** Text must reach WCAG 4.5:1 in both themes. The attention pill uses `--on-attn-mark` on
+  `--attn-mark`, and `.decision-bar` sets `--muted` to `--attn-muted` so muted text reads on `--attn-soft`.
+  `tests/central/test_theme.py` parses `style.css` (`:root` and `:root[data-theme="dark"]`) and checks those pairs with
+  the WCAG formula; change a colour there and the test tells you if it fell below 4.5.
 - **Dark mode toggle.** The top bar (signed in and signed out) has one button, "Dark mode" when light and "Light mode"
   when dark. It posts `theme` and `next` (the current path) to `POST /theme` (`auth.py`, CSRF checked like every form),
   which accepts only `light` or `dark` (anything else is 400 and sets nothing), sets the `theme` cookie for one year

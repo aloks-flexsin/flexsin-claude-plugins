@@ -113,14 +113,27 @@ bar tells you when something waits on you (see Notifications).
 ## Tasks: what each person's runner does next
 - On a project, **New task** (top right) adds a task for yourself (title, what and why, and optionally how we know it's
   done); admins can add one for anyone who can run runners. The **Tasks** tab sorts them into Needs approval, In progress,
-  Open and Done, with "Mine only" and a search. Everyone in the project sees every task and who is working on what.
+  Open and Done, with "Mine only" and a search. The **Board | List** switch at the top changes the view; the page
+  remembers your choice in this browser (unverified). The board's Done column shows the 20 newest; "Show all N in the
+  list" opens the list's Done tab. Everyone in the project sees every task and who is working on what.
 - Run **`/auto-runner:auto`** with no task. Your runner takes your next task: a new one gets a plan (the same planning and
   spec check as always), which then **waits for approval** on the task's page; meanwhile the runner takes your next one.
 - On the task page you, a manager, an owner or an admin **Approve** the plan, **Request changes** (with a comment; the
   runner revises it on its next `/auto-runner:auto`) or **Reject** it (it asks first). Short plans can be approved from My work.
+  From a terminal on a signed-in computer, the same decision is
+  `python auto-runner/bin/autotasks.py decide N approve|changes|reject [--comment TEXT]` (`changes` needs `--comment`);
+  it prints "Task N: approved" (or "changes requested", "rejected"), or "Not done:" with the reason, and the Activity
+  line ends "(through the API)". Not yet tried against the live service.
 - Run `/auto-runner:auto` again: an approved task is built on its own branch and pull request, and shows **done** with the
   PR when the run finishes.
+- **Close a task you no longer want** with **Close task…** on its page: give a reason (up to 500 characters) and confirm.
+  The assignee, managers, owners and admins can do it while the task is open, being planned, waiting for changes,
+  approved or queued. A task that is being built cannot be closed: stop its runner first. The task shows as rejected
+  with your reason, and its Activity says who closed it. (Unverified until used on the live service.)
 - A task you type in the terminal (`/auto-runner:auto <task>`) is approved there as before and recorded on the page too.
+- **Screenshots** added to a task (on its page, or while adding it) reach your runner: `/auto-runner:auto` downloads them
+  to `.auto/run/tasks/<N>/attachments/` when it takes the task and looks at them before planning or building. Each is
+  downloaded once. Watch mode does not fetch them yet. (Unverified until used on the live service.)
 - **Claims:** a task a runner works on shows its runner, so nobody else's runner takes it. A runner silent for 2 hours
   loses its claim. An admin can release a claim or give the task to someone else; the old runner stops that task at its
   next step.

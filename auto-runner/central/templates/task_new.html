@@ -7,7 +7,7 @@
   <h2 class="page-title">New task</h2>
   <p class="muted">The runner of the person it is for plans it first. The plan waits for approval before anything is built.</p>
   {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
-  <form method="post" action="{{ url_for('tasks.task_add', slug=project.slug) }}" class="stack-form">
+  <form method="post" action="{{ url_for('tasks.task_add', slug=project.slug) }}" class="stack-form" enctype="multipart/form-data" data-paste-images data-max-bytes="{{ shot_limits.bytes }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label for="t-title">Title</label>
     <input id="t-title" type="text" name="title" value="{{ form.title }}" maxlength="200" required autofocus placeholder="Export the orders table as CSV">
@@ -21,6 +21,11 @@
       <option value="{{ g.account.id }}">Me ({{ g.account.email }})</option>
       {% for m in assignees %}{% if m.account_id != g.account.id %}<option value="{{ m.account_id }}"{% if form.assignee == m.account_id %} selected{% endif %}>{{ m.email | display_name }} ({{ m.email }}, {{ m.role }})</option>{% endif %}{% endfor %}
     </select>
+    {% endif %}
+    {% if can_upload %}
+    <label for="t-shots">Screenshots <span class="optional">optional</span></label>
+    <input id="t-shots" type="file" name="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple>
+    <p class="muted small">PNG, JPEG, GIF or WebP; at most {{ shot_limits.size }} for the whole form and {{ shot_limits.count }} screenshots per task. You can also paste or drop images here.</p>
     {% endif %}
     <div class="form-actions">
       <button type="submit" class="btn primary">Add task</button>

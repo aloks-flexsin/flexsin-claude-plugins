@@ -153,4 +153,5 @@ def main(argv=None, env=None, send=None, run=subprocess.run):
 
 
 if __name__ == '__main__':
+    _load('autorunner_safe', 'autosafe.py').utf8_console()
     sys.exit(main())

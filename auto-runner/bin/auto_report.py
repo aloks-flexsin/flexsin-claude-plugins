@@ -162,4 +162,5 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
+    _load('autorunner_safe', 'autosafe.py').utf8_console()
     sys.exit(main())

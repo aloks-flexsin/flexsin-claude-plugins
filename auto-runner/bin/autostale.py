@@ -324,5 +324,17 @@ def main(argv=None):
     return 0
 
 
+def _load(name, file):
+    import importlib.util
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / file)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 if __name__ == '__main__':
+    _load('autorunner_safe', 'autosafe.py').utf8_console()
     sys.exit(main())

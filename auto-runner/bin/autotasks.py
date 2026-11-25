@@ -3,6 +3,8 @@ Central tasks from the plugin's side (decision record 0007, step 4). Needs the c
 (sign in with /auto-runner:central): a task is someone's, and the service knows whose from the token.
 
     python autotasks.py next   [--project DIR]                      # claim my next task; print what to do (plan or build)
+                                                                    # and download its screenshots (paths printed under
+                                                                    # "Screenshots", in .auto/run/tasks/<N>/attachments/)
     python autotasks.py plan N --plan FILE --items FILE [--project DIR]   # post the plan of task N; it waits for approval
     python autotasks.py start N [--project DIR]                     # an approved task N -> .auto/pending/task-N-<brief>/
     python autotasks.py record --slug SLUG --title T --plan FILE --items FILE [--project DIR]
@@ -11,6 +13,9 @@ Central tasks from the plugin's side (decision record 0007, step 4). Needs the c
                                                                     # a task planned in the terminal, sent for approval
                                                                     # on the central page (plan_review, claimed here)
     python autotasks.py list   [--project DIR]                      # every task of the project and who works on it
+    python autotasks.py decide N approve|changes|reject [--comment TEXT] [--project DIR]
+                                                                    # decide on task N's waiting plan, as on its page
+                                                                    # ("changes" needs --comment)
 
 The claim of a task this computer took is kept in `.auto/run/tasks/<N>.json` (git-ignored). A request made from a task
 carries `task.json`; when the runner adds that request to its queue it becomes `.auto/run/current-task.json`, and the
@@ -100,6 +105,64 @@ def take_next(project, env=None, send=None):
     return reply
 
 
+def reopen_build(project, number, env=None, send=None):
+    """A build that failed before its run began: put the queued task back to building so `next` offers it again."""
+    try:
+        _call(transport(project, env, send), 'POST', f'/api/v1/tasks/{int(number)}/heartbeat',
+              {'claim': _claim(project, number), 'state': 'building'})
+    except Exception:
+        pass                                            # best effort: the claim expires and the task is taken again
+
+
+SAFE_CHARS = re.compile(r'[^A-Za-z0-9._-]')
+
+
+def attachment_name(attachment_id, filename):
+    """The local name of a screenshot: `<id>-<basename>`, every character outside letters, digits, `.`, `-` and `_`
+    replaced by `_`, so it never leaves the folder (no `/` or `\\`, never `.` or `..`) and two screenshots of the same
+    name do not collide. None when the id has nothing but dots and underscores."""
+    safe_id = SAFE_CHARS.sub('_', str(attachment_id or ''))
+    if not safe_id.strip('._'):
+        return None
+    base = str(filename or '').replace('\\', '/').rsplit('/', 1)[-1]
+    return f'{safe_id}-{SAFE_CHARS.sub("_", base) or "screenshot"}'
+
+
+def attachments_dir(project, number):
+    return _auto(project) / CLAIMS / str(int(number)) / 'attachments'
+
+
+def fetch_attachments(project, number, env=None, send=None):
+    """Download task N's screenshots to `.auto/run/tasks/<N>/attachments/<id>-<basename>` -> (paths, problems).
+    A file already there is not downloaded again; a failed download is named in `problems` and never stops `next`."""
+    t = transport(project, env, send)
+    listed = _call(t, 'GET', f'/api/v1/tasks/{int(number)}')['task'].get('attachments') or []
+    folder = attachments_dir(project, number)
+    paths, problems = [], []
+    for item in listed:
+        name = attachment_name(item.get('id') if isinstance(item, dict) else None,
+                               item.get('filename') if isinstance(item, dict) else None)
+        if name is None:
+            problems.append('a screenshot without an id was skipped')
+            continue
+        path = folder / name
+        if path.resolve().parent != folder.resolve():   # cannot happen with attachment_name; never write outside
+            problems.append(f'{name}: skipped, not inside the attachments folder')
+            continue
+        if not path.exists():
+            try:
+                data = t.fetch(f'/api/v1/tasks/{int(number)}/attachments/{SAFE_CHARS.sub("_", str(item["id"]))}')
+            except (RuntimeError, ConnectionError) as e:   # TransportRefused / TransportUnavailable
+                problems.append(f'{item.get("filename") or name}: could not download ({e})')
+                continue
+            folder.mkdir(parents=True, exist_ok=True)
+            partial = folder / f'.{name}.part'          # a half-written file is never taken as downloaded
+            partial.write_bytes(data)
+            partial.replace(path)
+        paths.append(path)
+    return paths, problems
+
+
 def post_plan(project, number, plan_text, items_text, env=None, send=None):
     return _call(transport(project, env, send), 'POST', f'/api/v1/tasks/{int(number)}/plan',
                  {'claim': _claim(project, number), 'plan': plan_text, 'items': items_text})['task']
@@ -114,7 +177,7 @@ def start(project, number, env=None, send=None):
     approved items, the plan and task.json, ready for `auto_run.py --enqueue <slug>`."""
     claim = _claim(project, number)
     task = _call(transport(project, env, send), 'GET', f'/api/v1/tasks/{int(number)}')['task']
-    if task['status'] != 'building' or not task['items'].strip():
+    if task['status'] not in ('building', 'queued') or not task['items'].strip():
         raise TaskError(f'task {number} is {task["status"]}, not approved for building')
     slug = f'task-{int(number)}-{brief(task["title"])}'
     folder = _auto(project) / 'pending' / slug
@@ -122,6 +185,8 @@ def start(project, number, env=None, send=None):
     (folder / 'items.md').write_text(task['items'].rstrip() + '\n', encoding='utf-8')
     (folder / 'plan.md').write_text(task['plan'].rstrip() + '\n', encoding='utf-8')
     _save(folder / 'task.json', {'number': int(number), 'claim': claim})
+    _call(transport(project, env, send), 'POST', f'/api/v1/tasks/{int(number)}/heartbeat',
+          {'claim': claim, 'state': 'queued'})          # the request waits for its run: the page says Queued
     return slug
 
 
@@ -151,6 +216,18 @@ def propose(project, title, plan_text, items_text, env=None, send=None):
 
 def listing(project, env=None, send=None):
     return _call(transport(project, env, send), 'GET', '/api/v1/tasks')['tasks']
+
+
+DECISIONS = {'approve': 'approved', 'changes': 'changes requested', 'reject': 'rejected'}
+
+
+def decide(project, number, decision, comment='', env=None, send=None):
+    """Decide on task `number`'s waiting plan as the signed-in person, with the task page's rules (the assignee or a
+    manager and above; `changes` needs a comment; the service refuses otherwise) -> the task as the service returns it."""
+    if decision not in DECISIONS:
+        raise TaskError('the decision is approve, changes or reject')
+    return _call(transport(project, env, send), 'POST', f'/api/v1/tasks/{number}/decide',
+                 {'decision': decision, 'comment': comment or ''})['task']
 
 
 SHOWN = {'plan_review': 'waiting for approval', 'changes_requested': 'changes requested',
@@ -206,19 +283,35 @@ def current(auto_dir):
     return data
 
 
-def beat(t, auto_dir):
-    """-> 'none' (no current task), 'ok', 'lost' (released, reassigned or expired: stop) or 'unavailable'."""
+def beat(t, auto_dir, state=None):
+    """-> 'none' (no current task), 'ok', 'lost' (released, reassigned or expired: stop) or 'unavailable'.
+    `state` ('queued' or 'building') is sent along when given, so the task page says what the claim is doing."""
     task = current(auto_dir)
     if task is None:
         return 'none'
     try:
-        t.request('POST', f'/api/v1/tasks/{task["number"]}/heartbeat', {'claim': task['claim']})
+        t.request('POST', f'/api/v1/tasks/{task["number"]}/heartbeat',
+                  {'claim': task['claim'], **({'state': state} if state else {})})
         return 'ok'
     except (RuntimeError, ConnectionError) as e:        # TransportRefused / TransportUnavailable, whichever module copy
         if getattr(e, 'status', None) == 409:
             (Path(auto_dir) / CURRENT).unlink(missing_ok=True)
             return 'lost'
         return 'unavailable'
+
+
+def wait_note(t, request_dir, note):
+    """A request left waiting for a merge: tell the service why, on the request's own task (its task.json), which stays
+    queued and keeps its claim. Best effort: no task.json, a refusal or an unreachable service changes nothing -> bool."""
+    try:
+        data = json.loads((Path(request_dir) / 'task.json').read_text(encoding='utf-8'))
+        if not (isinstance(data.get('number'), int) and data.get('claim')):
+            return False
+        t.request('POST', f'/api/v1/tasks/{data["number"]}/heartbeat',
+                  {'claim': data['claim'], 'state': 'queued', 'note': note[:300]})
+        return True
+    except (OSError, ValueError, AttributeError, RuntimeError, ConnectionError):
+        return False
 
 
 def finish(t, auto_dir, done, branch, pr_url, note):
@@ -242,14 +335,18 @@ def finish(t, auto_dir, done, branch, pr_url, note):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('cmd', choices=('next', 'plan', 'start', 'record', 'propose', 'list'))
+    ap.add_argument('cmd', choices=('next', 'plan', 'start', 'record', 'propose', 'list', 'decide'))
     ap.add_argument('number', nargs='?', type=int)
+    ap.add_argument('decision', nargs='?', choices=tuple(DECISIONS))
+    ap.add_argument('--comment', default='')
     ap.add_argument('--project', default=os.environ.get('CLAUDE_PROJECT_DIR') or '.')
     ap.add_argument('--plan', default='')
     ap.add_argument('--items', default='')
     ap.add_argument('--slug', default='')
     ap.add_argument('--title', default='')
     a = ap.parse_args(argv)
+    if a.cmd == 'decide' and (a.number is None or a.decision is None):
+        ap.error('decide needs the task number and approve, changes or reject')
     read = lambda p: Path(p).read_text(encoding='utf-8') if p else ''   # noqa: E731
     try:
         if a.cmd == 'next':
@@ -262,6 +359,17 @@ def main(argv=None):
             for key in ('description', 'comment', 'plan', 'items'):
                 if task.get(key):
                     print(f'--- {key} ---\n{task[key]}\n')
+            try:
+                paths, problems = fetch_attachments(a.project, task['number'])
+            except (TaskError, autodeliver.TransportUnavailable, OSError) as e:
+                paths, problems = [], [f'could not list them ({e})']
+            if paths or problems:
+                print('--- Screenshots ---')
+                for p in paths:
+                    print(p)
+                for p in problems:
+                    print(f'Not downloaded: {p}')
+                print()
         elif a.cmd == 'plan':
             task = post_plan(a.project, a.number, read(a.plan), read(a.items))
             print(f'Task {task["number"]}: the plan waits for approval on the central page (Tasks).')
@@ -273,6 +381,9 @@ def main(argv=None):
             n = propose(a.project, a.title, read(a.plan), read(a.items))
             print(f'Task {n}: the plan waits for approval on the central page (Tasks); once approved, '
                   f'"autotasks.py next" hands it back to build.')
+        elif a.cmd == 'decide':
+            task = decide(a.project, a.number, a.decision, a.comment)
+            print(f'Task {task["number"]}: {DECISIONS[a.decision]}')
         else:
             for t in listing(a.project):
                 print(line(t))
@@ -283,4 +394,5 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
+    autosafe.utf8_console()
     sys.exit(main())

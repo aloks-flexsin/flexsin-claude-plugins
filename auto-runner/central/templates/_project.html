@@ -16,7 +16,7 @@
   </div>
   <nav class="tabs" aria-label="Project">
     <a href="{{ url_for('projects.overview_page', slug=project.slug) }}"{% if active == "overview" %} aria-current="page"{% endif %}>Overview</a>
-    <a href="{{ url_for('tasks.tasks_page', slug=project.slug) }}"{% if active == "tasks" %} aria-current="page"{% endif %}>Tasks <span class="count">{{ pnav.open_tasks }}</span>{% if pnav.approval %} <span class="pill attention" title="plans waiting for approval">{{ pnav.approval }}</span>{% endif %}</a>
+    <a href="{{ url_for('tasks.tasks_page', slug=project.slug) }}"{% if active == "tasks" %} aria-current="page"{% endif %}>Tasks <span class="count" title="open tasks">{{ pnav.open_tasks }}<span class="sr-only"> open tasks</span></span>{% if pnav.approval %} <span class="pill attention" title="plans waiting for approval">{{ pnav.approval }} to approve</span>{% endif %}</a>
     <a href="{{ url_for('runs.runs_page', slug=project.slug) }}"{% if active == "runs" %} aria-current="page"{% endif %}>Runs{% if pnav.live_runs %} <span class="pill info">{{ pnav.live_runs }} live</span>{% endif %}</a>
     <a href="{{ url_for('blockers.blockers_page', slug=project.slug) }}"{% if active == "blockers" %} aria-current="page"{% endif %}>Blockers{% if pnav.blockers %} <span class="pill bad">{{ pnav.blockers }}</span>{% endif %}</a>
     <a href="{{ url_for('projects.members_page', slug=project.slug) }}"{% if active == "settings" %} aria-current="page"{% endif %}>Settings</a>

@@ -4,14 +4,58 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+### Added
+- Central: a "turn on push" bar under the top bar of every signed-in page (not the Account page) when push is set up,
+  shown once per browser: only when push is supported, not blocked, not yet subscribed here and not answered before
+  (`localStorage["push-ask"]`). Turn on uses the same `enablePush` steps as the Account page; Not now hides it for
+  good in this browser. Unverified in a real browser.
+
+## [0.22.0] - 2026-11-25
+
 ### Fixed
 - Runner publishing: when `gh pr create` fails because GraphQL is blocked (as behind the cloud-session proxy), the runner
   opens the pull request with the REST API (`gh api repos/<owner>/<repo>/pulls -X POST`), owner and repository taken from
   the push remote's URL; the `publish` event records the REST URL, or both errors when that fails too.
 - Central service: a page that needs a table or column `init-db` has not added yet answers 503 "This page needs a
   database update" with the command to run, instead of crashing (the live site broke this way after the runner table).
+- Every plugin command writes UTF-8 to its console (`autosafe.utf8_console()`), so a task, plan or log with characters
+  such as "→" no longer crashes on a Windows cp1252 console.
+- Tests: `test_init_rule.py` runs on Python 3.12 (it used a 3.13-only `read_text(newline=)`), and the service worker
+  test compares bytes, so it passes on a Windows checkout with CRLF line endings.
 
 ### Added
+- Central **Tasks** page opens as a Kanban **board** with six columns (Open, Planning, Needs approval, Ready, Building,
+  Done) and a Board | List toggle; the list stays as it was. The choice is kept in the `task_view` cookie, "Mine only"
+  and the search work on both, and the Done column shows the 20 most recent with a link to all of them. Read-only cards.
+- Runner usage stop: after each item the runner reads the Claude plan's usage from the agent's output (`rate_limit_event`:
+  5-hour and 7-day windows) and stops before the next item once either window reaches `usage_limit.stop_at_percent`
+  (default 90; `100` turns it off), exit code 75 with reason `usage_threshold`. With `usage_limit.wait` it waits for that
+  window's reset instead, when the reset is within `max_wait_minutes`. `/auto-runner:status` shows the last plan usage, and
+  the central Runs page shows "Stopped at N% of the 5-hour limit (resets HH:MM UTC)". Unverified until a real run nears the limit.
+- Claude identities carry their surface (`auto-runner`, `cli`, `desktop`, `browser`; today the runner reports
+  `auto-runner`), shown on the Account and Members pages. `init-db` rebuilds an older `claude_identity` table to add it.
+- The runner checks which Claude account the CLI is signed in to (`claude auth status --json`) against the optional
+  `AUTO_RUNNER_ACCOUNT_EMAIL`: a mismatch prints a warning and the run continues. `run_start` carries only
+  `account_check` (`match`, `mismatch`, `not_set`, `unknown`), never the email. `/auto-runner:central` status shows it,
+  and the Runs page marks a mismatched run "Claude account not confirmed".
+- Central tasks: a task that waits in a runner's queue shows **Queued** and keeps its claim until its run starts (then
+  Building). Heartbeats take `state` (`queued` | `building`) and a `note` (at most 300 characters) that the task page shows
+  as the reason it waits; the runner sends them when a request waits for a branch and when its run starts. An admin
+  release moves a queued task back to approved.
+- Close a task from its page: the assignee, a manager, owner or admin closes an open, planning, approved, queued or
+  changes-requested task with a reason (`POST /projects/<slug>/tasks/<n>/close`, confirm step, audited as `task.close`);
+  it becomes rejected and no runner takes it. A task being built is refused ("stop its runner first").
+- Continuous integration: `.github/workflows/tests.yml` runs `python -m pytest -q` on Python 3.12 for every pull request
+  to `main` and every push to `main` (read-only permissions, no secrets).
+- Decide a waiting plan from the terminal: `autotasks.py decide N approve|changes|reject [--comment TEXT]` calls
+  `POST /api/v1/tasks/<N>/decide` (personal token; the task page's rules, recorded "through the API") and prints
+  "Task N: approved" / "changes requested" / "rejected", or "Not done: <reason>". Unverified until used against the
+  live service.
+- The runner gets a task's screenshots: `GET /api/v1/tasks/<N>` lists `attachments` (id, filename, content type,
+  size) and `GET /api/v1/tasks/<N>/attachments/<id>` returns the bytes (personal token, same project rules as the task
+  API). `autotasks.py next` downloads them to `.auto/run/tasks/<N>/attachments/<id>-<safe name>` (once; a name can
+  never leave the folder) and prints their paths under "Screenshots"; `/auto-runner:auto` opens them before planning.
+  Unverified until used against the live service.
 - Central notifications: each notification on `/notifications` says how it was delivered ("in-app", "push sent",
   "push failed: <reason>", "push off"), and admins get a **Notification log** (`GET /admin/notifications`, linked from
   Accounts) of recent notifications across everyone with recipient, project, kind, delivery and time, filterable by

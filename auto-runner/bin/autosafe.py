@@ -65,6 +65,19 @@ RUNNER_SURFACE = 'claude-auto-runner'
 PUSH_DENIED = ('Bash(git push:*)', 'PowerShell(git push:*)')     # passed as --disallowedTools to every agent the runner starts
 
 
+def utf8_console(streams=None):
+    """Make the console streams (default stdout and stderr) write UTF-8, replacing what cannot be encoded, so printing
+    a task title or plan with '→' never crashes on a cp1252 console. A stream without `reconfigure` is left alone;
+    never raises."""
+    for stream in (streams if streams is not None else (sys.stdout, sys.stderr)):
+        try:
+            reconfigure = getattr(stream, 'reconfigure', None)
+            if reconfigure:
+                reconfigure(encoding='utf-8', errors='replace')
+        except Exception:                                   # a console we cannot change is still usable
+            pass
+
+
 def runner_prefix(name):
     """'alok/bhawish-claude-auto-runner' -> 'alok/bhawish-claude-auto-runner/': every run branch starts with it."""
     return f'{name}/'

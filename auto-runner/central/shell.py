@@ -12,9 +12,9 @@ Both are injected into templates by `init_app` whenever `g.project` / `g.account
 """
 import json
 
-from flask import g, request
+from flask import current_app, g, request
 
-from . import auth, blockers, notifications, projects, runners, runs, tasks, ui
+from . import auth, blockers, notifications, projects, push, runners, runs, tasks, ui
 from .db import get_db
 
 RECENT = 12
@@ -68,8 +68,11 @@ def _sentence(row, project_slug):
         "task.plan.approve": "%s approved the plan for %s" % (who, task),
         "task.plan.changes": "%s asked for changes to %s" % (who, task),
         "task.plan.reject": "%s rejected %s" % (who, task),
-        "task.release": "%s took %s back from its runner" % (who, task),
+        "task.close": "%s closed %s: %s" % (who, task, d.get("reason") or "no reason given"),
+        "task.release":"%s took %s back from its runner" % (who, task),
         "task.reassign": "%s gave %s to %s" % (who, task, ui.display_name(d.get("to") or "")),
+        "task.attachment.add": "%s added a screenshot to %s" % (who, task),
+        "task.attachment.delete": "%s deleted a screenshot from %s" % (who, task),
         "member.add": "%s added %s as %s" % (who, ui.display_name(d.get("email") or ""), d.get("role", "member")),
         "member.remove": "%s removed %s" % (who, ui.display_name(d.get("email") or "")),
         "member.role": "%s made %s %s" % (who, ui.display_name(d.get("email") or ""), d.get("to", "")),
@@ -81,6 +84,8 @@ def _sentence(row, project_slug):
         "runner.stop": "%s stopped the runner %s" % (who, ui.runner_label(d.get("label") or "")),
     }
     text = texts.get(row["action"])
+    if text and d.get("via") == "api":
+        text += " (through the API)"
     link = None
     if n and row["action"].startswith("task."):
         link = ("tasks.task_page", {"slug": project_slug, "number": n})
@@ -126,6 +131,9 @@ def init_app(app):
         db = get_db()
         out = {"nav_badge": nav_badge(db, account), "nav_endpoint": request.endpoint or "",
                "notif_count": notifications.unread_count(db, account["id"])}
+        # Queue item A1: the "turn on push" bar on every signed-in page except the Account page (its own section).
+        if push.configured() and request.endpoint != "admin.account_page":
+            out["push_ask_key"] = (current_app.config.get("CENTRAL_VAPID_PUBLIC_KEY") or "").strip()
         project = g.get("project")
         if project is not None:
             out["pnav"] = project_nav(db, project, account, g.get("project_role"), auth.now())

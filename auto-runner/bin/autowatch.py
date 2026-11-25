@@ -197,6 +197,8 @@ def step(project, claude=None, env=None, send=None, build=None, meter=None, on_s
             out.update(ok=code == 0, detail=f'runner exit {code}', exit=code)
     except Exception as e:                      # one failed task never ends the loop
         out['detail'] = f'{type(e).__name__}: {e}'
+        if action != 'plan':
+            autotasks.reopen_build(project, number, env, send)      # still Queued: make it takeable again
     return out
 
 
@@ -322,4 +324,5 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
+    _load('autorunner_safe', 'autosafe.py').utf8_console()
     sys.exit(main())
