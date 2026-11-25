@@ -290,7 +290,7 @@ Test layout: central tests go in `tests/central/`. Runner and gate tests go in `
   *Slice:* 2 Merge green PRs
   *Kind:* feature
 
-- [ ] **B8 Supervisor command.** Add `commands/supervisor.md` (`/auto-runner:supervisor`, run one pass and print a summary) and the `autosupervisor.py` entry point with its environment variables and exit codes. It calls `GET /api/v1/supervisor/whoami` first and refuses to run, with a clear message and a non-zero exit code, if the role is not `supervisor`. Update `auto-runner/README.md` in the same commit.
+- [x] **B8 Supervisor command.** Add `commands/supervisor.md` (`/auto-runner:supervisor`, run one pass and print a summary) and the `autosupervisor.py` entry point with its environment variables and exit codes. It calls `GET /api/v1/supervisor/whoami` first and refuses to run, with a clear message and a non-zero exit code, if the role is not `supervisor`. Update `auto-runner/README.md` in the same commit.
   *Acceptance:* `tests/auto_runner/test_supervisor_pass.py::test_command_refuses_non_supervisor_token` passes, and the doc-map check passes.
   *Slice:* 2 Merge green PRs
   *Kind:* feature

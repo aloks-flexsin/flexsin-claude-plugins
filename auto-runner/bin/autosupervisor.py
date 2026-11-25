@@ -12,7 +12,12 @@ supervisor's personal token (read from the environment, never logged). A failing
 pass goes on with the next task.
 """
 import importlib.util
+import json
+import os
+import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
@@ -120,3 +125,99 @@ def run_pass(project, http, read, base_ref, forge, merger):
     """One Supervisor pass: the plan step, then the merge step. -> {"plans": [...], "merges": [...]}."""
     return {'plans': plan_step(project, http, read, base_ref),
             'merges': merge_step(project, http, read, base_ref, forge, merger)}
+
+
+# ---- entry point (`/auto-runner:supervisor`) ----
+# Environment (config comes from the environment only; no token is ever printed):
+#   AUTO_SUPERVISOR_URL           central service base URL            (required)
+#   AUTO_SUPERVISOR_TOKEN         the supervisor account's token      (required)
+#   AUTO_SUPERVISOR_PROJECT       project slug                        (required)
+#   AUTO_SUPERVISOR_REPO          GitHub `owner/repo`                 (required)
+#   AUTO_SUPERVISOR_MERGER        the GitHub login the merge runs as  (required; the gate compares it with the PR author)
+#   AUTO_SUPERVISOR_GITHUB_TOKEN  GitHub token, read by autoforge     (needed to merge)
+#   AUTO_SUPERVISOR_BASE          base ref the policy is read from    (default origin/main)
+#   AUTO_SUPERVISOR_REPO_DIR      local clone used to read the policy (default current directory)
+EXIT_OK, EXIT_ERRORS, EXIT_CONFIG, EXIT_REFUSED = 0, 1, 2, 3
+REQUIRED = ('AUTO_SUPERVISOR_URL', 'AUTO_SUPERVISOR_TOKEN', 'AUTO_SUPERVISOR_PROJECT', 'AUTO_SUPERVISOR_REPO',
+            'AUTO_SUPERVISOR_MERGER')
+WHOAMI = '/api/v1/supervisor/whoami'
+
+
+def urllib_http(base_url, token, timeout=30):
+    """An `http(method, path, body)` over urllib with the bearer token; -> (status, json or {})."""
+    def http(method, path, body=None):
+        data = json.dumps(body).encode() if body is not None else None
+        headers = {'Authorization': 'Bearer ' + token, 'Accept': 'application/json'}
+        if data is not None:
+            headers['Content-Type'] = 'application/json'
+        req = urllib.request.Request(base_url.rstrip('/') + path, data=data, method=method, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                status, raw = resp.status, resp.read()
+        except urllib.error.HTTPError as e:
+            status, raw = e.code, e.read()
+        except (urllib.error.URLError, OSError):
+            return 0, {}
+        try:
+            return status, json.loads(raw.decode('utf-8', 'replace') or '{}')
+        except ValueError:
+            return status, {}
+    return http
+
+
+def git_reader(repo_dir):
+    """`read(ref, path) -> (text, blob_sha) | None` over `git show` in a local clone (the base ref, not the working tree)."""
+    def read(ref, path):
+        def git(*args):
+            return subprocess.run(['git', '-C', str(repo_dir), *args], capture_output=True, text=True,
+                                  encoding='utf-8', errors='replace', timeout=60)
+        shown = git('show', ref + ':' + path)
+        if shown.returncode != 0:
+            return None
+        return shown.stdout, git('rev-parse', ref + ':' + path).stdout.strip() or None
+    return read
+
+
+def summary(result):
+    lines = []
+    for p in result['plans']:
+        if p['task'] is None:
+            lines.append('plan: ' + str(p['error']))
+        else:
+            lines.append('plan: task %s %s -> %s' % (p['task'], p['verdict'], p['decision'] or p['error']))
+    for m in result['merges']:
+        what = 'task %s %s' % (m['task'], m['outcome']) if m['task'] is not None else m['outcome']
+        lines.append('merge: ' + what + (': ' + '; '.join(m['reasons']) if m['reasons'] else ''))
+    return lines or ['Nothing to do: no plan waits and no pull request is ready.']
+
+
+def main(argv=None, env=None, http=None, read=None, forge=None, out=print):
+    """Run one pass. Exit 0 = ran clean, 1 = ran but a step reported an error, 2 = missing configuration,
+    3 = refused (the token is not a supervisor's, or the service did not answer). Injectable parts are for tests."""
+    env = os.environ if env is None else env
+    missing = [k for k in REQUIRED if not env.get(k)]
+    if missing:
+        out('Supervisor: not configured. Set ' + ', '.join(missing) + '.')
+        return EXIT_CONFIG
+    http = http or urllib_http(env['AUTO_SUPERVISOR_URL'], env['AUTO_SUPERVISOR_TOKEN'])
+    status, who = http('GET', WHOAMI)
+    role = who.get('role') if status == 200 and isinstance(who, dict) else None
+    if role != 'supervisor':
+        if status != 200:
+            out('Supervisor: refusing to run. The central service did not answer or rejected the token.')
+        else:
+            out('Supervisor: refusing to run. This token belongs to a "%s" account, not a supervisor.' % role)
+        return EXIT_REFUSED
+    forge = forge or autoforge.GithubForge(env['AUTO_SUPERVISOR_REPO'], token=env.get('AUTO_SUPERVISOR_GITHUB_TOKEN', ''))
+    read = read or git_reader(env.get('AUTO_SUPERVISOR_REPO_DIR') or '.')
+    result = run_pass(env['AUTO_SUPERVISOR_PROJECT'], http, read, env.get('AUTO_SUPERVISOR_BASE') or 'origin/main',
+                      forge, env['AUTO_SUPERVISOR_MERGER'])
+    for line in summary(result):
+        out(line)
+    bad = [p for p in result['plans'] if p['error']] + [m for m in result['merges'] if m['outcome'] in ('error', 'failed')]
+    return EXIT_ERRORS if bad else EXIT_OK
+
+
+if __name__ == '__main__':
+    _load('autorunner_safe', 'autosafe.py').utf8_console()
+    sys.exit(main())
