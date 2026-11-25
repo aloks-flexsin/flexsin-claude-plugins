@@ -275,7 +275,7 @@ Test layout: central tests go in `tests/central/`. Runner and gate tests go in `
   *Slice:* 1 Plan approval by policy
   *Kind:* feature
 
-- [ ] **B5 Forge adapter.** Add `bin/autoforge.py` with a `Forge` interface (`pr`, `changed_files`, `checks`, `reviews`, `merge(pr, sha, method)`), a `GithubForge` over `urllib` (token from `AUTO_SUPERVISOR_GITHUB_TOKEN`, never logged, injectable opener), and a `FakeForge` in `tests/auto_runner/`. The interface has no push or commit method. Update `auto-runner/README.md` in the same commit.
+- [x] **B5 Forge adapter.** Add `bin/autoforge.py` with a `Forge` interface (`pr`, `changed_files`, `checks`, `reviews`, `merge(pr, sha, method)`), a `GithubForge` over `urllib` (token from `AUTO_SUPERVISOR_GITHUB_TOKEN`, never logged, injectable opener), and a `FakeForge` in `tests/auto_runner/`. The interface has no push or commit method. Update `auto-runner/README.md` in the same commit.
   *Acceptance:* `tests/auto_runner/test_autoforge.py` passes using a recorded fake opener only (no network), and includes a test that the interface exposes no write-to-branch method and one that the token never appears in a logged line.
   *Slice:* 2 Merge green PRs
   *Kind:* internal
