@@ -166,8 +166,20 @@ may not stick over plain http. The API endpoints do not use the cookie.
   `{role, email}` for any valid token (role is `null` for a project token). `GET /api/v1/supervisor/state?project=<slug>`
   needs the `supervisor` account role (403 for any other role, 401 without a token, 404 only for an unknown project once the
   role is accepted). It returns `{project, tasks, runners, blockers}`: each task has the `/api/v1/tasks/<N>` fields plus
-  `plan_rounds` (the count of the task's `task.plan.changes` audit rows) and `merged_at`; runners use the runner API shape;
-  blockers are the open ones (`OPEN`, `ESCALATED`). No claim ids appear and nothing is written.
+  `plan_rounds` (the count of the task's `supervisor.plan.changes` audit rows), `plan_decided` (the supervisor's decision
+  on the task's current plan post, or null; a new plan post starts afresh) and `merged_at`; runners use the runner API
+  shape; blockers are the open ones (`OPEN`, `ESCALATED`). No claim ids appear and nothing is written.
+- **Plan decision** `POST /api/v1/supervisor/tasks/<n>/plan-decision?project=<slug>` with
+  `{"decision": "approve" | "changes" | "escalate", "reasons": [...], "policy_sha": "...", "comment": "..."}`. Needs the
+  `supervisor` account role (403 otherwise, 401 without a token) and, for approve and changes, membership as manager (it
+  calls `tasks.decide`, so the same rules apply: the plan must be waiting, else 409). `changes` without a comment uses the
+  reasons as the comment. **Round cap:** the round count is the number of `supervisor.plan.changes` audit rows for the task
+  (no column); a `changes` when it is already 2 becomes `escalate` (`"converted": true`). `escalate` does not call
+  `tasks.decide`: the plan stays in review, the managers are notified (the usual "plan waiting" notification) and a person
+  decides. Every call writes one `supervisor.plan.<decision>` audit row (detail: number, policy_sha, reasons, round,
+  converted). **Re-running is safe:** when the current plan post already has a supervisor decision the call changes
+  nothing and answers 200 with `"already": true`. Tests: `tests/central/test_supervisor_api.py`,
+  `tests/central/test_supervisor_e2e.py`.
 - Column `project_task.merged_at` (nullable; nothing writes it yet). **Migration:** run `python -m central init-db` once
   (it adds the column to an existing database and keeps all data); until then the new routes answer with the
   "database update needed" error. **Rollback:** deploy the previous code; the unused nullable column is harmless and may stay
