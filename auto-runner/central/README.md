@@ -113,7 +113,13 @@ may not stick over plain http. The API endpoints do not use the cookie.
   or `state` the cookie is used when it is exactly `board` or `list`, else the board (unverified). The Done column shows
   the 20 most recently updated tasks after the `mine`/`q` filters, its heading count is the filtered total, and a
   "Show all N in the list" link goes to `?view=list&state=done`.
+  The board page is wider (`main.wide`, 1440 px) and the board scrolls sideways by itself, so the page never does;
+  long titles wrap, and a card shows its runner and pull request on their own lines (unverified for looks).
   Marked **unverified** until used live.
+  Labels that say what is true (unverified for looks): an item no run has touched reads "Not started"; on a done task an
+  item with no run state shows no badge; a rejected task's note sits under "Why it was closed" with who closed it and
+  when (from its `task.close` audit row); the screenshot upload form is hidden on done and rejected tasks; the runner
+  line reads "No runner has taken it yet"; the Tasks tab count is labelled "open tasks" and the attention pill reads "N to approve".
 - `/projects/<slug>/tasks/new`: people who can run runners (developer and above) add a task for themselves; admins for
   any such member. "How we know it's done" is stored as a `Done when:` section of the description (no column of its own).
 - `/projects/<slug>/tasks/<N>`: a step tracker (Open → Planned → Approval → Building → Done), the decision bar while the
@@ -309,7 +315,7 @@ Delivery words for real pushes are **unverified** until push is tried live.
 - `ui.py` gives every page one way to show things: `ago` / `when_abs` (relative and absolute time, from the injectable
   clock), one status vocabulary with tone and shape (`STATUS`), runner reasons in words (`reason_text`, `next_step`),
   people (`display_name`, `initials`; `account.name` when set, else the email's local part), runners
-  (`runner_label`), and `md`, an escape-first Markdown subset for plans (no HTML, no links). `templates/_ui.html` holds
+  (`runner_label`), and `md`, an escape-first Markdown subset for plans: headings, lists, bold, italic, code, fenced code blocks, pipe tables (in a sideways-scrolling `.table-wrap`) and `http(s)` links (`rel="noopener noreferrer"`; other URLs stay text); no HTML. `templates/_ui.html` holds
   the matching macros (status chip, person, runner, time, progress, copy field, empty state, danger form).
 - **Actions that cannot be undone ask first:** remove a member, disable an account, revoke all of an account's tokens,
   revoke a personal or machine token, replace a machine token, reject a plan, take a task back or give it to someone
@@ -319,6 +325,10 @@ Delivery words for real pushes are **unverified** until push is tried live.
 - **Theme: light by default.** Pages render `<html data-theme="light">` whatever the system setting; dark colours apply
   only under `:root[data-theme="dark"]` in `static/style.css`. `ui.theme()` reads the `theme` cookie (`dark` switches,
   anything else is light) and a context processor hands it to `base.html`.
+- **Contrast rule.** Text must reach WCAG 4.5:1 in both themes. The attention pill uses `--on-attn-mark` on
+  `--attn-mark`, and `.decision-bar` sets `--muted` to `--attn-muted` so muted text reads on `--attn-soft`.
+  `tests/central/test_theme.py` parses `style.css` (`:root` and `:root[data-theme="dark"]`) and checks those pairs with
+  the WCAG formula; change a colour there and the test tells you if it fell below 4.5.
 - **Dark mode toggle.** The top bar (signed in and signed out) has one button, "Dark mode" when light and "Light mode"
   when dark. It posts `theme` and `next` (the current path) to `POST /theme` (`auth.py`, CSRF checked like every form),
   which accepts only `light` or `dark` (anything else is 400 and sets nothing), sets the `theme` cookie for one year

@@ -145,7 +145,7 @@
         <li class="item-{{ i.state }}">
           <span class="check" aria-hidden="true"></span>
           <div class="grow">
-            <div><code>{{ i.id }}</code> <strong>{{ i.title }}</strong> {{ ui.status("item", i.state) }}</div>
+            <div><code>{{ i.id }}</code> <strong>{{ i.title }}</strong>{% if i.show_state %} {{ ui.status("item", i.state) }}{% endif %}</div>
             {% if i.text %}<div class="muted">{{ i.text }}</div>{% endif %}
             {% if i.acceptance %}<div class="acceptance"><span>Done when</span> {{ i.acceptance }}</div>{% endif %}
           </div>
@@ -157,7 +157,10 @@
     <section class="card"><h3>Queue items</h3><pre class="wrap">{{ task['items'] }}</pre></section>
     {% endif %}
 
-    {% if task.note and task.status != "queued" %}
+    {% if task.note and task.status == "rejected" %}
+    <section class="card"><h3>Why it was closed</h3><p>{{ task.note }}</p>
+      {% if closed %}<p class="muted small">{% if closed.by %}Closed by {{ closed.by | display_name }}{% else %}Closed{% endif %} · {{ ui.when(closed.at) }}</p>{% endif %}</section>
+    {% elif task.note and task.status != "queued" %}
     <section class="card"><h3>Runner's last report</h3><p>{{ task.note }}</p></section>
     {% endif %}
 
@@ -189,7 +192,7 @@
       <dt>For</dt><dd>{{ ui.person(task.assignee_email) }}</dd>
       <dt>Runner</dt><dd>{% if live %}{{ ui.runner(task.claim_runner) }}{% if task.status != "plan_review" %} <span class="muted">· seen {{ ui.when(task.heartbeat_at) }}</span>{% endif %}
         {% elif quiet %}<span class="warn-line">{{ ui.runner(task.claim_runner) }} quiet for over {{ ttl_hours }} h; the claim expired</span>
-        {% else %}<span class="muted">none</span>{% endif %}</dd>
+        {% else %}<span class="muted">No runner has taken it yet</span>{% endif %}</dd>
       {% if task.branch %}<dt>Branch</dt><dd><code>{{ task.branch }}</code></dd>{% endif %}
       {% if task.pr_url %}<dt>Pull request</dt><dd><a href="{{ task.pr_url }}" rel="noopener noreferrer">{{ task.pr_url | pr_label }}</a></dd>{% endif %}
       <dt>Added</dt><dd>{{ ui.when(task.created_at) }}</dd>

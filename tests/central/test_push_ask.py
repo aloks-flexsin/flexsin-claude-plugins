@@ -38,7 +38,7 @@ def test_a_signed_in_page_has_the_hidden_bar_with_key_csrf_and_subscribe_url(wor
         assert KEYS['CENTRAL_VAPID_PRIVATE_KEY'] not in page
         assert 'style=' not in section and '<script' not in section
         # under the top bar, before the page content
-        assert page.index('</header>') < page.index('data-push-ask') < page.index('<main>')
+        assert page.index('</header>') < page.index('data-push-ask') < page.index('<main')
 
 
 def test_no_bar_without_the_vapid_settings(world):

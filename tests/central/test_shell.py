@@ -50,7 +50,7 @@ def test_every_project_page_has_the_same_header_and_tabs(world, conn):
         html = c.get(url).get_data(as_text=True)
         assert '<nav class="tabs" aria-label="Project">' in html, url
         assert 'aria-current="page">%s' % labels[key.split('#')[0]] in html, url
-        assert 'title="plans waiting for approval">1</span>' in html, url
+        assert 'title="plans waiting for approval">1 to approve</span>' in html, url
         assert 'You are <strong>owner</strong>' in html, url
 
 

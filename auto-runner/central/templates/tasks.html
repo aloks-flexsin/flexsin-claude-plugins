@@ -2,6 +2,7 @@
 {% import "_ui.html" as ui %}
 {% from "_project.html" import header with context %}
 {% block title %}{{ project.name }} tasks{% endblock %}
+{% block main_class %}{% if view == 'board' %}wide{% endif %}{% endblock %}
 {% block content %}
 {{ header(project, "tasks") }}
 {% set keep = {"slug": project.slug} %}{% if mine %}{% set _ = keep.update(mine="1") %}{% endif %}{% if q %}{% set _ = keep.update(q=q) %}{% endif %}
@@ -9,8 +10,9 @@
     <div class="board-card">
       <span class="task-no">#{{ t.number }}</span>
       <a class="row-title" href="{{ url_for('tasks.task_page', slug=project.slug, number=t.number) }}">{{ t.title }}</a>
-      <div class="row-sub">{{ ui.person(t.assignee_email) }}{% if t.live %} <span class="muted">· {{ ui.runner(t.claim_runner) }}</span>{% elif t.claim_id and t.status in ('planning', 'building', 'approved', 'changes_requested') %} <span class="warn-line">· runner quiet, claim expired</span>{% endif %}
-        {% if t.pr_url %}<span class="muted">· <a href="{{ t.pr_url }}" rel="noopener noreferrer">PR {{ t.pr_url | pr_label }}</a></span>{% endif %}</div>
+      <div class="row-sub">{{ ui.person(t.assignee_email) }}</div>
+      {% if t.live %}<div class="row-sub muted">{{ ui.runner(t.claim_runner) }}</div>{% elif t.claim_id and t.status in ('planning', 'building', 'approved', 'changes_requested') %}<div class="row-sub warn-line">runner quiet, claim expired</div>{% endif %}
+      {% if t.pr_url %}<div class="row-sub muted"><a href="{{ t.pr_url }}" rel="noopener noreferrer">PR {{ t.pr_url | pr_label }}</a></div>{% endif %}
       {{ ui.status("task", t.status) }}
       {% if t.progress %}{{ ui.progress(t.progress.done, t.progress.total, ("on " ~ t.progress.current) if t.progress.current else "") }}{% endif %}
     </div>
