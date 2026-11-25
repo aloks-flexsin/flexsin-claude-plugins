@@ -111,6 +111,10 @@ may not stick over plain http. The API endpoints do not use the cookie.
   The board page is wider (`main.wide`, 1440 px) and the board scrolls sideways by itself, so the page never does;
   long titles wrap, and a card shows its runner and pull request on their own lines (unverified for looks).
   Marked **unverified** until used live.
+  Labels that say what is true (unverified for looks): an item no run has touched reads "Not started"; on a done task an
+  item with no run state shows no badge; a rejected task's note sits under "Why it was closed" with who closed it and
+  when (from its `task.close` audit row); the screenshot upload form is hidden on done and rejected tasks; the runner
+  line reads "No runner has taken it yet"; the Tasks tab count is labelled "open tasks" and the attention pill reads "N to approve".
 - `/projects/<slug>/tasks/new`: people who can run runners (developer and above) add a task for themselves; admins for
   any such member. "How we know it's done" is stored as a `Done when:` section of the description (no column of its own).
 - `/projects/<slug>/tasks/<N>`: a step tracker (Open → Planned → Approval → Building → Done), the decision bar while the

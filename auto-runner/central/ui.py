@@ -98,7 +98,7 @@ STATUS = {
     ("task", "done"): ("Done", "ok", "dot"),
     ("task", "rejected"): ("Rejected", "neutral", "dot"),
     # a task's queue items
-    ("item", "queued"): ("Queued", "neutral", "ring"),
+    ("item", "queued"): ("Not started", "neutral", "ring"),
     ("item", "running"): ("In progress", "info", "dot"),
     ("item", "done"): ("Done", "ok", "dot"),
     ("item", "blocked"): ("Blocked", "attention", "square"),
