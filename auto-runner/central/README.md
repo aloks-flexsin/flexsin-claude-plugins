@@ -162,6 +162,16 @@ may not stick over plain http. The API endpoints do not use the cookie.
   when no plan waits; 404 for an unknown task); it records `task.plan.<decision>` with `"via": "api"`, so the Activity
   line ends "(through the API)", and returns `{task}`.
 - Table `project_task` (init-db creates it).
+- **Supervisor read API** (`supervisor.py`, personal tokens, read-only): `GET /api/v1/supervisor/whoami` returns
+  `{role, email}` for any valid token (role is `null` for a project token). `GET /api/v1/supervisor/state?project=<slug>`
+  needs the `supervisor` account role (403 for any other role, 401 without a token, 404 only for an unknown project once the
+  role is accepted). It returns `{project, tasks, runners, blockers}`: each task has the `/api/v1/tasks/<N>` fields plus
+  `plan_rounds` (the count of the task's `task.plan.changes` audit rows) and `merged_at`; runners use the runner API shape;
+  blockers are the open ones (`OPEN`, `ESCALATED`). No claim ids appear and nothing is written.
+- Column `project_task.merged_at` (nullable; nothing writes it yet). **Migration:** run `python -m central init-db` once
+  (it adds the column to an existing database and keeps all data); until then the new routes answer with the
+  "database update needed" error. **Rollback:** deploy the previous code; the unused nullable column is harmless and may stay
+  (to remove it: `ALTER TABLE project_task DROP COLUMN merged_at`).
 
 ## Task screenshots (`attachments.py`)
 

@@ -216,6 +216,7 @@ CREATE TABLE IF NOT EXISTS project_task (
     branch VARCHAR(300),
     pr_url VARCHAR(500),
     note TEXT,
+    merged_at VARCHAR(32),
     created_at VARCHAR(32) NOT NULL,
     updated_at VARCHAR(32) NOT NULL,
     UNIQUE (project_id, number)

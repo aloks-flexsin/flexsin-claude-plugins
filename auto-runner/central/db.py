@@ -25,6 +25,7 @@ COLUMNS_ADDED = (
     ("device_login", "claude_account", "VARCHAR(64)"),
     ("personal_token", "runner_user", "VARCHAR(64)"),
     ("personal_token", "claude_account", "VARCHAR(64)"),
+    ("project_task", "merged_at", "VARCHAR(32)"),
 )
 REPO_KEY_INDEX = "CREATE UNIQUE INDEX IF NOT EXISTS project_repo_key ON project (repo_key)"
 
