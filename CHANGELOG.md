@@ -5,6 +5,8 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Runner: the headless planner downloads a task's screenshots and lists them in its prompt (a SCREENSHOTS section,
+  with any that failed to download named), and `docs/planner-prompt.md` tells it to read them first.
 - Central: a "turn on push" bar under the top bar of every signed-in page (not the Account page) when push is set up,
   shown once per browser: only when push is supported, not blocked, not yet subscribed here and not answered before
   (`localStorage["push-ask"]`). Turn on uses the same `enablePush` steps as the Account page; Not now hides it for
