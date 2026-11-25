@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design: Auto-runner settings – Central</title>
+<link rel="stylesheet" href="central.css">
+</head>
+<body>
+<!-- Approved design for the central service (sidebar redesign). Static mock-up with example data; not used by the app.
+     All design pages: index.html. -->
+<div class="app light" id="app">
+  <header class="top">
+    <a class="brand" href="my-work.html">auto-runner <span>central</span></a>
+    <span class="updated"><span class="live-dot" aria-hidden="true"></span>Updated 12 sec ago</span>
+    <div class="top-right">
+      <a class="bell" href="notifications.html" aria-label="Notifications, 3 waiting" title="Notifications">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 3a6 6 0 0 0-6 6v4l-2 3h16l-2-3V9a6 6 0 0 0-6-6zm-2 15a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path></svg>
+        <span class="pill attention">3</span>
+      </a>
+      <button class="user" type="button" aria-label="Account menu" aria-haspopup="menu"><span class="av" aria-hidden="true">AS</span><span>Alok</span>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </button>
+    </div>
+  </header>
+  <div class="shell">
+    <div class="side-slot"><nav class="side" aria-label="Main">
+    <div>
+      <a class="side-item head" href="my-work.html"><span class="grow">My work</span><span class="pill attention" title="3 decisions wait for you">3</span></a>
+      <a class="side-item sub" href="my-work.html"><span class="grow">All</span></a>
+      <a class="side-item sub" href="my-work.html"><span class="grow ellip">Auto-runner</span><span class="mk mk-bad" title="Blocked"><svg viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Blocked"><path d="M6 1l5.5 10H.5z" fill="currentColor"></path></svg></span></a>
+      <a class="side-item sub" href="my-work.html"><span class="grow ellip">Client portal</span><span class="mk mk-run" title="Running"><svg viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Running"><rect x="1" y="1" width="10" height="10" rx="1.5" fill="currentColor"></rect></svg></span></a>
+      <a class="side-item sub" href="my-work.html"><span class="grow ellip">Ops dashboards</span><span class="mk mk-attn" title="Waits for you"><svg viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Waits for you"><circle cx="6" cy="6" r="5" fill="currentColor"></circle></svg></span></a>
+    </div>
+    <div>
+      <div class="side-label">Projects</div>
+      <a class="side-item current" href="project.html" aria-current="page"><span class="grow ellip">Auto-runner</span></a>
+      <a class="side-item" href="project.html"><span class="grow ellip">Client portal</span></a>
+      <a class="side-item" href="project.html"><span class="grow ellip">Ops dashboards</span></a>
+      <a class="side-item side-more" href="projects.html"><span class="grow">See all 7 projects</span></a>
+    </div>
+    <div>
+      <div class="side-label">Admin</div>
+      <a class="side-item" href="admin.html"><span class="grow">Accounts</span></a>
+      <a class="side-item" href="admin.html"><span class="grow">Notification log</span></a>
+    </div>
+    <div class="side-foot">
+      <div class="seg" role="group" aria-label="Theme">
+        <button type="button" data-theme="light" aria-pressed="true"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.8"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg>Light</button>
+        <button type="button" data-theme="dark" aria-pressed="false"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path></svg>Dark</button>
+      </div>
+      <a class="side-item" href="settings.html"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg><span class="grow">Settings</span></a>
+      <button class="side-btn" type="button"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg><span class="grow">Log out</span></button>
+    </div>
+  </nav></div>
+    <main class="content">
+      <div class="proj-head">
+        <div>
+          <div class="crumb"><a href="project.html">Auto-runner</a> /</div>
+          <h1>Project settings</h1>
+        </div>
+      </div>
+      <div class="toolbar">
+        <div class="toggle" role="group" aria-label="Settings section">
+          <button type="button" aria-pressed="true" data-act="tMembers">Members <span class="pill off">3</span></button>
+          <button type="button" aria-pressed="false" data-act="tRepo">Repository</button>
+          <button type="button" aria-pressed="false" data-act="tTokens">Machine tokens</button>
+        </div>
+      </div>
+
+      <div data-if="isMembers">
+        <div class="main-aside">
+          <div class="stack">
+            <section class="panel">
+              <div class="panel-head"><h2>People <span class="pill off">3</span></h2><button class="btn primary" type="button" data-act="toggleInvite" aria-expanded="false">Invite people</button></div>
+              <div data-if="showInvite" hidden>
+                <div class="notice" style="margin: 8px 0 12px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end">
+                  <div class="field" style="margin: 0; flex: 1 1 220px"><label for="i-email">Email</label><input id="i-email" type="email" placeholder="name@company.com"></div>
+                  <div class="field" style="margin: 0"><label for="i-role">Role</label><select id="i-role"><option>viewer</option><option selected>developer</option><option>manager</option><option>owner</option></select></div>
+                  <button class="btn primary" type="button">Invite</button>
+                </div>
+              </div>
+              <div class="row"><span class="av" aria-hidden="true">AS</span><span class="grow"><b>Alok</b><span class="sub">Claude accounts: <code>bhawish</code> (auto-runner), <code>alok-pers</code> (desktop) · active now</span></span><label class="sr-only" for="r1">Role for Alok</label><select id="r1"><option selected>owner</option><option>manager</option></select><button class="btn icon" type="button" aria-label="More for Alok">⋯</button></div>
+              <div class="row"><span class="av" aria-hidden="true">BH</span><span class="grow"><b>Bhawish</b><span class="sub">Claude account: <code>bhawish</code> <span class="chip tone-attention">shared</span> (cli) · active 2 h ago</span></span><label class="sr-only" for="r2">Role for Bhawish</label><select id="r2"><option selected>manager</option><option>developer</option></select><button class="btn icon" type="button" aria-label="More for Bhawish">⋯</button></div>
+              <div class="row"><span class="av" aria-hidden="true">NE</span><span class="grow"><b>Neha</b><span class="sub">Claude account: <code>neha</code> (cli) · active yesterday</span></span><label class="sr-only" for="r3">Role for Neha</label><select id="r3"><option selected>developer</option><option>manager</option></select><button class="btn icon" type="button" aria-label="More for Neha">⋯</button></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2>Pending invites <span class="pill off">1</span></h2></div>
+              <div class="row"><span class="av" aria-hidden="true">RA</span><span class="grow"><b>rahul@company.com</b><span class="sub">developer · link expires in 2 days</span></span><button class="btn" type="button">New invite link</button><button class="btn danger" type="button">Cancel invite</button></div>
+            </section>
+          </div>
+          <aside class="panel">
+            <h3>Roles</h3>
+            <ul class="feed">
+              <li><span class="grow"><b>viewer</b><span class="sub">sees everything</span></span></li>
+              <li><span class="grow"><b>developer</b><span class="sub">also runs runners</span></span></li>
+              <li><span class="grow"><b>manager</b><span class="sub">also approves plans, answers blockers, makes machine tokens</span></span></li>
+              <li><span class="grow"><b>owner</b><span class="sub">also manages people and the repository</span></span></li>
+            </ul>
+          </aside>
+        </div>
+      </div>
+
+      <div data-if="isRepo" hidden>
+        <section class="panel narrow">
+          <h2>Repository</h2>
+          <p style="margin: 10px 0"><code>https://github.com/aloks-flexsin/flexsin-claude-plugins.git</code></p>
+          <p class="muted small">One project per repository. The plugin reads it to check a checkout belongs to this project and to clone it.</p>
+          <div class="field" style="margin-top: 14px"><label for="repo">Repository URL</label><input id="repo" type="text" value="https://github.com/aloks-flexsin/flexsin-claude-plugins.git"></div>
+          <div class="form-actions"><button class="btn primary" type="button">Save repository URL</button></div>
+        </section>
+      </div>
+
+      <div data-if="isTokens" hidden>
+        <div class="main-aside">
+          <section class="panel">
+            <div class="panel-head"><h2>Machine tokens</h2><button class="btn primary" type="button">New machine token</button></div>
+            <div class="row"><code>arm_7Hq2…</code><span class="grow"><span class="small">ingest · pull</span><span class="sub">made 3 weeks ago · build server</span></span><span class="chip tone-ok"><span class="mark"></span>Active</span><button class="btn" type="button">Replace</button><button class="btn danger" type="button">Revoke</button></div>
+            <div class="row"><code>arm_k91D…</code><span class="grow"><span class="small">ingest</span><span class="sub">made 2 months ago · revoked last month</span></span><span class="chip tone-neutral"><span class="mark square"></span>Revoked</span></div>
+          </section>
+          <aside class="panel">
+            <h3>When to use one</h3>
+            <p class="small">For machines nobody signs in on, such as a build server. People don’t need these: each person signs their own computer in from Claude and gets a personal token under Settings › My tokens.</p>
+          </aside>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+(function () {
+  var cfg = {"groups": {"tab": ["isMembers", "isRepo", "isTokens"]}, "acts": {"tMembers": ["tab", "isMembers"], "tRepo": ["tab", "isRepo"], "tTokens": ["tab", "isTokens"], "toggleInvite": ["toggle", "showInvite"]}};
+  var app = document.getElementById('app');
+  function press(sel, btn) { document.querySelectorAll(sel).forEach(function (b) { b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); }); }
+  document.querySelectorAll('[data-theme]').forEach(function (b) {
+    b.addEventListener('click', function () { app.className = 'app ' + b.getAttribute('data-theme'); press('[data-theme]', b); });
+  });
+  document.querySelectorAll('[data-act]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var a = cfg.acts[b.getAttribute('data-act')];
+      if (!a) return;
+      if (a[0] === 'toggle') {
+        var el = document.querySelector('[data-if="' + a[1] + '"]');
+        el.hidden = !el.hidden;
+        document.querySelectorAll('[aria-expanded]').forEach(function (x) { if (cfg.acts[x.getAttribute('data-act')] === a) x.setAttribute('aria-expanded', el.hidden ? 'false' : 'true'); });
+      } else if (a[0] === 'filter') {
+        document.querySelectorAll('[data-kind]').forEach(function (li) { li.hidden = a[1] !== 'all' && li.getAttribute('data-kind') !== a[1]; });
+        press('[data-act^="f"]', b);
+      } else {
+        (cfg.groups[a[0]] || []).forEach(function (c) { var el = document.querySelector('[data-if="' + c + '"]'); if (el) el.hidden = c !== a[1]; });
+        document.querySelectorAll('[data-act]').forEach(function (x) { var xa = cfg.acts[x.getAttribute('data-act')]; if (xa && xa[0] === a[0] && x.hasAttribute('aria-pressed')) x.setAttribute('aria-pressed', xa[1] === a[1] ? 'true' : 'false'); });
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>
