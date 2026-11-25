@@ -79,6 +79,79 @@ def test_lists_equal_the_plugins():
     assert ingest.FIELDS == autoevents.FIELDS
     assert ingest.TYPES == autoevents.TYPES
     assert ingest.EVIDENCE == autoevents.EVIDENCE
+    assert ingest.RUN_TYPES == autoevents.RUN_TYPES
+    assert ingest.OPTIONAL_ITEM_TYPES == autoevents.OPTIONAL_ITEM_TYPES
+    assert ingest.FRICTION_KINDS == autoevents.FRICTION_KINDS
+    assert ingest.FRICTION_SUBJECT.pattern == autoevents.FRICTION_SUBJECT.pattern
+    assert 'friction' in ingest.TYPES and 'friction' not in ingest.RUN_TYPES
+
+
+# --- friction (decision record 0011) ---
+
+def friction(item='C7', **detail):
+    return event(type='friction', item=item, evidence_class='runner_observed',
+                 detail=detail or {'kind': 'retry', 'subject': 'exit_1'})
+
+
+@pytest.mark.parametrize('kind', autoevents.FRICTION_KINDS)
+@pytest.mark.parametrize('item', [None, 'C7'])
+def test_friction_events_pass_on_both_sides(kind, item):
+    e = friction(item, kind=kind, subject='')
+    assert ingest.validate(e) == [] == autoevents.validate(e)
+
+
+@pytest.mark.parametrize('subject', ['', 'exit_1', 'http_409:/api/v1/tasks/N/heartbeat', 'Bash:git', 'a+b.c-d', 'x' * 80])
+def test_friction_subjects_accepted(subject):
+    e = friction(kind='central_error', subject=subject)
+    assert ingest.validate(e) == [] == autoevents.validate(e)
+
+
+@pytest.mark.parametrize('over', [
+    {'kind': 'nonsense', 'subject': ''},
+    {'kind': 'retry', 'subject': 'exit 1'},
+    {'kind': 'retry', 'subject': 'x' * 81},
+    {'kind': 'retry', 'subject': 'exit_1', 'extra': 1},
+    {'kind': 'retry', 'subject': 'a\nb'},
+    {'kind': 'retry', 'subject': 7},
+    {'kind': 'retry'},
+    {'subject': 'exit_1'},
+])
+def test_bad_friction_details_are_refused_on_both_sides(over):
+    e = friction(**over)
+    assert ingest.validate(e) and autoevents.validate(e)
+
+
+@pytest.mark.parametrize('item', ['', 5])
+def test_friction_item_must_be_null_or_an_id(item):
+    e = friction(item)
+    assert ingest.validate(e) and autoevents.validate(e)
+
+
+def test_friction_helpers():
+    assert autoevents.friction_detail('refused_start') == {'kind': 'refused_start', 'subject': ''}
+    assert autoevents.friction_detail('retry', 'exit_1') == {'kind': 'retry', 'subject': 'exit_1'}
+    assert autoevents.signature(autoevents.friction_detail('refused_start')) == 'refused_start'
+    assert autoevents.signature(autoevents.friction_detail('retry', 'exit_1')) == 'retry:exit_1'
+    with pytest.raises(ValueError):
+        autoevents.make('r', 'alpha', 'friction', None, {'kind': 'retry', 'subject': 'has space'})
+
+
+def test_ledger_friction_events_are_ingested(world, conn, tmp_path):
+    ledger = autoevents.Ledger(tmp_path / '.auto', '20261031-0900', 'alpha')
+    ledger.emit('friction', None, autoevents.friction_detail('refused_start', 'dirty_tree'))
+    ledger.emit('friction', 'C7', autoevents.friction_detail('central_error', 'http_409:/api/v1/tasks/N/heartbeat'))
+    lines = (tmp_path / '.auto' / 'events.jsonl').read_text(encoding='utf-8').splitlines()
+    resp = send(world['app'], world['token'], data='[' + ','.join(lines) + ']')
+    assert resp.status_code == 200 and resp.get_json()['accepted'] == 2, resp.get_json()
+    stored = {r['id']: json.loads(r['body']) for r in conn.query('SELECT * FROM event')}
+    for written in autoevents.read(tmp_path / '.auto'):
+        assert stored[written['id']] == written
+
+
+def test_bad_friction_event_is_refused_by_the_endpoint(world, conn):
+    resp = send(world['app'], world['token'], friction(kind='retry', subject='exit 1'))
+    assert resp.status_code == 400
+    assert count(conn, 'event') == 0
 
 
 def test_events_written_by_the_real_ledger_are_accepted_unchanged(world, conn, tmp_path):

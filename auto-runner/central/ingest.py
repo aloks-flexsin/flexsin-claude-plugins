@@ -13,6 +13,8 @@
 - A `blocker` event with action `raised` creates or updates the blocker row (project, task = item, blocker id); the
   question comes from `detail.blocker.question` when the runner sends the blocker's content (it does from this
   version on). Action `resumed` moves a known blocker row to RESUMED.
+- A `friction` event (decision record 0011) may have a null item (run-level) or an item ID; its detail is exactly
+  `{"kind", "subject"}`, kind one of the eight FRICTION_KINDS, subject matching `^[A-Za-z0-9_.+:/-]{0,80}$`.
 """
 import collections
 import datetime
@@ -31,8 +33,13 @@ bp = Blueprint("ingest", __name__)
 
 # The service's own copy of event.v1 (see auto-runner/bin/autoevents.py; test_ingest.py checks they agree).
 SCHEMA = "event.v1"
-TYPES = ("run_start", "run_end", "item_state", "tests", "blocker", "browser", "findings", "changelog", "docs", "publish")
+TYPES = ("run_start", "run_end", "item_state", "tests", "blocker", "browser", "findings", "changelog", "docs", "publish",
+         "friction")
 RUN_TYPES = ("run_start", "run_end", "publish")
+OPTIONAL_ITEM_TYPES = ("friction",)
+FRICTION_KINDS = ("permission_denied", "gate_stop", "fix_round", "retry", "usage_stop", "refused_start",
+                  "central_error", "plan_changes")
+FRICTION_SUBJECT = re.compile(r"^[A-Za-z0-9_.+:/-]{0,80}$")
 EVIDENCE = ("runner_observed", "independent_test", "agent_reported")
 FIELDS = ("schema", "id", "time", "run", "project", "type", "item", "detail", "evidence_class")
 
@@ -92,8 +99,13 @@ def validate(event):
     if event["type"] in RUN_TYPES:
         if event["item"] is not None:
             errors.append("item: must be null for run events")
+    elif event["type"] in OPTIONAL_ITEM_TYPES:
+        if event["item"] is not None and (not isinstance(event["item"], str) or not event["item"]):
+            errors.append("item: must be null or a non-empty item ID")
     elif not isinstance(event["item"], str) or not event["item"]:
         errors.append("item: required for item events")
+    if event["type"] == "friction" and isinstance(event["detail"], dict):
+        errors += validate_friction(event["detail"])
     if isinstance(event["time"], str):
         try:
             datetime.datetime.fromisoformat(event["time"])
@@ -101,6 +113,17 @@ def validate(event):
             errors.append("time: not ISO 8601")
     if _raised_blocker(event) and not BLOCKER_ID.match(str(event["detail"].get("id") or "")):
         errors.append("detail.id: a raised blocker needs a valid blocker id")
+    return errors
+
+
+def validate_friction(detail):
+    """-> problems with a friction detail (the service's copy of autoevents.validate_friction)."""
+    errors = ["detail.%s: unknown key in a friction detail" % k for k in detail if k not in ("kind", "subject")]
+    if detail.get("kind") not in FRICTION_KINDS:
+        errors.append("detail.kind: must be one of %s" % ", ".join(FRICTION_KINDS))
+    subject = detail.get("subject")
+    if not isinstance(subject, str) or not FRICTION_SUBJECT.match(subject):
+        errors.append("detail.subject: at most 80 of A-Z a-z 0-9 _ . + : / -")
     return errors
 
 

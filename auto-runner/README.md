@@ -298,6 +298,15 @@ Every run also appends to `.auto/events.jsonl` (schema `event.v1`, `bin/autoeven
 and machines (`<YYYYMMDD-HHMM>-<6 hex>`; 0.17.0): run start (with branch, base, and who ran it: `user` and `account` from
 `AUTO_RUNNER_USER` / `AUTO_RUNNER_ACCOUNT`, which the central service's runs page shows) and end (with exit code and reason), each item state change (from, to) and each independent test result, one line per event, never rewritten. `runs.jsonl` keeps its old shape.
 
+Event types: `run_start`, `run_end`, `publish` (run-level, `item` null), `item_state`, `tests`, `blocker`, `browser`,
+`findings`, `changelog`, `docs` (each about one item) and `friction` (decision record 0011), whose `item` is null for a
+run-level friction (such as a refused start) or an item ID. A friction detail is exactly `{"kind", "subject"}`
+(`autoevents.friction_detail(kind, subject='')`): `kind` one of `FRICTION_KINDS` (`permission_denied`, `gate_stop`,
+`fix_round`, `retry`, `usage_stop`, `refused_start`, `central_error`, `plan_changes`), `subject` a fixed-vocabulary
+string matching `^[A-Za-z0-9_.+:/-]{0,80}$` (for example `exit_1` or `http_409:/api/v1/tasks/N/heartbeat`; never
+project content). `autoevents.signature(detail)` gives `kind` or `kind:subject`. The central service checks the same
+rules. The runner does not emit friction events yet (that comes in a later item).
+
 ## Modules (all stdlib, all unverified beyond fakes)
 Every child process (the agent, the test command, git) is read as UTF-8, with an undecodable byte replaced rather than
 fatal, and Python children are asked to write UTF-8 (`PYTHONIOENCODING`, unless the project sets it), so non-English text
@@ -307,7 +316,7 @@ such as `₹` never breaks a run on Windows.
 |---|---|
 | `bin/auto_run.py` | The runner (worktree, one ready item per iteration, independent test run, lock, STOP, events, blockers, delivery, `publish` of its own branch). |
 | `bin/queue.py`, `bin/autocfg.py`, `bin/autosafe.py` | Queue grammar and readiness (`*Depends on:*`, `*Slice:*`), config loader (v1 keys + v2 sections, `principles()`), safety preflight; `autosafe.utf8_console()` makes stdout/stderr write UTF-8 (undecodable characters replaced, streams without `reconfigure` skipped, never raises). Every command in `bin/` calls it first in its `__main__` block (`queue.py` does the same inline, as it must not import from its own folder), so every command writes UTF-8 to its console. |
-| `bin/autoevents.py` | Append-only `.auto/events.jsonl`, schema `event.v1` (`RUN_TYPES` such as `publish` carry no item). |
+| `bin/autoevents.py` | Append-only `.auto/events.jsonl`, schema `event.v1` (`RUN_TYPES` such as `publish` carry no item; `friction` may or may not; `friction_detail`, `signature`). |
 | `bin/autoblock.py` | `blocker.v1` / `decision.v1`, lifecycle state machine, local store; `list [--state S]`, `answer ID --option/--text`, `view`. |
 | `bin/autodeliver.py` | `Transport` interface, `LocalTransport`, `HttpTransport` (central service; `project_info()` reads `GET /api/v1/project`), event push to central, inbox writer, resume packets; `resume ID` rebuilds a packet. |
 | `bin/autostale.py` | Artifact front-matter (`version`, `hash`, `built_from`, `status`), `scan`, `status`, `revalidate`; stale artifacts refuse a resume. |
