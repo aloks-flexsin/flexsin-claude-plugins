@@ -4,6 +4,13 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+### Added
+- Central: runner frictions close the loop (decision record 0011). Rejecting a drafted friction task (rejecting its plan
+  or closing it) mutes the signature with "task #N rejected"; a task reported done marks it `fixed`. A fixed signature
+  counts only days after the fix, and reaching the threshold again drafts "Runner friction came back: <signature>",
+  linking the earlier task (`previous_task_number`); the Frictions page shows Fixed and the earlier task's link.
+  Unverified on the live service.
+
 ## [0.23.0] - 2026-11-25
 
 ### Added

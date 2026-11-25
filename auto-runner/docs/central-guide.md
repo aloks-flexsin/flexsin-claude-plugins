@@ -51,7 +51,9 @@ seen 3 times, or in 2 projects, in 30 days then becomes an open task "Runner fri
 assigned to `CENTRAL_REFLECTION_ASSIGNEE` (a member developer or above) or else that project's first owner, who gets a
 notification. It is planned and approved like any other task. At most 3 are drafted a day; the numbers can be changed
 with `CENTRAL_REFLECTION_MIN_COUNT`, `CENTRAL_REFLECTION_MIN_PROJECTS` and `CENTRAL_REFLECTION_DAILY`. **Mute** a
-signature to stop it being drafted; after **Unmute** only new days count.
+signature to stop it being drafted; after **Unmute** only new days count. Rejecting or closing a drafted task mutes its
+signature ("task #N rejected"); when the task is done the signature shows **Fixed**, and if it comes back on later days
+a new task "Runner friction came back: <signature>" is drafted, linked to the earlier one on the page.
 
 ## Teammate: the quick way
 Open Claude Code in the project folder (or any folder, to clone) and run **`/auto-runner:central`**. It checks what is

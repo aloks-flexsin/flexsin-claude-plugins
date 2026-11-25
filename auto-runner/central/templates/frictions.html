@@ -37,6 +37,7 @@
     </div>
     {{ ui.status("friction", f.state) }}
     {% if f.task_number %}{% if f.task_slug %}<a href="{{ url_for('tasks.task_page', slug=f.task_slug, number=f.task_number) }}">Task #{{ f.task_number }}</a>{% else %}<span class="muted">Task #{{ f.task_number }}</span>{% endif %}{% endif %}
+    {% if f.previous_task_number %}{% if f.task_slug %}<a href="{{ url_for('tasks.task_page', slug=f.task_slug, number=f.previous_task_number) }}">Earlier task #{{ f.previous_task_number }}</a>{% else %}<span class="muted">Earlier task #{{ f.previous_task_number }}</span>{% endif %}{% endif %}
     {% if f.state == "muted" %}
     <form method="post" action="{{ url_for('frictions.unmute_post') }}" class="inline" data-confirm="Unmute {{ f.signature }}?" data-confirm-detail="Only occurrences from now on count toward drafting a task." data-confirm-action="Unmute">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

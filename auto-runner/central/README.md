@@ -452,6 +452,16 @@ Delivery words for real pushes are **unverified** until push is tried live.
   - the assignee gets an `assigned` notification; the signature becomes `drafted` with `task_project_id`/`task_number`;
     audited `friction.draft` (`signature`, `task`, `count`, `projects`, `"via": "reflection"`).
   A `drafted` or `muted` signature is never drafted again. Unverified on the live service.
+- **Closing the loop** (`frictions.task_ended`, R9), for the task linked to a `drafted` signature:
+  - rejected, through `tasks.decide` (reject, from plan review) or `tasks.close` (an open or other closable task): state
+    `muted` with the reason "task #N rejected", `changed_by` the person, `changed_at`; audited `friction.mute`
+    (`"via": "task"`). It is not drafted again until someone unmutes it;
+  - reported `done` (`tasks.report`): state `fixed`, `changed_at` = then, `changed_by` the assignee; audited
+    `friction.fixed` (`signature`, `task`, `"via": "task"`). A `stopped` report changes nothing;
+  - a `fixed` signature counts only `friction_day` rows after the fix's UTC date; reaching the threshold again drafts
+    "Runner friction came back: <signature>" (the description names the earlier task), with the earlier task's number
+    moved to `previous_task_number` first; the `friction.draft` audit row then also has `previous_task`.
+  - The Frictions page shows the Fixed chip, the task link and, after a regression, "Earlier task #N" linking the first.
 
 ## API
 

@@ -21,6 +21,11 @@
   who can run runners, else to the project's first owner, who is also `by` (no person acts: the audit row
   `friction.draft` says `"via": "reflection"`) and gets an `assigned` notification. The signature becomes `drafted`
   with the task linked.
+- `task_ended(db, project, row, outcome, by, at)` closes the loop (R9): tasks.decide (reject), tasks.close and
+  tasks.report call it. When the task is the one linked to a `drafted` signature, a rejection mutes the signature with
+  the reason "task #N rejected" and a `done` result marks it `fixed` (`changed_at` = then), both audited
+  (`friction.mute` / `friction.fixed`, `"via": "task"`). A `fixed` signature that reaches the threshold again on later
+  days drafts "Runner friction came back: <signature>"; the earlier task's number moves to `previous_task_number` first.
 """
 import datetime
 import logging
@@ -171,24 +176,53 @@ def draft_due(db, now, cfg=None):
         seen = db.query_one("SELECT MIN(first_seen) AS first, MAX(last_seen) AS last FROM friction_count"
                             " WHERE signature = ?", (row["signature"],))
         text = _description(dict(row, _seen=dict(seen) if seen else {}), total, nprojects, settings)
+        came_back = row["state"] == "fixed" and row["task_number"] is not None
+        title = ("Runner friction came back: %s" if came_back else "Runner friction: %s") % row["signature"]
+        if came_back:
+            text += "\n\nIt came back after task #%d was done." % row["task_number"]
         try:
-            task = tasks.create(db, project, assignee, assignee, "Runner friction: %s" % row["signature"], text, now)
+            task = tasks.create(db, project, assignee, assignee, title, text, now)
         except tasks.TaskError:
             return drafted                                 # the assignee cannot run runners there; nothing to draft
         at = sessions.iso(now)
+        previous = row["task_number"] if came_back else row["previous_task_number"]
         db.execute("UPDATE friction_signature SET state = 'drafted', task_project_id = ?, task_number = ?,"
-                   " changed_by = ?, changed_at = ? WHERE signature = ?",
-                   (project["id"], task["number"], assignee["id"], at, row["signature"]))
+                   " previous_task_number = ?, changed_by = ?, changed_at = ? WHERE signature = ?",
+                   (project["id"], task["number"], previous, assignee["id"], at, row["signature"]))
         notifications.notify(db, [assignee["id"]], project, "assigned", notifications.task_text("assigned", task),
                              notifications.task_link(project, task["number"]),
                              notifications.task_key(project, task["number"], "assigned"), now)
         audit.record(db, "friction.draft", at, account_id=assignee["id"], project_id=project["id"],
                      detail={"signature": row["signature"], "task": task["number"], "count": total,
-                             "projects": nprojects, "via": "reflection"})
+                             "projects": nprojects, "via": "reflection",
+                             **({"previous_task": row["task_number"]} if came_back else {})})
         db.commit()
         drafted.append(row["signature"])
         room -= 1
     return drafted
+
+
+def task_ended(db, project, row, outcome, by, at):
+    """A task ended (`outcome` "rejected" or "done"): when it is the task linked to a drafted signature, mute it or mark
+    it fixed; -> the signature, or None. `by` is the acting account id (or None); `at` an ISO time. Does not commit."""
+    sig = db.query_one("SELECT * FROM friction_signature WHERE task_project_id = ? AND task_number = ?"
+                       " AND state = 'drafted'", (project["id"], row["number"]))
+    if sig is None:
+        return None
+    if outcome == "rejected":
+        reason = "task #%d rejected" % row["number"]
+        db.execute("UPDATE friction_signature SET state = 'muted', reason = ?, changed_by = ?, changed_at = ?"
+                   " WHERE signature = ?", (reason, by, at, sig["signature"]))
+        audit.record(db, "friction.mute", at, account_id=by, project_id=project["id"],
+                     detail={"signature": sig["signature"], "from": "drafted", "reason": reason, "via": "task"})
+    elif outcome == "done":
+        db.execute("UPDATE friction_signature SET state = 'fixed', reason = NULL, changed_by = ?, changed_at = ?"
+                   " WHERE signature = ?", (by, at, sig["signature"]))
+        audit.record(db, "friction.fixed", at, account_id=by, project_id=project["id"],
+                     detail={"signature": sig["signature"], "task": row["number"], "via": "task"})
+    else:
+        return None
+    return sig["signature"]
 
 
 def draft_safely(db, now, cfg=None):
