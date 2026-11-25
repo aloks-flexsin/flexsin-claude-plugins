@@ -194,6 +194,7 @@
         {% elif quiet %}<span class="warn-line">{{ ui.runner(task.claim_runner) }} quiet for over {{ ttl_hours }} h; the claim expired</span>
         {% else %}<span class="muted">No runner has taken it yet</span>{% endif %}</dd>
       {% if task.branch %}<dt>Branch</dt><dd><code>{{ task.branch }}</code></dd>{% endif %}
+      {% if task.merged_at %}<dt>Merged</dt><dd>Merged {{ task.merged_at | when_abs }}</dd>{% endif %}
       {% if task.pr_url %}<dt>Pull request</dt><dd><a href="{{ task.pr_url }}" rel="noopener noreferrer">{{ task.pr_url | pr_label }}</a></dd>{% endif %}
       <dt>Added</dt><dd>{{ ui.when(task.created_at) }}</dd>
       <dt>Updated</dt><dd>{{ ui.when(task.updated_at) }}</dd>
