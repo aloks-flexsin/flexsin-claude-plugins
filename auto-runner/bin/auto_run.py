@@ -1194,6 +1194,17 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         if prev != state:
             ledger.emit('item_state', item, {'from': prev, 'to': state})
 
+    frictions = set()                       # (item, signature) already recorded in this run
+
+    def friction(item, kind, subject=''):
+        """Record what got in the run's way as a `friction` event, at most once per signature per item per run
+        (decision record 0011). The subject is a fixed-vocabulary word, never project content."""
+        detail = autoevents.friction_detail(kind, subject)
+        key = (item, autoevents.signature(detail))
+        if key not in frictions:
+            frictions.add(key)
+            ledger.emit('friction', item, detail)
+
     source = transport or central_transport(cfg) or autodeliver.LocalTransport(auto)
     pusher = source if isinstance(source, autodeliver.HttpTransport) else None
 
@@ -1215,6 +1226,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         if statuses.get(item) != ('blocked', detail):
             say(f'item {item} not resumed: stale artifact(s) {", ".join(paths)}')
             ledger.emit('blocker', item, {'action': 'stale', 'artifacts': list(paths)})
+            friction(item, 'gate_stop', 'stale')
         set_state(item, 'blocked', detail)
 
     def deliver():
@@ -1340,6 +1352,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 rounds = {}
             if res['status'] == 'invalid':
                 say(f'journey check after slice {n} could not be done: ' + '; '.join(res['errors']) + f' (log: {jlog})')
+                friction(item, 'gate_stop', 'journey')
                 return False
             if res['status'] == 'pass':
                 for j in journeys:
@@ -1381,7 +1394,9 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                     say(f'journey {f["id"]} still fails after {jcfg["max_fix_rounds"]} fix round(s): raised a blocker '
                         f'and stopping (evidence: {f["screenshot"]})')
                     stop_now = True
+                    friction(item, 'gate_stop', 'journey')
                     continue
+                friction(item, 'fix_round', 'journey')
                 fix_id = next_item_id(wq.read_text(encoding='utf-8'), letter)
                 wq.write_text(queue.insert(wq.read_text(encoding='utf-8'),
                                            autojourney.fix_item(fix_id, j, f, n, name, autocfg.changelog(cfg)['enabled']),
@@ -1477,6 +1492,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             if hit is None and git(wt, 'rev-parse', 'HEAD') == head:
                 hit = usage_limit(out, soft=True)                  # a soft cut-off: no error flag, and nothing committed
             if hit is None and budget_stop(out):
+                friction(item, 'usage_stop', 'budget')
                 handovers[item] = handovers.get(item, 0) + 1
                 if handovers[item] <= MAX_BUDGET_HANDOVERS:
                     kept = set_aside(wt, cfg, item, stamp, 'at a budget stop')
@@ -1494,6 +1510,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             if hit is None:
                 mark_account()                                     # this attempt got through: lanes waiting may retry
             if hit is not None:
+                friction(item, 'usage_stop', 'limit')
                 kept = set_aside(wt, cfg, item, stamp)
                 entry.update(result='usage_limit', duration_s=round(time.time() - t0, 1),
                              commit=(lambda h: h[:10] if h != head else None)(git(wt, 'rev-parse', 'HEAD')))
@@ -1528,6 +1545,8 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             if denied:
                 log_text += '\n--- refused for lack of permission ---\n' + '\n'.join(denied) + '\n'
                 say(f'{item}: the agent was refused permission for ' + '; '.join(denied[:3]))
+                for call in denied:
+                    friction(item, 'permission_denied', autoevents.friction_subject(call))
             red = False
             if not check_only:
                 tcode, tout = tests(cfg['test_command'], wt)
@@ -1628,6 +1647,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 set_state(item, 'blocked', blocked_detail(raised))
             elif denied and code != 0:                 # an early exit, not a refusal the agent stopped on: retry
                 set_state(item, 'queued', f'agent exited with {code}; retried next iteration')
+                friction(item, 'retry', f'exit_{code}')
             elif denied:
                 set_state(item, 'blocked', f'needs permission for {"; ".join(denied[:3])}: allow it in .claude/settings.json, '
                                            f'or put the tool on PATH with "path_prepend"')
@@ -1639,6 +1659,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 say(f'claude exited with {code}; see the log.')
             if red and stage is not None and stage['status'] != 'pass':
                 say(f'browser acceptance {stage_summary(stage)}: treated as a red suite, stopping so a person can look.')
+                friction(item, 'gate_stop', 'browser')
                 exit_code, reason = 1, 'red'
                 return 1
             if red:
@@ -1650,6 +1671,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                     fix_rounds[item] = rounds_now
                     pending_fix[item] = fix_note(cfg['test_command'], tail, rounds_now, max_fix)
                     set_state(item, 'queued', f'suite red; fix round {rounds_now} of {max_fix}')
+                    friction(item, 'fix_round', 'suite')
                     sync_back(wq, pq, statuses)
                     budget[0] += 1                                  # the fix round gets its own iteration
                     say(f'the suite is RED after {item}: reopened it for fix round {rounds_now} of {max_fix}'
@@ -1670,6 +1692,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 set_state(item, 'blocked', f'suite red after {max_fix} fix round(s); see the log')
                 sync_back(wq, pq, statuses)
                 say(f'the suite is still RED after {max_fix} fix round(s) of {item}: raised a blocker and stopping.')
+                friction(item, 'gate_stop', 'suite')
                 exit_code, reason = 1, 'red'
                 return 1
             if leaked:
@@ -1685,10 +1708,12 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             if entry['result'] == 'docs':
                 say(f'item {item}: the docs gate failed: stopping so a person can look.')
                 say('\n'.join(gate['failures']))
+                friction(item, 'gate_stop', 'docs')
                 exit_code, reason = 1, 'docs'
                 return 1
             if entry['result'] == 'changelog':
                 say(f'item {item}: no valid changelog sentence ({"; ".join(change["errors"])}): stopping so a person can look.')
+                friction(item, 'gate_stop', 'changelog')
                 exit_code, reason = 1, 'changelog'
                 return 1
             if entry['result'] == 'done' and autosafe.journeys_enabled(cfg) and not journey_check(item):
@@ -1718,6 +1743,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                         waited += max(pause, 0) - left
                         continue
                     usage_stop = {'window': window, 'utilization': w['utilization'], 'resets_at': w['resets_at']}
+                    friction(item, 'usage_stop', 'threshold')
                     exit_code, reason = USAGE_LIMIT_EXIT, 'usage_threshold'
                     return USAGE_LIMIT_EXIT
         else:

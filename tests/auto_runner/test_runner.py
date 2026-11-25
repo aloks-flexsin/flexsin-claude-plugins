@@ -284,6 +284,7 @@ def test_two_item_run_with_red_stop_gives_one_event_per_transition(project):
         ('tests', 'A2', None, 'fail'),
         ('item_state', 'A2', 'running', 'blocked'),
         ('blocker', 'A2', None, None),
+        ('friction', 'A2', None, None),                      # gate_stop:suite (R3)
         ('run_end', None, None, None),
     ]
     assert ev[-1]['detail'] == {'exit': 1, 'reason': 'red'}

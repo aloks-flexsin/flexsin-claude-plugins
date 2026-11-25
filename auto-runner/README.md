@@ -305,7 +305,20 @@ run-level friction (such as a refused start) or an item ID. A friction detail is
 `fix_round`, `retry`, `usage_stop`, `refused_start`, `central_error`, `plan_changes`), `subject` a fixed-vocabulary
 string matching `^[A-Za-z0-9_.+:/-]{0,80}$` (for example `exit_1` or `http_409:/api/v1/tasks/N/heartbeat`; never
 project content). `autoevents.signature(detail)` gives `kind` or `kind:subject`. The central service checks the same
-rules. The runner does not emit friction events yet (that comes in a later item).
+rules.
+
+The runner records friction during a run through one helper in `auto_run.run`, which emits a `friction` event at most once
+per signature per item per run:
+
+| Kind | Subject | When |
+|---|---|---|
+| `permission_denied` | `autoevents.friction_subject(call)`: the tool name (`Write`), or `Bash:<executable base name>` with env assignments and `cd … &&` steps skipped (`FOO=1 cd /a/b && pnpm i` → `Bash:pnpm`), else `Bash:other` (`"$(x)"`) | each tool call refused for lack of permission; never its arguments |
+| `gate_stop` | `docs`, `changelog`, `browser`, `journey`, `suite`, `stale` | the docs gate, the changelog step, browser acceptance, a journey check or the suite (after its last fix round) stops the run, or an item is held for a stale artifact |
+| `fix_round` | `suite`, `journey` | a red suite reopens the item, or a failed journey queues a fix item |
+| `retry` | `exit_<code>` | the agent exited early after a refusal and the item is retried |
+| `usage_stop` | `limit`, `budget`, `threshold` | a usage limit, the attempt's `--max-budget-usd`, or the plan-usage threshold stops the item or the run |
+
+`refused_start`, `central_error` and `plan_changes` are emitted by later items.
 
 ## Modules (all stdlib, all unverified beyond fakes)
 Every child process (the agent, the test command, git) is read as UTF-8, with an undecodable byte replaced rather than
@@ -316,7 +329,7 @@ such as `₹` never breaks a run on Windows.
 |---|---|
 | `bin/auto_run.py` | The runner (worktree, one ready item per iteration, independent test run, lock, STOP, events, blockers, delivery, `publish` of its own branch). |
 | `bin/queue.py`, `bin/autocfg.py`, `bin/autosafe.py` | Queue grammar and readiness (`*Depends on:*`, `*Slice:*`), config loader (v1 keys + v2 sections, `principles()`), safety preflight; `autosafe.utf8_console()` makes stdout/stderr write UTF-8 (undecodable characters replaced, streams without `reconfigure` skipped, never raises). Every command in `bin/` calls it first in its `__main__` block (`queue.py` does the same inline, as it must not import from its own folder), so every command writes UTF-8 to its console. |
-| `bin/autoevents.py` | Append-only `.auto/events.jsonl`, schema `event.v1` (`RUN_TYPES` such as `publish` carry no item; `friction` may or may not; `friction_detail`, `signature`). |
+| `bin/autoevents.py` | Append-only `.auto/events.jsonl`, schema `event.v1` (`RUN_TYPES` such as `publish` carry no item; `friction` may or may not; `friction_detail`, `friction_subject`, `signature`). |
 | `bin/autoblock.py` | `blocker.v1` / `decision.v1`, lifecycle state machine, local store; `list [--state S]`, `answer ID --option/--text`, `view`. |
 | `bin/autodeliver.py` | `Transport` interface, `LocalTransport`, `HttpTransport` (central service; `project_info()` reads `GET /api/v1/project`), event push to central, inbox writer, resume packets; `resume ID` rebuilds a packet. |
 | `bin/autostale.py` | Artifact front-matter (`version`, `hash`, `built_from`, `status`), `scan`, `status`, `revalidate`; stale artifacts refuse a resume. |
