@@ -11,7 +11,10 @@ Each step:
    - `plan`: the headless planner (`autoplan.plan`) plans it and posts the plan; it then waits for approval on the page.
    - `build`: the approved task becomes a request folder (`autotasks.start`) and the runner works it
      (`auto_run.run(..., enqueue=<slug>)`), which beats the claim and reports the task done or stopped itself.
-3. Reports: one line on stdout and the step's outcome under `last` in `.auto/run/watch.json`.
+3. Reports: one line on stdout and the step's outcome under `last` in `.auto/run/watch.json`. A build that exited 0
+   but left `.auto/pending/<slug>/` in place only waited (an earlier branch is not merged yet): its outcome is `ok`
+   and `waiting`, the line says "waiting", the heartbeat is `waiting_for_merge` and the loop waits one poll. A build
+   that exited non-zero, hit the usage limit or raised keeps its failed outcome and pause, pending or not.
 When there is nothing to do it writes the local heartbeat `.auto/run/watch.json` (`state`, `at`, `last`) and waits
 `watch.poll_seconds` (default 300). A failed step (planner refused, a build that stopped or crashed, the service
 unreachable) is reported and the loop waits one poll before the next claim: one failed task never ends the loop.
@@ -67,6 +70,7 @@ STOP_FILE = Path('.auto') / 'STOP'
 LOCK_FILE = Path('.auto') / 'run' / 'watch.lock'
 SPEND_DIR = Path('.auto') / 'run'
 WAIT_SLICE = 5          # seconds: how often a wait looks for the STOP file
+WAITING_DETAIL = 'waits for an earlier branch to be merged'
 
 
 def _iso(seconds):
@@ -195,6 +199,9 @@ def step(project, claude=None, env=None, send=None, build=None, meter=None, on_s
             slug = autotasks.start(project, number, env, send)
             code = (build or _default_build)(project, slug, claude, env, send)
             out.update(ok=code == 0, detail=f'runner exit {code}', exit=code)
+            limited = meter is not None and meter.limit
+            if code == 0 and not limited and (Path(project) / '.auto' / 'pending' / slug).is_dir():
+                out.update(waiting=True, detail=WAITING_DETAIL)     # the run only waited: the request is still pending
     except Exception as e:                      # one failed task never ends the loop
         out['detail'] = f'{type(e).__name__}: {e}'
         if action != 'plan':
@@ -298,8 +305,12 @@ def _loop(project, stop, poll, daily, runner, claude, env, send, build, clock, s
             continue
         last = {**result, 'at': _iso(clock())}
         what = f'task {result["task"]} ({result["action"]})' if result['task'] else result['action']
-        say(f'{what}: {"done" if result["ok"] else "failed"}, {result["detail"]}')
-        if meter.limit or result.get('exit') == runner.USAGE_LIMIT_EXIT:
+        verdict = 'waiting' if result.get('waiting') else 'done' if result['ok'] else 'failed'
+        say(f'{what}: {verdict}, {result["detail"]}')
+        if result.get('waiting'):
+            heartbeat(project, 'waiting_for_merge', clock(), last)
+            wait(poll)
+        elif meter.limit or result.get('exit') == runner.USAGE_LIMIT_EXIT:
             reset = meter.limit['reset'] if meter.limit else None
             cap = runner.LIMIT_POLL_MINUTES * 60
             pause = min(max(reset.timestamp() - clock() + 60, 0), cap) if reset else cap
