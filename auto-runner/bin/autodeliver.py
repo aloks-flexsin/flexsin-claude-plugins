@@ -71,7 +71,12 @@ def delivery_id(blocker_id, version):
 
 
 class TransportUnavailable(ConnectionError):
-    """The service could not be reached (or answered with a server error). Nothing was changed; try again later."""
+    """The service could not be reached (or answered with a server error). Nothing was changed; try again later.
+    `status` is the server error's HTTP status, or None when nothing answered."""
+
+    def __init__(self, message='', status=None):
+        super().__init__(message)
+        self.status = status
 
 
 class Transport:
@@ -204,7 +209,7 @@ class HttpTransport(Transport):
         except (UnicodeDecodeError, ValueError):
             data = None
         if status >= 500:
-            raise TransportUnavailable(f'{method} {path}: server error {status}')
+            raise TransportUnavailable(f'{method} {path}: server error {status}', status)
         return status, raw, data, path
 
     @staticmethod
@@ -279,16 +284,19 @@ def _push_state(auto_dir):
 
 def push(transport, auto_dir, project):
     """Send the ledger lines not sent yet (`.auto/events.jsonl`, from the line `.auto/central-push.json` records) to the central
-    service in batches -> {sent, skipped, error}. Only events of `project` are sent; the service is idempotent by event id, so
+    service in batches -> {sent, skipped, error, skipped_status, error_status}. Only events of `project` are sent; the service is idempotent by event id, so
     sending one twice is harmless. The cursor moves only past lines the service took or refused for good: an outage
     (TransportUnavailable) or a refusal of the whole call (401, 403, 429, ...) stops here, and the next push starts again from
-    the same line. An event refused on its own (400, 409, 413) is skipped and its id kept in `skipped`."""
+    the same line. An event refused on its own (400, 409, 413) is skipped and its id kept in `skipped`.
+    `skipped_status` is the HTTP status of the first such refusal in this call (None when nothing was skipped);
+    `error_status` is the status of the failure that stopped the push (None when it did not stop or nothing answered)."""
     auto = Path(auto_dir)
     path = auto / 'events.jsonl'
     lines = (path.read_text(encoding='utf-8') if path.exists() else '').split('\n')[:-1]   # whole lines only
     state = _push_state(auto)
     at = state['lines'] if state['lines'] <= len(lines) else 0
     sent, skipped, error = 0, [], None
+    skipped_status = error_status = None
 
     while at < len(lines) and error is None:
         batch, size, end, refused = [], 0, at, []
@@ -306,10 +314,10 @@ def push(transport, auto_dir, project):
                 transport.push_events([e for _, e in batch])
             sent, at = sent + len(batch), end
         except TransportUnavailable as e:
-            error = str(e)
+            error, error_status = str(e), getattr(e, 'status', None)
         except TransportRefused as e:
             if e.status not in PUSH_SKIPPABLE:
-                error = str(e)
+                error, error_status = str(e), e.status
             else:
                 for line, event in batch:            # one at a time, to find the event(s) it will never take
                     try:
@@ -317,11 +325,12 @@ def push(transport, auto_dir, project):
                         sent += 1
                     except TransportRefused as one:
                         if one.status not in PUSH_SKIPPABLE:
-                            error = str(one)
+                            error, error_status = str(one), one.status
                             break
                         refused.append(str(event.get('id')))
+                        skipped_status = skipped_status or one.status
                     except TransportUnavailable as one:
-                        error = str(one)
+                        error, error_status = str(one), getattr(one, 'status', None)
                         break
                     at = line + 1
                 else:
@@ -329,7 +338,8 @@ def push(transport, auto_dir, project):
         skipped += refused
         state.update(schema=PUSH_SCHEMA, lines=at, skipped=(state['skipped'] + refused)[-100:])
         autoblock.write_json_atomic(auto / PUSHED, state)
-    return {'sent': sent, 'skipped': skipped, 'error': error}
+    return {'sent': sent, 'skipped': skipped, 'error': error, 'skipped_status': skipped_status,
+            'error_status': error_status}
 
 
 def inbox(auto_dir):

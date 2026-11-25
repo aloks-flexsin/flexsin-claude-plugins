@@ -18,6 +18,17 @@ def test_marketplace_plugin_name_matches_manifest():
     assert not manifest['name'].startswith(('claude-', 'anthropic-'))
 
 
+def test_marketplace_entry_has_the_manifests_version():
+    market = _json(PLUGINS / '.claude-plugin' / 'marketplace.json')
+    manifest = _json(PLUGIN / '.claude-plugin' / 'plugin.json')
+    assert [p.get('version') for p in market['plugins']] == [manifest['version']]
+
+
+def test_the_released_version_has_a_changelog_section():
+    manifest = _json(PLUGIN / '.claude-plugin' / 'plugin.json')
+    assert f"## [{manifest['version']}] - " in (PLUGINS / 'CHANGELOG.md').read_text(encoding='utf-8')
+
+
 def test_marketplace_source_is_the_plugin_folder():
     market = _json(PLUGINS / '.claude-plugin' / 'marketplace.json')
     for p in market['plugins']:

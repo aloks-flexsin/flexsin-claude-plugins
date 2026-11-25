@@ -20,4 +20,17 @@
   </details>
   {% endif %}
 </section>
+<section class="card">
+  <h2>Share runner frictions with the auto-runner project</h2>
+  <p>{% if shares_frictions %}On{% else %}Off{% endif %}</p>
+  <p class="muted">Runs send short signatures of what got in their way (a refused command name, a stopped gate, a retry),
+    never code, paths or text from this project. Shared signatures are counted so the runner itself can be improved.</p>
+  {% if can_manage %}
+  <form method="post" action="{{ url_for('projects.share_frictions_set', slug=project.slug) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="share" value="{% if shares_frictions %}0{% else %}1{% endif %}">
+    <button type="submit" class="btn">{% if shares_frictions %}Stop sharing frictions{% else %}Share frictions{% endif %}</button>
+  </form>
+  {% endif %}
+</section>
 {% endblock %}

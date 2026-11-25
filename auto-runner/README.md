@@ -96,6 +96,13 @@ The runner can also be started by hand: `python bin/auto_run.py [--project DIR] 
   end of the run. Once it is merged, the next run starts a new branch in the same worktree. Requests are no longer added
   between iterations. "Merged" is judged by ancestry, so after a **squash** merge remove the worktree
   (`git worktree remove <project>-auto`) before the next run.
+- **Resuming a request:** `--enqueue <slug>` for a request whose items are all in the queue already, each with the same
+  text (ignoring the tick and the runner's status line), resumes it instead of refusing it: the runner prints
+  `request '<slug>' is already queued on <branch>: resuming it`, adopts the request's `task.json` as the current task
+  (so a central task stopped part-way and taken again by watch mode beats and reports with its new claim), removes
+  `.auto/pending/<slug>/` and carries on as a run without `--enqueue`. While another run holds the lock it only says the
+  request is checked and waiting, and touches neither the folder nor `.auto/run/current-task.json`. A request with only
+  some of its IDs queued, or with changed item text, is refused as before.
 - **Push and pull request:** see "Publishing a run"; both are on unless turned off.
 
 Create `.auto/STOP` to stop a run between iterations. `.auto/lock` keeps a second run out; delete it by hand only if a run died.
@@ -298,6 +305,39 @@ Every run also appends to `.auto/events.jsonl` (schema `event.v1`, `bin/autoeven
 and machines (`<YYYYMMDD-HHMM>-<6 hex>`; 0.17.0): run start (with branch, base, and who ran it: `user` and `account` from
 `AUTO_RUNNER_USER` / `AUTO_RUNNER_ACCOUNT`, which the central service's runs page shows) and end (with exit code and reason), each item state change (from, to) and each independent test result, one line per event, never rewritten. `runs.jsonl` keeps its old shape.
 
+Event types: `run_start`, `run_end`, `publish` (run-level, `item` null), `item_state`, `tests`, `blocker`, `browser`,
+`findings`, `changelog`, `docs` (each about one item) and `friction` (decision record 0011), whose `item` is null for a
+run-level friction (such as a refused start) or an item ID. A friction detail is exactly `{"kind", "subject"}`
+(`autoevents.friction_detail(kind, subject='')`): `kind` one of `FRICTION_KINDS` (`permission_denied`, `gate_stop`,
+`fix_round`, `retry`, `usage_stop`, `refused_start`, `central_error`, `plan_changes`), `subject` a fixed-vocabulary
+string matching `^[A-Za-z0-9_.+:/-]{0,80}$` (for example `exit_1` or `http_409:/api/v1/tasks/N/heartbeat`; never
+project content). `autoevents.signature(detail)` gives `kind` or `kind:subject`. The central service checks the same
+rules.
+
+The runner records friction during a run through one helper in `auto_run.run`, which emits a `friction` event at most once
+per signature per item per run:
+
+| Kind | Subject | When |
+|---|---|---|
+| `permission_denied` | `autoevents.friction_subject(call)`: the tool name (`Write`), or `Bash:<executable base name>` with env assignments and `cd … &&` steps skipped (`FOO=1 cd /a/b && pnpm i` → `Bash:pnpm`), else `Bash:other` (`"$(x)"`) | each tool call refused for lack of permission; never its arguments |
+| `gate_stop` | `docs`, `changelog`, `browser`, `journey`, `suite`, `stale` | the docs gate, the changelog step, browser acceptance, a journey check or the suite (after its last fix round) stops the run, or an item is held for a stale artifact |
+| `fix_round` | `suite`, `journey` | a red suite reopens the item, or a failed journey queues a fix item |
+| `retry` | `exit_<code>` | the agent exited early after a refusal and the item is retried |
+| `usage_stop` | `limit`, `budget`, `threshold` | a usage limit, the attempt's `--max-budget-usd`, or the plan-usage threshold stops the item or the run |
+| `refused_start` | `newer_installed`, or the first failed preflight group | the runner refuses to start (also with `--dry-run`); `item` is null and the event is written to `.auto/events.jsonl` before the error, so the next push sends it. The refusal message is unchanged |
+| `central_error` | `http_<status>:<route>` (e.g. `http_409:/api/v1/tasks/N/heartbeat`, `http_400:/api/v1/events`), or `unreachable` | a call to the central service failed: a task heartbeat (a 409 means the claim was lost: released, reassigned or expired), the end-of-run report, a wait note, or an event push that stopped (`error_status`) or skipped an event (`skipped_status`). `item` is null; the route is the request path with task numbers as `N` and no query string (`autotasks.error_route`). A failed end-of-run report is pushed at once. Since 0.23.0 |
+
+The preflight groups come from `autosafe.preflight_groups(project, cfg, base)`, which returns `[(group, message)]` with one
+fixed code per check: `worktree`, `runner_name`, `model`, `base_url`, `journey`, `central`, `env_file`, `path_prepend`,
+`publish`, `principles`, `capability`, `no_commit`, `no_tests`, `settings`. `autosafe.preflight()` returns the same messages
+without the groups.
+
+`autotasks.beat`, `finish` and `wait_note` take an optional `on_error(status, route)` (status the HTTP code, or None when
+the service could not be reached), called on every failed call; their return values are unchanged. `autodeliver.push`
+returns `{sent, skipped, error, skipped_status, error_status}`: the HTTP status of the first event skipped in that call, and
+of the failure that stopped it (None when nothing answered). `plan_changes` is counted by the central service, not the
+runner.
+
 ## Modules (all stdlib, all unverified beyond fakes)
 Every child process (the agent, the test command, git) is read as UTF-8, with an undecodable byte replaced rather than
 fatal, and Python children are asked to write UTF-8 (`PYTHONIOENCODING`, unless the project sets it), so non-English text
@@ -307,7 +347,7 @@ such as `₹` never breaks a run on Windows.
 |---|---|
 | `bin/auto_run.py` | The runner (worktree, one ready item per iteration, independent test run, lock, STOP, events, blockers, delivery, `publish` of its own branch). |
 | `bin/queue.py`, `bin/autocfg.py`, `bin/autosafe.py` | Queue grammar and readiness (`*Depends on:*`, `*Slice:*`), config loader (v1 keys + v2 sections, `principles()`), safety preflight; `autosafe.utf8_console()` makes stdout/stderr write UTF-8 (undecodable characters replaced, streams without `reconfigure` skipped, never raises). Every command in `bin/` calls it first in its `__main__` block (`queue.py` does the same inline, as it must not import from its own folder), so every command writes UTF-8 to its console. |
-| `bin/autoevents.py` | Append-only `.auto/events.jsonl`, schema `event.v1` (`RUN_TYPES` such as `publish` carry no item). |
+| `bin/autoevents.py` | Append-only `.auto/events.jsonl`, schema `event.v1` (`RUN_TYPES` such as `publish` carry no item; `friction` may or may not; `friction_detail`, `friction_subject`, `signature`). |
 | `bin/autoblock.py` | `blocker.v1` / `decision.v1`, lifecycle state machine, local store; `list [--state S]`, `answer ID --option/--text`, `view`. |
 | `bin/autodeliver.py` | `Transport` interface, `LocalTransport`, `HttpTransport` (central service; `project_info()` reads `GET /api/v1/project`), event push to central, inbox writer, resume packets; `resume ID` rebuilds a packet. |
 | `bin/autostale.py` | Artifact front-matter (`version`, `hash`, `built_from`, `status`), `scan`, `status`, `revalidate`; stale artifacts refuse a resume. |

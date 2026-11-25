@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS project (
     name VARCHAR(200) NOT NULL,
     repo_url VARCHAR(500),
     repo_key VARCHAR(500),
-    created_at VARCHAR(32) NOT NULL
+    created_at VARCHAR(32) NOT NULL,
+    share_frictions INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS member (
@@ -284,4 +285,38 @@ CREATE TABLE IF NOT EXISTS push_subscription (
     created_at VARCHAR(32) NOT NULL,
     last_ok_at VARCHAR(32),
     failures INTEGER NOT NULL DEFAULT 0
+);
+
+-- Runner frictions (decision record 0011; frictions.py): counted at ingest for projects that share them
+-- (`project.share_frictions`). `friction_count` is the running total per signature and project, `friction_day` the
+-- count per UTC day (the 30-day window and counts after a fix), `friction_signature` one row per signature with its
+-- state (`watching`, `drafted`, `muted` or `fixed`) and the task drafted for it.
+CREATE TABLE IF NOT EXISTS friction_count (
+    signature VARCHAR(120) NOT NULL,
+    project_id VARCHAR(64) NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    count INTEGER NOT NULL DEFAULT 0,
+    first_seen VARCHAR(32) NOT NULL,
+    last_seen VARCHAR(32) NOT NULL,
+    PRIMARY KEY (signature, project_id)
+);
+
+CREATE TABLE IF NOT EXISTS friction_day (
+    signature VARCHAR(120) NOT NULL,
+    project_id VARCHAR(64) NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    day VARCHAR(10) NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (signature, project_id, day)
+);
+
+CREATE TABLE IF NOT EXISTS friction_signature (
+    signature VARCHAR(120) PRIMARY KEY,
+    kind VARCHAR(32) NOT NULL,
+    subject VARCHAR(80) NOT NULL,
+    state VARCHAR(16) NOT NULL DEFAULT 'watching',
+    task_project_id VARCHAR(64) REFERENCES project (id) ON DELETE SET NULL,
+    task_number INTEGER,
+    previous_task_number INTEGER,
+    changed_by VARCHAR(64) REFERENCES account (id) ON DELETE SET NULL,
+    changed_at VARCHAR(32),
+    reason VARCHAR(500)
 );

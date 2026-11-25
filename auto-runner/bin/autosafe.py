@@ -524,31 +524,43 @@ def journey_problems(cfg):
     return problems
 
 
-def preflight(project, cfg, base, doctor=None, env=None):
-    """-> list of problems; empty means the runner may start. `doctor(project) -> results` and `env` (default os.environ) are
-    injectable for tests."""
-    problems = worktree_problems(project)
-    problems += runner_name_problems(env)
-    problems += model_problems(cfg)
-    problems += base_url_problems(cfg)
-    problems += journey_problems(cfg)
-    problems += central_problems(cfg)
-    problems += env_file_problems(project, cfg)
-    problems += path_prepend_problems(project, cfg)
-    problems += publish_problems(project, cfg, base, env)
-    problems += principles_problems(project, cfg)
-    problems += capability_problems(project, cfg, doctor)
+def preflight_groups(project, cfg, base, doctor=None, env=None):
+    """-> [(group, message)] for every problem, in check order; empty means the runner may start. The group is a fixed
+    code per check (worktree, runner_name, model, base_url, journey, central, env_file, path_prepend, publish, principles,
+    capability, no_commit, no_tests, settings), safe to send as a friction subject. Same arguments as `preflight`."""
+    problems = []
+
+    def add(group, messages):
+        problems.extend((group, m) for m in messages)
+
+    add('worktree', worktree_problems(project))
+    add('runner_name', runner_name_problems(env))
+    add('model', model_problems(cfg))
+    add('base_url', base_url_problems(cfg))
+    add('journey', journey_problems(cfg))
+    add('central', central_problems(cfg))
+    add('env_file', env_file_problems(project, cfg))
+    add('path_prepend', path_prepend_problems(project, cfg))
+    add('publish', publish_problems(project, cfg, base, env))
+    add('principles', principles_problems(project, cfg))
+    add('capability', capability_problems(project, cfg, doctor))
     if not has_commit(project):
-        problems.append('The repository has no commit yet (the worktree is made from a commit). Commit once, then run again.')
+        add('no_commit', ['The repository has no commit yet (the worktree is made from a commit). Commit once, then run again.'])
     if not cfg['test_command'] and not cfg['check_only']:
-        problems.append('No test_command is configured. Set "test_command" in .claude/auto.json, or set "check_only": true '
-                        f'to run without tests (every status and log then says "{NO_TESTS}").')
+        add('no_tests', ['No test_command is configured. Set "test_command" in .claude/auto.json, or set "check_only": true '
+                         f'to run without tests (every status and log then says "{NO_TESTS}").'])
     settings, err = load_settings(project)
     if err:
-        problems.append(err)
+        add('settings', [err])
     else:
         missing = missing_rules(settings, base, changelog_enabled(cfg), env_read_allowed(cfg))
         if missing:
-            problems.append(f'{SETTINGS_PATH.as_posix()} must deny: ' + ', '.join(missing) +
-                            '. Run auto_init.py (preview, then --apply) to add the rules without touching existing ones.')
+            add('settings', [f'{SETTINGS_PATH.as_posix()} must deny: ' + ', '.join(missing) +
+                             '. Run auto_init.py (preview, then --apply) to add the rules without touching existing ones.'])
     return problems
+
+
+def preflight(project, cfg, base, doctor=None, env=None):
+    """-> list of problems; empty means the runner may start. `doctor(project) -> results` and `env` (default os.environ) are
+    injectable for tests."""
+    return [message for _, message in preflight_groups(project, cfg, base, doctor, env)]
