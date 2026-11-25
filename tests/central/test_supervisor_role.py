@@ -38,9 +38,11 @@ def test_a_supervisor_is_a_manager_member_but_never_runs_or_creates_tasks(conn, 
     assert projects.member_role(conn, proj['id'], sup['id']) == 'manager'
     assert tasks._can_run(conn, proj, sup) is False
     assert tasks._can_run(conn, proj, bob) is not None
-    with pytest.raises(tasks.TaskError) as exc:
-        tasks.create(conn, proj, sup, sup, 'x', '', AT)
-    assert exc.value.status == 403
+    with pytest.raises(tasks.TaskError) as exc:               # a supervisor's task must say what it comes from (0010, 6a)
+        tasks.create(conn, proj, sup, bob, 'x', '', AT)
+    assert 'comes from' in str(exc.value)
+    with pytest.raises(tasks.TaskError):                      # and it never assigns a task to itself
+        tasks.create(conn, proj, sup, sup, 'x', '', AT, source='review of #3')
     with pytest.raises(tasks.TaskError):                      # never an assignee, not even when an admin asks
         tasks.create(conn, proj, bob, sup, 'x', '', AT)
 

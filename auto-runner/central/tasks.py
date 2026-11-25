@@ -90,13 +90,22 @@ def _can_run(db, project, account):
     return projects.allows(projects.effective_role(db, project, account), "developer")
 
 
-def create(db, project, by, assignee, title, description, moment, status="open", plan="", items="", runner=None):
-    """Add a task and commit -> its row. People add tasks for themselves; an admin for any member who can run runners."""
+MAX_SOURCE = 500
+
+
+def create(db, project, by, assignee, title, description, moment, status="open", plan="", items="", runner=None,
+           source=None):
+    """Add a task and commit -> its row. People add tasks for themselves; an admin for any member who can run runners.
+    A supervisor (decision record 0010, 6a) adds tasks for a member who can run runners, and only with `source`: what
+    the task traces to (a review, a plan's "Needs a person", a failing check, a person's request). It never invents scope."""
     title = _text(title, MAX_TITLE, "the title", required=True)
     description = _text(description, MAX_TEXT, "the description")
     if by["role"] == accounts.SUPERVISOR:
-        raise TaskError("a supervisor account does not create tasks", 403)
-    if assignee["id"] != by["id"] and by["role"] != projects.ADMIN:
+        source = _text(source, MAX_SOURCE, "what the task comes from (source)", required=True)
+        description = ((description + "\n\n") if description else "") + "From: " + source
+        if len(description) > MAX_TEXT:
+            raise TaskError("the description is longer than %d characters" % MAX_TEXT)
+    elif assignee["id"] != by["id"] and by["role"] != projects.ADMIN:
         raise TaskError("only an admin adds tasks for someone else", 403)
     if not _can_run(db, project, assignee):
         raise TaskError("%s is not a developer or above in this project, so no runner of theirs can take it" % assignee["email"])
