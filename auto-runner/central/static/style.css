@@ -398,4 +398,10 @@ ul.plain{padding-left:18px}
 .notif-done .link-button{color:var(--muted);font-weight:500}
 .notif-delivery{color:var(--muted);font-size:.9em}
 .notif-log-row .notif-delivery{flex:none}
+/* "Turn on push" bar under the top bar (queue item A1); hidden until app.js shows it */
+.push-ask{background:var(--brand-soft);border-bottom:1px solid var(--line)}
+.push-ask-in{max-width:1080px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:12px 16px;flex-wrap:wrap}
+.push-ask-in p{margin:0;flex:1 1 260px;color:var(--text)}
+.push-ask-actions{display:flex;gap:8px;flex-wrap:wrap}
+@media (max-width:640px){.push-ask-in{padding:10px 14px}.push-ask-actions{width:100%}.push-ask-actions .btn{flex:1}}
 [hidden]{display:none !important}

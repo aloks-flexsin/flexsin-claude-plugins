@@ -113,56 +113,67 @@
     step();
   });
 
-  /* Push on this browser: the Account page's <div data-push data-vapid-public-key ...>. The buttons stay hidden unless
-     this browser supports push; Turn on asks permission, registers /sw.js, subscribes and posts the subscription to
-     the same-origin subscribe URL; Turn off unsubscribes here and tells the service. */
+  /* Push on this browser. Both the Account page's <div data-push ...> and the "turn on push" bar on other pages
+     (<div data-push-ask ...>, queue item A1) carry data-vapid-public-key, data-csrf-token and data-subscribe-url.
+     enablePush(box) asks permission, registers /sw.js, subscribes and posts the subscription to the same-origin
+     subscribe URL; it rejects with Error("permission") when the browser refuses. */
+  var PUSH_BLOCKED = "This browser blocked notifications for this site. Allow them in the browser's site settings, then try again.";
+  var PUSH_FAILED = "Could not turn on notifications in this browser. Reload the page and try again.";
+  function pushSupported() {
+    return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  }
+  function registerWorker() { return navigator.serviceWorker.register("/sw.js", {scope: "/"}); }
+  function keyBytes(b64) {
+    var s = (b64 + "===".slice((b64.length + 3) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+    var raw = window.atob(s), out = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+  function sameOrigin(url) { return new URL(url, window.location.href).origin === window.location.origin; }
+  function postJSON(box, url, body) {
+    if (!url || !sameOrigin(url)) return Promise.reject(new Error("not same-origin"));
+    return fetch(url, {
+      method: "POST", credentials: "same-origin",
+      headers: {"Content-Type": "application/json", "X-CSRF-Token": box.getAttribute("data-csrf-token") || ""},
+      body: JSON.stringify(body)
+    }).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r; });
+  }
+  function enablePush(box) {
+    return Notification.requestPermission().then(function (permission) {
+      if (permission !== "granted") throw new Error("permission");
+      return registerWorker();
+    }).then(function (reg) {
+      return reg.pushManager.getSubscription().then(function (s) {
+        return s || reg.pushManager.subscribe({
+          userVisibleOnly: true, applicationServerKey: keyBytes(box.getAttribute("data-vapid-public-key") || "")
+        });
+      });
+    }).then(function (s) {
+      return postJSON(box, box.getAttribute("data-subscribe-url"), s.toJSON());
+    });
+  }
+  function pushError(err) { return err && err.message === "permission" ? PUSH_BLOCKED : PUSH_FAILED; }
+
+  /* The Account page's section: Turn on or Turn off for this browser, hidden unless the browser supports push. */
   var pushBox = document.querySelector("[data-push]");
-  if (pushBox && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window) {
+  if (pushBox && pushSupported()) {
     var onBtn = pushBox.querySelector("[data-push-on]"), offBtn = pushBox.querySelector("[data-push-off]");
     var actions = pushBox.querySelector("[data-push-actions]"), status = pushBox.querySelector("[data-push-status]");
     var say = function (text) { if (status) status.textContent = text; };
-    var keyBytes = function (b64) {
-      var s = (b64 + "===".slice((b64.length + 3) % 4)).replace(/-/g, "+").replace(/_/g, "/");
-      var raw = window.atob(s), out = new Uint8Array(raw.length);
-      for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
-      return out;
-    };
-    var sameOrigin = function (url) { return new URL(url, window.location.href).origin === window.location.origin; };
-    var post = function (url, body) {
-      if (!sameOrigin(url)) return Promise.reject(new Error("not same-origin"));
-      return fetch(url, {
-        method: "POST", credentials: "same-origin",
-        headers: {"Content-Type": "application/json", "X-CSRF-Token": pushBox.getAttribute("data-csrf-token") || ""},
-        body: JSON.stringify(body)
-      }).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r; });
-    };
     var show = function (subscribed) {
       onBtn.hidden = subscribed; offBtn.hidden = !subscribed; actions.hidden = false;
     };
-    var registration = navigator.serviceWorker.register("/sw.js", {scope: "/"});
+    var registration = registerWorker();
     registration.then(function (reg) { return reg.pushManager.getSubscription(); })
       .then(function (s) { show(!!s); if (s) say("Turned on in this browser."); })
       .catch(function () { /* no service worker here: the buttons stay hidden */ });
 
     onBtn.addEventListener("click", function () {
       onBtn.disabled = true;
-      Notification.requestPermission().then(function (permission) {
-        if (permission !== "granted") throw new Error("permission");
-        return registration;
-      }).then(function (reg) {
-        return reg.pushManager.getSubscription().then(function (s) {
-          return s || reg.pushManager.subscribe({
-            userVisibleOnly: true, applicationServerKey: keyBytes(pushBox.getAttribute("data-vapid-public-key") || "")
-          });
-        });
-      }).then(function (s) {
-        return post(pushBox.getAttribute("data-subscribe-url"), s.toJSON());
-      }).then(function () {
+      enablePush(pushBox).then(function () {
         show(true); say("Turned on in this browser.");
       }).catch(function (err) {
-        say(err && err.message === "permission"
-          ? "This browser blocked notifications for this site. Allow them in the browser's site settings, then try again."
-          : "Could not turn on notifications in this browser. Reload the page and try again.");
+        say(pushError(err));
       }).then(function () { onBtn.disabled = false; });
     });
 
@@ -171,13 +182,37 @@
       registration.then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (s) {
         if (!s) return null;
         var endpoint = s.endpoint;
-        return s.unsubscribe().then(function () { return post(pushBox.getAttribute("data-unsubscribe-url"), {endpoint: endpoint}); });
+        return s.unsubscribe().then(function () { return postJSON(pushBox, pushBox.getAttribute("data-unsubscribe-url"), {endpoint: endpoint}); });
       }).then(function () {
         show(false); say("Turned off in this browser.");
       }).catch(function () {
         say("Could not turn off notifications in this browser. Reload the page and try again.");
       }).then(function () { offBtn.disabled = false; });
     });
+  }
+
+  /* The "turn on push" bar (queue item A1): shown once per browser, only when push is supported, not blocked, not
+     already subscribed here and not answered before (localStorage["push-ask"] set to "done" or "dismissed"). When
+     storage cannot be read the bar stays hidden, so it never asks again on every page. */
+  var askBox = document.querySelector("[data-push-ask]");
+  var askRead = function () { try { return window.localStorage.getItem("push-ask"); } catch (e) { return "unavailable"; } };
+  var askWrite = function (v) { try { window.localStorage.setItem("push-ask", v); } catch (e) { /* not remembered */ } };
+  if (askBox && pushSupported() && Notification.permission !== "denied" && !askRead()) {
+    var askOn = askBox.querySelector("[data-push-ask-on]"), askOff = askBox.querySelector("[data-push-ask-off]");
+    var askStatus = askBox.querySelector("[data-push-status]");
+    navigator.serviceWorker.getRegistration("/")
+      .then(function (reg) { return reg ? reg.pushManager.getSubscription() : null; })
+      .then(function (s) { if (!s) askBox.hidden = false; })
+      .catch(function () { /* cannot tell: stay hidden */ });
+    askOn.addEventListener("click", function () {
+      askOn.disabled = true;
+      enablePush(askBox).then(function () {
+        askBox.hidden = true; askWrite("done");
+      }).catch(function (err) {
+        if (askStatus) askStatus.textContent = pushError(err);
+      }).then(function () { askOn.disabled = false; });
+    });
+    askOff.addEventListener("click", function () { askBox.hidden = true; askWrite("dismissed"); });
   }
 
   /* Screenshots: a form with data-paste-images takes pasted or dropped images into its file input (through

@@ -4,6 +4,12 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+### Added
+- Central: a "turn on push" bar under the top bar of every signed-in page (not the Account page) when push is set up,
+  shown once per browser: only when push is supported, not blocked, not yet subscribed here and not answered before
+  (`localStorage["push-ask"]`). Turn on uses the same `enablePush` steps as the Account page; Not now hides it for
+  good in this browser. Unverified in a real browser.
+
 ## [0.22.0] - 2026-11-25
 
 ### Fixed
