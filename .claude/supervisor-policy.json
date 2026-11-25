@@ -1,0 +1,19 @@
+{
+  "base": "main",
+  "restricted_paths": [
+    ".claude/supervisor-policy.json",
+    ".claude/settings.json",
+    ".github/",
+    "vercel.json",
+    ".env",
+    ".env.*",
+    "*/.env",
+    "*/.env.*",
+    "*.pem",
+    "*.key"
+  ],
+  "merge": {
+    "review": "none",
+    "method": "merge"
+  }
+}

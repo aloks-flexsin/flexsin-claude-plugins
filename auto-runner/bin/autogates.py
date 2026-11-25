@@ -221,3 +221,35 @@ def merge_gate(task, pr, checks, reviews, policy, merger, files=None):
                 'approvals': approvals, 'review': merge['review'], 'files': len(files), 'restricted': hits}
     return {'verdict': 'refuse' if reasons else 'merge', 'reasons': reasons, 'evidence': evidence,
             'method': merge['method'], 'sha': sha}
+
+
+ORDER_CLOSED = ('done', 'rejected')
+
+
+def order(tasks):
+    """The queue order (decision 0010, step 3). Pure: tasks in, ranks out; it never reads prose.
+
+    `tasks` are the state's task dicts (`number`, `status`, `priority`, `depends_on`, `created_at`). Tasks that are done
+    or rejected are left out. The rest are sorted by, in this order:
+      1. priority, lower first, none last  -- a person's priority is never crossed
+      2. unblock count, higher first      -- how many other open tasks list this one in `depends_on`
+      3. age, oldest `created_at` first
+      4. number
+    -> [{"number", "rank" (1, 2, 3, ...), "reason"}] best first."""
+    open_tasks = [t for t in tasks or [] if t.get('status') not in ORDER_CLOSED]
+    unblocks = {t['number']: 0 for t in open_tasks}
+    for t in open_tasks:
+        for dep in set(t.get('depends_on') or []):
+            if dep in unblocks and dep != t['number']:
+                unblocks[dep] += 1
+    ranked = sorted(open_tasks, key=lambda t: (t.get('priority') is None, t.get('priority') or 0, -unblocks[t['number']],
+                                               t.get('created_at') or '', t['number']))
+    out = []
+    for n, t in enumerate(ranked, 1):
+        count = unblocks[t['number']]
+        parts = ['priority %s' % t['priority'] if t.get('priority') is not None else 'no priority']
+        if count:
+            parts.append('unblocks %d task%s' % (count, '' if count == 1 else 's'))
+        parts.append('created %s' % (t.get('created_at') or 'unknown'))
+        out.append({'number': t['number'], 'rank': n, 'reason': ', '.join(parts)})
+    return out

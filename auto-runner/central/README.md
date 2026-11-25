@@ -173,9 +173,10 @@ may not stick over plain http. The API endpoints do not use the cookie.
   role is accepted). It returns `{project, tasks, runners, blockers}`: each task has the `/api/v1/tasks/<N>` fields plus
   `plan_rounds` (the count of the task's `supervisor.plan.changes` audit rows), `plan_decided` (the supervisor's decision
   on the task's current plan post, or null; a new plan post starts afresh) and `merged_at`; runners use the runner API
-  shape; blockers are the open ones (`OPEN`, `ESCALATED`). No claim ids appear and nothing is written.
+  shape plus `id` (what the runner-control route takes) and `paused_by_supervisor` (a pause the supervisor made, so
+  the control step resumes only those); blockers are the open ones (`OPEN`, `ESCALATED`). No claim ids appear and nothing is written.
 - **Add a task** `POST /api/v1/supervisor/tasks?project=<slug>` with `{"title", "description", "from", "assignee", "plan",
-  "items"}` (decision record 0010, 6a: the supervisor adds tasks that trace to work already asked for). Supervisor role
+  "items", "priority", "depends_on"}` (the last two as on any task) (decision record 0010, 6a: the supervisor adds tasks that trace to work already asked for). Supervisor role
   only (403 otherwise, 401 without a token, 404 for an unknown project). `from` says what the task comes from and is
   required (400 without it); it is appended to the description as "From: ...". `assignee` is the email of a member who can
   run runners (developer or above; 400 otherwise, and never the supervisor itself), and that person's runner takes it.
@@ -204,10 +205,31 @@ may not stick over plain http. The API endpoints do not use the cookie.
   409). **Re-running is safe:** a `refused` that repeats the task's previous row (same SHA and reasons) and a `done` for a
   merged task change nothing and answer 200 with `"already": true`. The task page and the task list show "Merged <time>"
   once `merged_at` is set. Tests: `tests/central/test_supervisor_e2e.py`, `tests/central/test_tasks_pages.py`.
+- **Queue order** `PUT /api/v1/supervisor/order?project=<slug>` with `{"orders": [{"number", "rank", "reason"}]}`. Supervisor
+  role only (403 otherwise, 401 without a token). Every number must be a task of the project (404) and every rank a whole
+  number of 1 or more, with no number twice (400); on any error nothing is written. A rank equal to the stored `rank` is
+  skipped; each changed rank is written and gets one `supervisor.order` audit row (detail: number, from, to, reason).
+  Answers `{"changed": [numbers]}`. The state's task objects now carry `created_at`. No schema change (the `rank` column
+  is from the priority item). Tests: `tests/central/test_supervisor_e2e.py`.
 - Column `project_task.merged_at` (nullable; written by the merge route's `done` phase). **Migration:** run `python -m central init-db` once
   (it adds the column to an existing database and keeps all data); until then the new routes answer with the
   "database update needed" error. **Rollback:** deploy the previous code; the unused nullable column is harmless and may stay
   (to remove it: `ALTER TABLE project_task DROP COLUMN merged_at`).
+- **Task priority and dependencies** (`project_task.priority`, `depends_on`, `rank`; all nullable). `priority` is an integer,
+  lower is more urgent, NULL sorts last. `depends_on` is a list of task numbers of the same project (stored as JSON text,
+  returned by the task API as a list). `rank` is the queue position within a priority; the supervisor's order step
+  writes it (see **Queue order** below), and NULL sorts last. `priority` and `depends_on` are optional when a task is created: the
+  "Priority" and "Waits for tasks" fields of the new-task form (numbers separated by commas, `#3, 4` also works) and the
+  `priority` / `depends_on` keys of `POST /api/v1/tasks`. Create answers 400 for a priority that is not a whole number,
+  a `depends_on` that is not a list of task numbers, a number that is no task of the project, or the task's own number.
+  `POST /api/v1/tasks/next` keeps the status order (approved, building, changes requested, planning, open) and orders by
+  priority, then rank, then number within each status; it skips a task while any task in its `depends_on` is not `done`
+  (a rejected task never counts as done, so a person closes or edits the dependency). With none of the three set, the
+  order is the old one (by number). The task API's task objects now carry `priority`, `depends_on` and `rank`.
+  Tests: `tests/central/test_tasks.py`. **Migration:** run `python -m central init-db` once (it adds the three columns to
+  an existing database and keeps all data); until then task queries answer with the "database update needed" error.
+  **Rollback:** deploy the previous code; the unused nullable columns are harmless and may stay (to remove them:
+  `ALTER TABLE project_task DROP COLUMN priority`, and the same for `depends_on` and `rank`).
 
 ## Task screenshots (`attachments.py`)
 
@@ -250,8 +272,17 @@ may not stick over plain http. The API endpoints do not use the cookie.
 - `POST /api/v1/runners/beat?project=<slug>` (personal tokens only, developer or above) with
   `{label, state, task: N|null, spend_usd}`, sent by a watching runner each step and when idle. The first beat for a
   label creates the runner, owned by that person; a label belongs to one person per project, so another person's token
-  gets 403. Returns `{runner, control}`, where `control` is `null`, `"pause"` (wait without claiming) or `"stop"` (end
-  cleanly).
+  gets 403. Returns `{runner, control}`, where `control` is `null`, `"pause"` (wait without claiming), `"stop"` (end
+  cleanly) or `"wake"` (see Supervisor control below).
+- **Supervisor control:** `POST /api/v1/supervisor/runners/<id>/<pause|resume|wake>?project=<slug>` (personal token of a
+  `supervisor` account; anyone else gets 403, an unknown runner or action 404). The supervisor account also counts in
+  `runners.can_control`. Pause sets `control` to `"pause"` (409 on a runner asked to stop). **Resume** works only when the
+  pause was made by the supervisor (`control_by`); a person's pause or stop gets 403, nothing to resume 409. **`wake`** is a
+  new `control` value: the next beat returns `"wake"` ("look for work now") and clears it, so it is said once; it is refused
+  (409) while a pause or stop is pending. Repeating a call changes nothing (`changed: false`). Each change writes a
+  `supervisor.runner.pause`, `.resume` or `.wake` audit row. The Overview and Runs pages show **"Paused by the
+  Supervisor"** for a supervisor pause; what people do (Pause, Resume, Stop) is unchanged, and a person may resume the
+  supervisor's pause. Unverified on the live service.
 - A runner whose last beat is 2 hours old or more is **silent** (`silent: true`); its next beat brings it back.
 - Audit: `runner.start` (first beat of a label) and `runner.back` (a beat after silence); ordinary beats are not audited.
 - Table `runner` (init-db adds it to an existing database). The task API is unchanged. Unverified on the live service.

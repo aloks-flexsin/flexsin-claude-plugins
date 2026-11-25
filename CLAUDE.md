@@ -10,7 +10,10 @@ dashboard will live in `auto-runner/central/`.
 - `tests/auto_runner/` – pytest suite; `docs/doc-map.json` – which docs must change with which code
 
 ## Rules
-- Run `python -m pytest -q` and keep it green before every commit. New behaviour gets tests.
+- Before every commit, run only the tests the change can affect (for example `python -m pytest -q tests/central/test_tasks.py`)
+  and keep them green; a change to docs or a config value needs at most the tests that read it. The full suite runs on
+  every pull request (the `tests` check) and must pass before merging; run it locally only for a broad change (shared
+  helpers, the schema, the runner's core). New behaviour gets tests.
 - Tests never reach the network or live services; use fakes (see `tests/auto_runner/fake_central.py`).
 - Config comes from environment variables only; never commit secrets, `.env` files or real customer data.
 - When you change anything under `auto-runner/bin`, `commands` or `config.schema.json`, update `auto-runner/README.md` (the doc-map check enforces this).

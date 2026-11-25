@@ -1,4 +1,4 @@
-"""The Supervisor's pass (decision 0010). Today: the plan step and the merge step (`run_pass` does both). Standard library only; all I/O is injected.
+"""The Supervisor's pass (decision 0010): the plan, merge, order and control steps (`run_pass` does all four). Standard library only; all I/O is injected.
 
 `plan_step(project, http, read, base_ref)` reads the project's state (`GET /api/v1/supervisor/state`), loads the policy from
 the base ref through `read(ref, path) -> (text, blob_sha) | None` (autogates.load_policy), runs `plan_gate` on every task
@@ -127,10 +127,94 @@ def merge_step(project, http, read, base_ref, forge, merger):
     return out
 
 
+ORDER = '/api/v1/supervisor/order?project=%s'
+
+
+def order_step(project, http):
+    """Rank the open tasks (`autogates.order`) and send only the ranks that differ from the state's. -> list of
+    {"task", "rank", "reason", "error"} for the ranks it changed (empty when the order is already right)."""
+    status, state = http('GET', STATE % quote(project, safe=''))
+    if status != 200 or not isinstance(state, dict):
+        return [{'task': None, 'rank': None, 'reason': None, 'error': 'could not read the state'}]
+    current = {t.get('number'): t.get('rank') for t in state.get('tasks', [])}
+    changes = [o for o in gates.order(state.get('tasks', [])) if current.get(o['number']) != o['rank']]
+    if not changes:
+        return []
+    code, body = http('PUT', ORDER % quote(project, safe=''), {'orders': changes})
+    if code != 200 or not isinstance(body, dict):
+        return [{'task': None, 'rank': None, 'reason': None,
+                 'error': (body.get('error') if isinstance(body, dict) else None) or 'the order was refused'}]
+    return [dict(task=o['number'], rank=o['rank'], reason=o['reason'], error=None) for o in changes]
+
+
+CONTROL = '/api/v1/supervisor/runners/%s/%s?project=%s'
+READY_STATUSES = ('approved', 'building', 'changes_requested', 'planning', 'open')       # what take_next hands out
+
+
+def base_branch(loaded, base_ref):
+    """The branch whose CI the control step reads: the policy's `base`, else the base ref without `origin/`."""
+    policy = loaded.get('policy') or {}
+    return policy.get('base') or (base_ref[len('origin/'):] if base_ref.startswith('origin/') else base_ref)
+
+
+def ci_state(checks):
+    """'red' (any check failed), 'green' (at least one check, all success) or 'unknown' (none yet, or still running)."""
+    if any(c.get('state') == 'failure' for c in checks or []):
+        return 'red'
+    return 'green' if checks and all(c.get('state') == 'success' for c in checks) else 'unknown'
+
+
+def ready_for(tasks, person):
+    """True when `person` has a task a watcher could claim now: unclaimed, in a claimable status, every dependency done."""
+    done = {t.get('number') for t in tasks if t.get('status') == 'done'}
+    return any(t.get('assignee') == person and t.get('status') in READY_STATUSES and not t.get('runner')
+               and all(d in done for d in t.get('depends_on') or []) for t in tasks)
+
+
+def control_step(project, http, read, base_ref, forge):
+    """Pause, resume and wake the project's runners. -> list of {"runner", "action", "reason", "error"}; `action` is
+    "pause", "resume", "wake" or "silent" (listed, not touched).
+
+    CI on the base head red: pause every runner that has no pause or stop pending. Green: resume the runners the
+    supervisor paused (a person's pause is never resumed). No checks yet, or some still running: leave everything.
+    Not red: wake a runner that says `watching` with no control pending when its person has a task ready, so it polls
+    at once instead of after its idle wait. A runner that has not beaten for the silent limit is listed and never
+    touched. A failed read or call is reported and the pass goes on."""
+    status, state = http('GET', STATE % quote(project, safe=''))
+    if status != 200 or not isinstance(state, dict):
+        return [{'runner': None, 'action': None, 'reason': None, 'error': 'could not read the state'}]
+    loaded = gates.load_policy(read, base_ref)
+    try:
+        ci = ci_state(forge.base_checks(base_branch(loaded, base_ref)))
+    except autoforge.ForgeError as e:
+        return [{'runner': None, 'action': None, 'reason': None, 'error': 'could not read CI on the base: %s' % e}]
+    out, tasks = [], state.get('tasks', [])
+
+    def act(runner, action, reason):
+        code, body = http('POST', CONTROL % (runner['id'], action, quote(project, safe='')))
+        ok = code == 200 and isinstance(body, dict)
+        err = None if ok else (body.get('error') if isinstance(body, dict) else None) or 'refused'
+        out.append({'runner': runner.get('label'), 'action': action, 'reason': reason, 'error': err})
+
+    for r in state.get('runners', []):
+        if r.get('silent'):
+            out.append({'runner': r.get('label'), 'action': 'silent', 'reason': 'no beat for a while; not touched', 'error': None})
+        elif ci == 'red' and r.get('control') in (None, 'wake'):               # a pending pause or stop is left as it is
+            act(r, 'pause', 'CI on the base is red')
+        elif ci == 'green' and r.get('paused_by_supervisor'):
+            act(r, 'resume', 'CI on the base is green again')
+        elif ci != 'red' and r.get('state') == 'watching' and not r.get('control') and ready_for(tasks, r.get('person')):
+            act(r, 'wake', 'a task is ready')
+    return out
+
+
 def run_pass(project, http, read, base_ref, forge, merger):
-    """One Supervisor pass: the plan step, then the merge step. -> {"plans": [...], "merges": [...]}."""
+    """One Supervisor pass: the plan step, the merge step, the order step, then the control step.
+    -> {"plans": [...], "merges": [...], "orders": [...], "controls": [...]}."""
     return {'plans': plan_step(project, http, read, base_ref),
-            'merges': merge_step(project, http, read, base_ref, forge, merger)}
+            'merges': merge_step(project, http, read, base_ref, forge, merger),
+            'orders': order_step(project, http),
+            'controls': control_step(project, http, read, base_ref, forge)}
 
 
 # ---- entry point (`/auto-runner:supervisor`) ----
@@ -194,6 +278,17 @@ def summary(result):
     for m in result['merges']:
         what = 'task %s %s' % (m['task'], m['outcome']) if m['task'] is not None else m['outcome']
         lines.append('merge: ' + what + (': ' + '; '.join(m['reasons']) if m['reasons'] else ''))
+    for o in result.get('orders', []):
+        lines.append('order: ' + (o['error'] if o['task'] is None else
+                                  'task %s -> rank %s (%s)' % (o['task'], o['rank'], o['reason'])))
+    for c in result.get('controls', []):
+        if c['action'] is None:
+            lines.append('control: ' + c['error'])
+        elif c['action'] == 'silent':
+            lines.append('control: runner %s is silent (%s)' % (c['runner'], c['reason']))
+        else:
+            lines.append('control: %s %s (%s)%s' % (c['action'], c['runner'], c['reason'],
+                                                    ': ' + c['error'] if c['error'] else ''))
     return lines or ['Nothing to do: no plan waits and no pull request is ready.']
 
 
@@ -276,7 +371,8 @@ def main(argv=None, env=None, http=None, read=None, forge=None, out=print):
                       forge, env['AUTO_SUPERVISOR_MERGER'])
     for line in summary(result):
         out(line)
-    bad = [p for p in result['plans'] if p['error']] + [m for m in result['merges'] if m['outcome'] in ('error', 'failed')]
+    bad = [p for p in result['plans'] if p['error']] + [m for m in result['merges'] if m['outcome'] in ('error', 'failed')] + [
+        o for o in result.get('orders', []) if o['error']] + [c for c in result.get('controls', []) if c['error']]
     return EXIT_ERRORS if bad else EXIT_OK
 
 

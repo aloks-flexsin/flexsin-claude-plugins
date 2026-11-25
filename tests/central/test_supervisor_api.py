@@ -1,6 +1,6 @@
 import pytest
 
-from central import accounts, audit, personal, projects, tasks
+from central import accounts, audit, personal, projects, runners, tasks
 
 from .test_tasks import PW, START, add, clock, decide, plan, take, team  # noqa: F401  (fixtures)
 from .test_repo_url import AT, conn, world  # noqa: F401  (fixtures)
@@ -209,3 +209,61 @@ def test_a_plan_the_supervisor_added_is_decided_by_a_person(app, team, conn, sup
     assert rows(conn, 'supervisor.plan.approve') == [] and len(rows(conn, 'supervisor.plan.escalate')) == 1
     assert decide(team, n, 'approve').status_code == 302                    # the assignee, a person, approves it
     assert tasks.get(conn, team['alpha']['id'], n)['status'] == 'approved'
+
+
+def runner_action(app, token, runner_id, action, project='alpha'):
+    return new_client(app).post('/api/v1/supervisor/runners/%s/%s?project=%s' % (runner_id, action, project),
+                                headers={'Authorization': 'Bearer ' + token})
+
+
+@pytest.fixture
+def a_runner(app, team, conn):
+    from .test_runners import LABEL, beat
+    beat(app, team)
+    return runners.get(conn, team['alpha']['id'], LABEL)
+
+
+def test_supervisor_pauses_resumes_and_wakes_a_runner(app, team, conn, sup_token, a_runner):
+    from .test_runners import beat
+    rid = a_runner['id']
+    resp = runner_action(app, sup_token, rid, 'pause')
+    assert resp.status_code == 200 and resp.get_json()['changed'] and resp.get_json()['runner']['control'] == 'pause'
+    assert runner_action(app, sup_token, rid, 'pause').get_json()['changed'] is False      # repeating changes nothing
+    assert beat(app, team).get_json()['control'] == 'pause'
+    assert runner_action(app, sup_token, rid, 'wake').status_code == 409                   # a pause is not overridden
+    assert runner_action(app, sup_token, rid, 'resume').get_json()['runner']['control'] is None
+    assert runner_action(app, sup_token, rid, 'resume').status_code == 409                 # nothing left to resume
+    assert runner_action(app, sup_token, rid, 'wake').get_json()['runner']['control'] == 'wake'
+    assert beat(app, team).get_json()['control'] == 'wake' and beat(app, team).get_json()['control'] is None
+    assert [r['action'] for r in audit.rows(conn) if r['action'].startswith('supervisor.runner.')] == [
+        'supervisor.runner.pause', 'supervisor.runner.resume', 'supervisor.runner.wake']
+
+
+def test_supervisor_cannot_resume_a_persons_pause(app, team, conn, sup_token, a_runner):
+    from .test_runner_pages import control_url, post
+    assert post(team['clients']['dev'], control_url(a_runner, 'pause'), confirm='1').status_code == 302
+    assert runner_action(app, sup_token, a_runner['id'], 'resume').status_code == 403
+    assert runners.get(conn, team['alpha']['id'], a_runner['label'])['control'] == 'pause'
+    assert runner_action(app, sup_token, a_runner['id'], 'wake').status_code == 409
+    assert audit.rows(conn, 'supervisor.runner.resume') == []
+
+
+def test_runner_control_is_for_the_supervisor_only(app, team, conn, sup_token, a_runner):
+    rid = a_runner['id']
+    assert runner_action(app, team['token']['dev'], rid, 'pause').status_code == 403
+    assert runner_action(app, team['token']['manager'], rid, 'pause').status_code == 403
+    assert new_client(app).post('/api/v1/supervisor/runners/%s/pause?project=alpha' % rid).status_code == 401
+    assert runner_action(app, sup_token, rid, 'stop').status_code == 404
+    assert runner_action(app, sup_token, rid, 'nope').status_code == 404
+    assert runner_action(app, sup_token, 'nope', 'pause').status_code == 404
+    assert runner_action(app, sup_token, rid, 'pause', project='nope').status_code == 404
+    assert runners.get(conn, team['alpha']['id'], a_runner['label'])['control'] is None
+
+
+def test_a_supervisor_task_can_carry_priority_and_dependencies(app, team, conn, sup_token):
+    first = add_as_supervisor(app, sup_token, title='First').get_json()['task']['number']
+    resp = add_as_supervisor(app, sup_token, title='Second', priority=1, depends_on=[first])
+    assert resp.status_code == 201
+    row = tasks.get(conn, team['alpha']['id'], resp.get_json()['task']['number'])
+    assert row['priority'] == 1 and tasks.depends_of(row) == [first]
+    assert add_as_supervisor(app, sup_token, title='Bad', depends_on=[999]).status_code == 400

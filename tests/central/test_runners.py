@@ -111,3 +111,12 @@ def test_init_db_adds_the_runner_table_to_an_existing_database(db_url):
     finally:
         conn.close()
     db.init_db(db_url)                                               # a second run changes nothing
+
+
+def test_beat_returns_wake(app, team, conn):
+    beat(app, team)
+    conn.execute("UPDATE runner SET control = 'wake' WHERE label = ?", (LABEL,))
+    conn.commit()
+    body = beat(app, team).get_json()
+    assert body['control'] == 'wake' and body['runner']['control'] == 'wake'
+    assert beat(app, team).get_json()['control'] is None             # said once, then cleared

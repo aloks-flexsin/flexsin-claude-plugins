@@ -138,3 +138,34 @@ def test_merge_policy_keys_validated():
     assert err is None and good['merge'] == dict(review='none')
     for bad in (dict(review='maybe'), dict(method='fast'), dict(other=1), 'x'):
         assert g.parse_policy(json.dumps(dict(POLICY, merge=bad)))[0] is None
+
+
+def ot(number, priority=None, depends_on=(), created_at='2026-01-01T00:00:00Z', status='open'):
+    return dict(number=number, priority=priority, depends_on=list(depends_on), created_at=created_at, status=status)
+
+
+def numbers(result):
+    return [o['number'] for o in result]
+
+
+def test_order_never_crosses_priority():
+    # a task that unblocks many others and is the oldest still sits behind a more urgent (lower) priority
+    tasks = [ot(1, priority=2, created_at='2026-01-01'), ot(2, priority=2, depends_on=[1]), ot(3, priority=2, depends_on=[1]),
+             ot(4, priority=1, created_at='2026-03-01'), ot(5, created_at='2025-01-01'), ot(6, depends_on=[5])]
+    assert numbers(g.order(tasks)) == [4, 1, 2, 3, 5, 6]          # priority 1, then 2, then none last
+    assert [o['rank'] for o in g.order(tasks)] == [1, 2, 3, 4, 5, 6]
+
+
+def test_order_unblockers_then_age_then_number():
+    tasks = [ot(1, created_at='2026-01-01'), ot(2, created_at='2026-02-01'), ot(3, created_at='2026-03-01'),
+             ot(4, depends_on=[3], created_at='2026-04-01'), ot(5, depends_on=[3, 2], created_at='2026-05-01'),
+             ot(6, created_at='2026-01-01')]
+    result = g.order(tasks)
+    assert numbers(result) == [3, 2, 1, 6, 4, 5]
+    assert 'unblocks 2 tasks' in result[0]['reason'] and 'unblocks 1 task,' in result[1]['reason']
+
+
+def test_order_leaves_out_closed_tasks_and_ignores_them_as_blocked():
+    tasks = [ot(1, status='done'), ot(2, status='rejected', depends_on=[3]), ot(3), ot(4, depends_on=[1, 99, 4])]
+    assert numbers(g.order(tasks)) == [3, 4]
+    assert 'unblocks' not in g.order(tasks)[0]['reason'] and g.order([]) == [] and g.order(None) == []
