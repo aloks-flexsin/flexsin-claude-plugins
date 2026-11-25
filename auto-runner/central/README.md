@@ -263,6 +263,16 @@ browser and posts its endpoint to the unsubscribe URL. Requests go only to same-
 works under the CSP (`default-src 'self'` covers the worker and `fetch`). Not yet tried in a real browser
 (**unverified**); the tests check the headers and that the handlers exist.
 
+**Ask once per browser.** When push is set up (all three VAPID settings), every signed-in page except the Account page
+(which has its own section) carries a hidden bar under the top bar, `<div class="push-ask" data-push-ask>` with the
+public key, the CSRF token and the subscribe URL, the text "Get a notification when a plan or blocker waits for you."
+and the buttons **Turn on** and **Not now** (`shell.py` adds `push_ask_key` to the page context; `base.html` renders
+it). `static/app.js` shares `enablePush(box)` (permission, register `/sw.js`, subscribe, post) between the Account page
+and the bar, and shows the bar only when the browser supports push, `Notification.permission` is not `denied`, this
+browser has no subscription yet and `localStorage["push-ask"]` is unset (storage errors keep the bar hidden). Turn on
+subscribes, hides the bar and stores `done`; a refusal shows the same "blocked" message in the bar; Not now hides it
+and stores `dismissed`. Not yet tried in a real browser (**unverified**).
+
 **Sending pushes.** `notifications.notify` pushes each notification it adds to every subscription of its recipient
 (`push.send_to_account`), with the payload `{"title": project name, "body": text, "link": link, "tag": key}`, through
 `push_sender(subscription, payload, vapid, timeout=5)`: in production `push.push_sender`, which uses `pywebpush` (in
