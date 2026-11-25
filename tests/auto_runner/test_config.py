@@ -268,6 +268,12 @@ def test_planner_prompt_names_every_required_section():
         assert needle in text
 
 
+def test_planner_prompt_tells_the_planner_to_read_screenshots():
+    text = (BIN.parent / 'docs' / 'planner-prompt.md').read_text(encoding='utf-8')
+    assert 'screenshots' in text.lower()
+    assert 'SCREENSHOTS' in text
+
+
 QUEUE = """# Queue
 
 - [x] **A1 Old.** done earlier, described in enough words to count as a real item here.

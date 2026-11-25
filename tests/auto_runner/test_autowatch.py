@@ -250,6 +250,66 @@ def test_a_build_stopped_by_the_usage_limit_waits_before_the_next_claim(watched,
     assert watch_file(watched)['state'] == 'waiting_usage_limit'
 
 
+def approved(watched, central, team, env):
+    n = add_task(central, team)['number']
+    ar.autotasks.take_next(watched, env, central.send)
+    ar.autotasks.post_plan(watched, n, PLAN, ITEMS, env, central.send)
+    approve(central, team, n)
+    return n
+
+
+def test_a_build_that_only_waited_is_reported_as_waiting(watched, central, team, env, capsys):
+    n = approved(watched, central, team, env)
+    slugs = []
+    clock = Clock()
+    assert watch(watched, central, env, clock, build=lambda p, slug, *a: slugs.append(slug) or 0, max_steps=1) == 0
+    assert (watched / '.auto' / 'pending' / slugs[0]).is_dir()         # the run left its request pending
+    out = capsys.readouterr().out
+    assert f'task {n} (build): waiting, waits for an earlier branch to be merged' in out and ': done,' not in out
+    beat = watch_file(watched)
+    assert beat['state'] == 'waiting_for_merge'
+    assert beat['last']['ok'] is True and beat['last']['waiting'] is True
+    assert beat['last']['detail'] == 'waits for an earlier branch to be merged'
+    assert sum(clock.slept) == POLL                                     # one poll before the next step
+
+
+def test_a_failed_build_with_its_request_pending_is_still_a_failure(watched, central, team, env, capsys):
+    n = approved(watched, central, team, env)
+    clock = Clock()
+    assert watch(watched, central, env, clock, build=lambda *a: 1, max_steps=1) == 0
+    assert f'task {n} (build): failed, runner exit 1' in capsys.readouterr().out
+    beat = watch_file(watched)
+    assert beat['state'] == 'waiting_after_failure'
+    assert beat['last']['ok'] is False and 'waiting' not in beat['last']
+    assert sum(clock.slept) == POLL
+
+
+def test_a_build_that_removes_its_request_is_done(watched, central, team, env, capsys):
+    import shutil
+    n = approved(watched, central, team, env)
+
+    def build(project, slug, *a):
+        shutil.rmtree(Path(project) / '.auto' / 'pending' / slug)
+        return 0
+
+    result = aw.step(watched, FakeClaude(), env, central.send, build=build)
+    assert result['ok'] is True and 'waiting' not in result and result['detail'] == 'runner exit 0'
+    clock = Clock()
+    approved(watched, central, team, env)
+    assert watch(watched, central, env, clock, build=build, max_steps=1) == 0
+    out = capsys.readouterr().out
+    assert '(build): done, runner exit 0' in out and 'waiting' not in out
+    assert clock.slept == [] and n                          # done: the next step comes straight away, no heartbeat
+
+
+def test_a_usage_limit_with_exit_0_and_the_request_pending_is_not_waiting(watched, central, team, env):
+    approved(watched, central, team, env)
+    meter = aw.Meter(watched, Clock().time)
+    meter.limit = {'reset': None}
+    result = aw.step(watched, FakeClaude(), env, central.send, build=lambda *a: 0, meter=meter)
+    assert result['ok'] is True and 'waiting' not in result
+
+
 def test_a_second_watcher_on_the_same_checkout_refuses_to_build(watched, central, team, env, capsys):
     add_task(central, team)
     first = aw._runner().Lock(watched / aw.LOCK_FILE)

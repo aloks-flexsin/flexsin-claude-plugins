@@ -145,6 +145,29 @@ def test_sent_back_comment_reaches_the_prompt(setup):
     assert 'Also cover the PDF export please.' in prompt and 'Let managers export the report as CSV.' in prompt
 
 
+def test_no_screenshots_leaves_the_prompt_without_the_section(setup):
+    claude = FakeClaude([PLAN])
+    run(setup, claude)
+    assert 'SCREENSHOTS attached to the task' not in claude.planner_prompts()[0]   # the section header; the prompt file only mentions it
+
+
+def test_screenshots_are_downloaded_and_named_before_the_task(setup):
+    p, svc = setup
+    svc.attach(7, 'a1', 'login.png', b'\x89PNG-one')
+    svc.attach(7, 'a2', 'gone.png', b'x')
+    del svc.files[(7, 'a2')]                                       # listed but cannot be downloaded
+    claude = FakeClaude([PLAN])
+    r = run(setup, claude)
+    assert r['status'] == 'posted'                                 # a failed download never stops planning
+    prompt = claude.planner_prompts()[0]
+    saved = ap.autotasks.attachments_dir(p, 7) / 'a1-login.png'
+    assert saved.read_bytes() == b'\x89PNG-one'
+    assert prompt.index('SCREENSHOTS') < prompt.index('TASK 7:')
+    assert f'- {saved}' in prompt and 'Read' in prompt
+    assert 'NOT downloaded' in prompt and 'gone.png' in prompt
+    assert [d for d in svc.downloads if d == (7, 'a1')]
+
+
 def test_prompt_file_is_loaded(setup, monkeypatch, tmp_path):
     claude = FakeClaude([PLAN])
     run(setup, claude)

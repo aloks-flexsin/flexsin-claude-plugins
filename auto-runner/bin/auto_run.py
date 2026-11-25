@@ -448,9 +448,18 @@ def update_base(project, remote, base, dry_run=False):
     return start
 
 
+TASK_FOLDER = re.compile(r'task-(\d+)(?:-|$)')
+
+
+def _request_order(d):
+    """`task-<N>-...` folders first, by their number (task-9 before task-10), then the others by name."""
+    m = TASK_FOLDER.match(d.name)
+    return (0, int(m.group(1)), d.name) if m else (1, 0, d.name)
+
+
 def pending_requests(project):
-    pending = project / AUTO_DIR / 'pending'
-    return sorted(p for p in pending.iterdir() if p.is_dir()) if pending.exists() else []
+    pending = Path(project) / AUTO_DIR / 'pending'
+    return sorted((p for p in pending.iterdir() if p.is_dir()), key=_request_order) if pending.exists() else []
 
 
 def request_errors(d, qtext, cfg):
