@@ -119,8 +119,8 @@ def test_finish_and_wait_note_report_their_failures(tmp_path):
     assert at.wait_note(svc.transport(), req, 'waits', on_error=lambda s, r: seen.append((s, r))) is False
     current_task(tmp_path, 5, 'claim-1')
     line = at.finish(svc.transport(), tmp_path, True, 'b', None, 'done', on_error=lambda s, r: seen.append((s, r)))
-    assert line.startswith('task 5: could not report')                 # FakeTasks has no report route: 404
-    assert seen == [(409, '/api/v1/tasks/N/heartbeat'), (404, '/api/v1/tasks/N/report')]
+    assert line.startswith('task 5: could not report')                 # the task is planning, not being built: 409
+    assert seen == [(409, '/api/v1/tasks/N/heartbeat'), (409, '/api/v1/tasks/N/report')]
 
 
 # ---------- autodeliver.push: skipped_status and error_status ----------

@@ -465,6 +465,23 @@ def request_errors(d, qtext, cfg):
     return itext, errors
 
 
+def item_text(block):
+    """An item's text for comparing a request with the queue: the block without its tick, without any status line the
+    runner added, without blank lines and trailing spaces."""
+    lines = [line.rstrip() for line in block.splitlines() if line.strip() and not queue.STATUS.match(line)]
+    if lines:
+        lines[0] = re.sub(r'^- \[[ x]\] ', '', lines[0])
+    return '\n'.join(lines)
+
+
+def already_queued(qtext, itext):
+    """True when the request `itext` has items and every one of them is already in the queue `qtext` with the same item
+    text (a request taken again after a run of it stopped part-way: it resumes instead of being refused)."""
+    asked = queue.parse_items(itext)
+    have = {i: item_text(b) for i, _, b in queue.parse_items(qtext)}
+    return bool(asked) and all(have.get(i) == item_text(b) for i, _, b in asked)
+
+
 def first_valid_request(project, cfg, qtext):
     """-> (slug, items text) of the oldest pending request that passes its check, or (None, '')."""
     for d in pending_requests(project):
@@ -1102,6 +1119,21 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         if not req.exists():
             raise RunnerError(f'No request at {req} (expected items.md).')
         qsrc = wt / queue_rel if (wt / queue_rel).exists() else pq
+        waiting = (f"a run is in progress. Request '{enqueue}' is checked and waiting; it starts on a new branch in a "
+                   "later run (one request per branch).")
+        if already_queued(qsrc.read_text(encoding='utf-8') if qsrc.exists() else '', req.read_text(encoding='utf-8')):
+            if lock.held():                 # the run that holds it works on it: touch neither the folder nor the task
+                say(waiting)
+                return 0
+            on = (git(wt, 'branch', '--show-current', check=False) if wt.exists() else '') or \
+                (git(project, 'branch', '--show-current', check=False) or 'HEAD')
+            say(f"request '{enqueue}' is already queued on {on}: resuming it")
+            if not dry_run:
+                # the claim autotasks.start wrote last is the one this run beats and reports with
+                autotasks.adopt(auto, req.parent)
+                shutil.rmtree(req.parent)
+            enqueue = ''
+    if enqueue:
         _, errors = queue.validate(qsrc.read_text(encoding='utf-8'), req.read_text(encoding='utf-8'),
                                    require_kind=autocfg.changelog(cfg)['enabled'],
                                    require_slice=autocfg.principles(cfg)['require_slices'])
@@ -1112,8 +1144,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             say('Not added:\n- ' + '\n- '.join(errors))
             return 1
         if lock.held():
-            say(f"a run is in progress. Request '{enqueue}' is checked and waiting; it starts on a new branch in a later run "
-                "(one request per branch).")
+            say(waiting)
             return 0
     if not dry_run:
         if claude is run_claude and not shutil.which('claude'):

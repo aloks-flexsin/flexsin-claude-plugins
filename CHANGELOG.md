@@ -4,6 +4,13 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+### Fixed
+- Runner: re-enqueuing a request that is already queued (every item ID present with the same text) resumes it instead of
+  refusing it, so a central task stopped after its first item and taken again by watch mode works its remaining items
+  on the same branch and reports with its new claim. The pending folder is removed and its `task.json` adopted; while
+  another run holds the lock the request only waits, untouched. The test fake `FakeTasks` now hands out build tasks
+  with a fresh claim and takes `POST /api/v1/tasks/N/report`. Unverified against the live service.
+
 ### Added
 - Central: runner frictions close the loop (decision record 0011). Rejecting a drafted friction task (rejecting its plan
   or closing it) mutes the signature with "task #N rejected"; a task reported done marks it `fixed`. A fixed signature
