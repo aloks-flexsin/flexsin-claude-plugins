@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from central import accounts, audit, personal, projects, tasks
+from central import accounts, audit, personal, projects, runners, tasks
 from tests.auto_runner.test_runner import ar
 
 from .test_account_admin import new_client
@@ -275,3 +275,89 @@ def test_the_order_route_is_supervisor_only_and_validates(app, team, conn, sup):
     assert tasks.get(conn, team['alpha']['id'], n)['rank'] == 3
     [row] = audit_for(conn, 'supervisor.order')
     assert row['detail'] == {'number': n, 'from': None, 'to': 3, 'reason': 'why'}
+
+
+# ---------- the control step: journey J7 ----------
+
+RED = [dict(name='tests', state='failure')]
+GREEN = [dict(name='tests', state='success')]
+
+
+def control(http, forge):
+    return sup_mod.control_step('alpha', http, reader(), 'origin/main', forge)
+
+
+def controls(conn, team):
+    return {r['label']: (r['control'], r['control_role']) for r in runners.for_project(conn, team['alpha']['id'])}
+
+
+def test_pause_when_main_red_j7(app, team, conn, sup, clock):
+    from datetime import timedelta
+    from .test_runners import beat
+    http = http_for(app, sup)
+    forge = FakeForge(base=RED)
+    beat(app, team, label='dev-old')                                                 # will go silent
+    clock.now = clock.now + timedelta(hours=3)
+    beat(app, team, label='dev-1')
+    beat(app, team, label='dev-2')
+    beat(app, team, label='dev-busy', state='building #4', task=4)
+    beat(app, team, who='manager', label='mgr-1')
+    conn.execute("UPDATE runner SET control = 'pause', control_by = ? WHERE label = 'dev-2'",
+                 (team['accounts']['dev']['id'],))                                   # a person paused this one
+    conn.commit()
+    # main is red: every live runner without a control is paused; the person's pause and the silent runner are left
+    out = {c['runner']: c['action'] for c in control(http, forge)}
+    assert out == {'dev-old': 'silent', 'dev-1': 'pause', 'dev-busy': 'pause', 'mgr-1': 'pause'}
+    state = controls(conn, team)
+    assert state['dev-1'] == ('pause', 'supervisor') and state['dev-2'] == ('pause', 'user')
+    assert state['dev-old'] == (None, None)
+    assert len(audit_for(conn, 'supervisor.runner.pause')) == 3
+    assert beat(app, team, label='dev-1').get_json()['control'] == 'pause'
+    again = control(http, forge)                                                      # a second pass pauses nothing more
+    assert [c['action'] for c in again] == ['silent'] and len(audit_for(conn, 'supervisor.runner.pause')) == 3
+    # CI still running, or no checks yet: nothing is resumed
+    for checks in ([], [dict(name='tests', state='pending')]):
+        assert [c['action'] for c in control(http, FakeForge(base=checks))] == ['silent']
+    # main is green: only the runners the supervisor paused are resumed
+    out = {c['runner']: c['action'] for c in control(http, FakeForge(base=GREEN))}
+    assert out == {'dev-old': 'silent', 'dev-1': 'resume', 'dev-busy': 'resume', 'mgr-1': 'resume'}
+    state = controls(conn, team)
+    assert state['dev-2'] == ('pause', 'user') and state['dev-1'][0] is None and state['dev-old'][0] is None
+    assert len(audit_for(conn, 'supervisor.runner.resume')) == 3
+
+
+def test_wake_an_idle_watcher_when_a_task_is_ready(app, team, conn, sup, clock):
+    from datetime import timedelta
+    from .test_runners import beat
+    http = http_for(app, sup)
+    beat(app, team, label='dev-1')
+    beat(app, team, label='dev-busy', state='building #9', task=9)
+    beat(app, team, who='manager', label='mgr-1')
+    assert [c for c in control(http, FakeForge(base=GREEN)) if c['action']] == []     # nothing is ready
+    ready = add(team, title='Ready')
+    waits = add(team, title='Waits', depends_on=str(ready))
+    out = control(http, FakeForge(base=GREEN))
+    assert [(c['runner'], c['action'], c['error']) for c in out] == [('dev-1', 'wake', None)]   # not busy, not another person's
+    assert len(audit_for(conn, 'supervisor.runner.wake')) == 1
+    assert beat(app, team, label='dev-1').get_json()['control'] == 'wake'
+    assert control(http, FakeForge(base=GREEN))[0]['action'] == 'wake'                # said once, woken again while still ready
+    # once the ready task is claimed, the one that waits on it is not ready, so nobody is woken
+    assert take(app, team, runner='dev-busy')['task']['number'] == ready
+    assert [c for c in control(http, FakeForge(base=GREEN)) if c['action'] == 'wake'] == [] and waits
+    # red main: the runners are paused, never woken
+    assert sorted((c['runner'], c['action']) for c in control(http, FakeForge(base=RED))) == [
+        ('dev-1', 'pause'), ('dev-busy', 'pause'), ('mgr-1', 'pause')]
+
+
+def test_the_control_step_reports_failures_and_runs_in_the_pass(app, team, conn, sup):
+    from tests.auto_runner.fake_forge import FakeForge as F
+
+    class Broken(F):
+        def base_checks(self, branch):
+            raise sup_mod.autoforge.ForgeError('boom', 500)
+    http = http_for(app, sup)
+    [bad] = control(http, Broken())
+    assert bad['action'] is None and 'boom' in bad['error']
+    result = sup_mod.run_pass('alpha', http, reader(), 'origin/main', F(base=RED), MERGER)
+    assert result['controls'] == [] and 'control' not in ' '.join(sup_mod.summary(result))
+    assert sup_mod.control_step('alpha', lambda m, p, b=None: (403, {}), reader(), 'origin/main', F())[0]['error']

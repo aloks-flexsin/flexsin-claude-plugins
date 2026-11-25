@@ -296,8 +296,8 @@ def test_beats_carry_the_state_task_and_spend(watched, central, team, env):
     n = add_task(central, team)['number']
     runners, clock = presence(central), Clock()
     assert watch_via(watched, runners, env, clock, max_steps=2) == 0       # plans it, then idles
-    assert runners.states() == ['watching', f'planning #{n}', 'watching']
-    assert [b['task'] for b in runners.beats] == [None, n, None]
+    assert runners.states() == ['watching', f'planning #{n}', 'watching', 'watching']    # the last: mid-way in the idle wait
+    assert [b['task'] for b in runners.beats] == [None, n, None, None]
     assert all(b['label'] == LABEL for b in runners.beats)
     assert runners.beats[0]['spend_usd'] == 0 and runners.beats[2]['spend_usd'] == pytest.approx(0.15)
     assert runners.order[:3] == ['beat', '/api/v1/tasks/next', 'beat']      # a beat before each claim, then on claiming
@@ -388,3 +388,34 @@ def test_presence_and_stop_through_the_real_service(watched, central, team, env)
     assert watch(watched, central, env, clock) == 0                         # a person pressed Stop on the pages
     assert [c[1].split('?')[0] for c in central.calls[before:]] == ['https://central.test/api/v1/runners/beat']
     assert watch_file(watched)['state'] == 'stopped'
+
+
+def test_wake_polls_at_once(watched, central, team, env, capsys):
+    """An idle watcher beats during its wait; a `wake` from the Supervisor ends the wait and claims at once."""
+    runners = presence(central)
+    seen = {}
+
+    def on_sleep():
+        if len(clock.slept) == 2:                       # ten seconds into the idle wait a task is ready, and it is woken
+            seen['n'] = add_task(central, team)['number']
+            runners.control = 'wake'
+
+    clock = Clock(on_sleep=on_sleep)
+    assert watch_via(watched, runners, env, clock, max_steps=2) == 0
+    assert sum(clock.slept) == aw.IDLE_BEAT < POLL      # not the whole poll
+    assert claims(runners) == 2 and server_task(central, seen['n'])['status'] == 'plan_review'
+    assert runners.states()[:3] == ['watching', 'watching', f'planning #{seen["n"]}']
+    assert 'woken from the service' in capsys.readouterr().out
+
+
+def test_idle_wait_without_a_wake_still_lasts_one_poll(watched, central, env):
+    runners, clock = presence(central), Clock()
+    assert watch_via(watched, runners, env, clock, max_steps=1) == 0
+    assert sum(clock.slept) == POLL and claims(runners) == 1
+    assert runners.states() == ['watching', 'watching']      # one beat in the middle of the wait
+
+
+def test_a_stop_seen_in_the_idle_wait_ends_the_loop(watched, central, env):
+    runners, clock = presence(central), Clock(on_sleep=lambda: setattr(runners, 'control', 'stop'))
+    assert watch_via(watched, runners, env, clock) == 0
+    assert claims(runners) == 1 and watch_file(watched)['state'] == 'stopped' and sum(clock.slept) == aw.IDLE_BEAT

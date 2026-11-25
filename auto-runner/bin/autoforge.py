@@ -12,6 +12,7 @@ import logging
 import os
 import urllib.error
 import urllib.request
+from urllib.parse import quote
 
 log = logging.getLogger('autoforge')
 
@@ -42,6 +43,10 @@ class Forge:
 
     def checks(self, number):
         """-> list of {name, state} for the PR head, state one of success, failure, pending"""
+        raise NotImplementedError
+
+    def base_checks(self, branch):
+        """-> list of {name, state} for the head of branch `branch` (CI on the base), same shape as `checks`"""
         raise NotImplementedError
 
     def reviews(self, number):
@@ -124,6 +129,10 @@ class GithubForge(Forge):
     def checks(self, number):
         sha = self.pr(number)['head_sha']
         runs = self._pages(f'/repos/{self.repo}/commits/{sha}/check-runs')
+        return [{'name': r.get('name', ''), 'state': _check_state(r)} for r in runs]
+
+    def base_checks(self, branch):
+        runs = self._pages(f'/repos/{self.repo}/commits/{quote(branch, safe="")}/check-runs')
         return [{'name': r.get('name', ''), 'state': _check_state(r)} for r in runs]
 
     def reviews(self, number):

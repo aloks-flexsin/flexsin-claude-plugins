@@ -310,7 +310,7 @@ Test layout: central tests go in `tests/central/`. Runner and gate tests go in `
   *Slice:* 3 Queue order and runner control
   *Kind:* feature
 
-- [ ] **B12 Pause, resume and wake step.** The pass pauses a project's runners when CI on the base head is red and resumes the ones it paused when it is green. It also wakes an idle watcher when a task is ready. Make `autowatch.py` poll at once on `wake` (verify its beat handling). A watcher that is silent is listed in the summary and is not touched. Update `auto-runner/README.md` in the same commit.
+- [x] **B12 Pause, resume and wake step.** The pass pauses a project's runners when CI on the base head is red and resumes the ones it paused when it is green. It also wakes an idle watcher when a task is ready. Make `autowatch.py` poll at once on `wake` (verify its beat handling). A watcher that is silent is listed in the summary and is not touched. Update `auto-runner/README.md` in the same commit.
   *Acceptance:* `tests/central/test_supervisor_e2e.py::test_pause_when_main_red_j7` passes, and `tests/auto_runner/test_autowatch.py::test_wake_polls_at_once` passes.
   *Slice:* 3 Queue order and runner control
   *Kind:* feature

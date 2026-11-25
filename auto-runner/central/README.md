@@ -168,7 +168,8 @@ may not stick over plain http. The API endpoints do not use the cookie.
   role is accepted). It returns `{project, tasks, runners, blockers}`: each task has the `/api/v1/tasks/<N>` fields plus
   `plan_rounds` (the count of the task's `supervisor.plan.changes` audit rows), `plan_decided` (the supervisor's decision
   on the task's current plan post, or null; a new plan post starts afresh) and `merged_at`; runners use the runner API
-  shape; blockers are the open ones (`OPEN`, `ESCALATED`). No claim ids appear and nothing is written.
+  shape plus `id` (what the runner-control route takes) and `paused_by_supervisor` (a pause the supervisor made, so
+  the control step resumes only those); blockers are the open ones (`OPEN`, `ESCALATED`). No claim ids appear and nothing is written.
 - **Plan decision** `POST /api/v1/supervisor/tasks/<n>/plan-decision?project=<slug>` with
   `{"decision": "approve" | "changes" | "escalate", "reasons": [...], "policy_sha": "...", "comment": "..."}`. Needs the
   `supervisor` account role (403 otherwise, 401 without a token) and, for approve and changes, membership as manager (it

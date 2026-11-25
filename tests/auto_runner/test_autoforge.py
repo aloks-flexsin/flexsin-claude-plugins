@@ -106,7 +106,7 @@ def test_missing_token_refused_without_calling():
 
 def test_interface_exposes_no_write_to_branch_method():
     public = {n for n in dir(Forge) if not n.startswith('_')}
-    assert public == {'pr', 'changed_files', 'checks', 'reviews', 'merge'}
+    assert public == {'pr', 'changed_files', 'checks', 'base_checks', 'reviews', 'merge'}
     for cls in (GithubForge, fake_forge.FakeForge):
         extra = {n for n in dir(cls) if not n.startswith('_')} - public
         assert not [n for n in extra if any(w in n for w in ('push', 'commit', 'write', 'update', 'branch', 'ref'))]

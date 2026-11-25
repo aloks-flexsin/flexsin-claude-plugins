@@ -100,7 +100,9 @@ def state():
     marks = plan_marks(db, project["id"])
     return jsonify(project=project["slug"],
                    tasks=[_task(marks, r, moment) for r in tasks.for_project(db, project["id"])],
-                   runners=[runners.public(r, moment) for r in runners.for_project(db, project["id"])],
+                   runners=[dict(runners.public(r, moment), id=r["id"], paused_by_supervisor=(
+                       r["control"] == "pause" and r["control_role"] == accounts.SUPERVISOR))
+                            for r in runners.for_project(db, project["id"])],
                    blockers=[_blocker(r) for r in blocked])
 
 
