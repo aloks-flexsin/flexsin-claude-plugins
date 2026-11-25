@@ -263,7 +263,7 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Slice:* 1 Planner sees the screenshots
   *Kind:* fix
 
-- [ ] **R16 `autotasks.py attachments N`.** Add the `attachments` command to `autotasks.py`.
+- [x] **R16 `autotasks.py attachments N`.** Add the `attachments` command to `autotasks.py`.
   - It prints the same `--- Screenshots ---` block as `next`, for task N, without claiming anything.
   - `next` and `attachments` share one helper that only prints a `(paths, problems)` pair. The helper neither catches nor raises.
   - `next` keeps its existing `try/except TaskError`. `attachments` lets `TaskError` reach `main`'s existing `Not done: …` handler (exit 1). `attachments` without a number fails with `ap.error`.

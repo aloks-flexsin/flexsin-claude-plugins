@@ -5,6 +5,8 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Runner: `autotasks.py attachments N` downloads task N's screenshots again and prints the "Screenshots" block, without
+  claiming the task (the same block as `next`; an unknown task prints `Not done: ...`, exit 1).
 - Runner: the headless planner downloads a task's screenshots and lists them in its prompt (a SCREENSHOTS section,
   with any that failed to download named), and `docs/planner-prompt.md` tells it to read them first.
 - Central: a "turn on push" bar under the top bar of every signed-in page (not the Account page) when push is set up,
