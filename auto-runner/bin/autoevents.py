@@ -9,7 +9,8 @@ Schema `event.v1` (every field present, nothing else):
     project         the project folder name
     type            run_start | run_end | item_state | tests | blocker | browser | findings | changelog | docs
     item            queue item ID, or null for run_start / run_end
-    detail          a small JSON object (item_state: {"from", "to"}; tests: {"result": "pass"|"fail", "exit"}; run_end: {"exit", "reason"};
+    detail          a small JSON object (item_state: {"from", "to"} and "was", the central task's own id, for a renamed item;
+                    run_start: also "renamed" {queue id: task's id} when a central task's items were renamed; tests: {"result": "pass"|"fail", "exit"}; run_end: {"exit", "reason"};
                     blocker: {"action": "raised", "id", "blocker": autoblock.content()} or {"action": "rejected", "file", "reasons"} or
                     {"action": "delivered", "id", "delivery"} or {"action": "resumed", "id"};
                     browser: {"result": "pass"|"fail"|"invalid", "evidence": "E1"|"E3"|null, "failed", "counts", "errors"};

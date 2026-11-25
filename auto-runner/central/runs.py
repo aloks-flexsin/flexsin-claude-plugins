@@ -84,7 +84,7 @@ def summarise(events, now):
             "run": run_id, "user": None, "account": None, "branch": None, "base": None, "started": e.get("time"),
             "last": e.get("time"), "ended": None, "exit": None, "reason": None, "items": {}, "current": None,
             "tests": None, "pushed": None, "pr_url": None, "publish_error": None, "blockers": 0, "signed_in": None,
-            "signed_in_name": None, "task": None, "account_check": None, "usage_stop": None})
+            "signed_in_name": None, "task": None, "account_check": None, "usage_stop": None, "renamed": {}})
         r["signed_in"] = r["signed_in"] or e.get("_signed_in")
         r["signed_in_name"] = r["signed_in_name"] or e.get("_signed_in_name")
         r["last"] = e.get("time") or r["last"]
@@ -97,11 +97,15 @@ def summarise(events, now):
                     r[k] = detail[k]
             if detail.get("account_check") in ACCOUNT_CHECKS:    # anything else (or an older runner) is ignored
                 r["account_check"] = detail["account_check"]
+            if isinstance(detail.get("renamed"), dict):          # queue id -> the task's own id (plugin: renamed items)
+                r["renamed"].update({k: v for k, v in detail["renamed"].items() if _plain_id(k) and _plain_id(v)})
         elif kind == "run_end":
             r["ended"], r["exit"], r["reason"] = e.get("time"), detail.get("exit"), detail.get("reason")
             r["usage_stop"] = _usage_stop(detail.get("usage"), e.get("time"))
         elif kind == "item_state" and e.get("item"):
             r["items"][e["item"]] = detail.get("to")
+            if _plain_id(e["item"]) and _plain_id(detail.get("was")):
+                r["renamed"][e["item"]] = detail["was"]
             r["current"] = e["item"] if detail.get("to") == "running" else (
                 None if r["current"] == e["item"] else r["current"])
         elif kind == "tests":
@@ -132,6 +136,12 @@ def summarise(events, now):
 
 
 ITEM_ID = re.compile(r"^\s*- \[[ xX]\] \*\*([A-Za-z][A-Za-z0-9-]*?\d+)\b", re.M)
+PLAIN_ID = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,15}?\d{1,4}$")
+
+
+def _plain_id(value):
+    """An item id as a runner sends it ('B1'); anything else in a renamed map (runner-written text) is ignored."""
+    return isinstance(value, str) and bool(PLAIN_ID.match(value))
 
 
 def item_ids(items_text):
@@ -168,13 +178,17 @@ def task_progress(task_runs, items_text):
     if not task_runs:
         return None
     ids = item_ids(items_text)
+    renamed = {}                                       # the runner moved clashing ids to a free letter: count them as
+    for r in task_runs:                                # the task's own ids again (any run of the task may say so)
+        renamed.update(r.get("renamed") or {})
     state = {}
     for r in reversed(task_runs):                      # oldest first, so the newest state wins
-        state.update(r["items"])
+        state.update({renamed.get(i, i): s for i, s in r["items"].items()})
     mine = ids or list(state)
     latest = task_runs[0]
+    current = renamed.get(latest["current"], latest["current"])
     return {"total": len(mine), "done": sum(1 for i in mine if state.get(i) == "done"),
-            "blocked": [i for i in mine if state.get(i) == "blocked"], "current": latest["current"], "latest": latest,
+            "blocked": [i for i in mine if state.get(i) == "blocked"], "current": current, "latest": latest,
             "states": {i: state[i] for i in mine if i in state}}
 
 

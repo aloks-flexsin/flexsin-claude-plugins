@@ -104,3 +104,27 @@ def test_admins_see_every_project_and_strangers_see_nothing_of_it(app, team, con
     assert 'every project' in admin
     assert 'Beta work' not in team['clients']['viewer'].get('/my').get_data(as_text=True)
     assert team['clients']['viewer'].get('/my').status_code == 200
+
+
+def test_progress_counts_items_the_runner_renamed_as_the_tasks_own():
+    """The runner moved the task's E1/E2 to B1/B2 (their ids clashed with the queue) and said so: in run_start's
+    `renamed` or an item_state's `was`. Progress still counts them against the task's E1/E2."""
+    by_start = runs.summarise([ev('r1', 'run_start', 0, task=1, renamed={'B1': 'E1', 'B2': 'E2'}),
+                               ev('r1', 'item_state', 1, 'B1', **{'from': 'running', 'to': 'done'}),
+                               ev('r1', 'item_state', 2, 'B2', **{'from': 'queued', 'to': 'running'})],
+                              datetime.datetime(2026, 11, 23, 9, 5, tzinfo=datetime.timezone.utc))
+    p = runs.task_progress(by_start, ITEMS)
+    assert (p['total'], p['done'], p['current'], p['states']) == (2, 1, 'E2', {'E1': 'done', 'E2': 'running'})
+    by_was = [{'items': {'B1': 'done'}, 'current': None, 'renamed': {'B1': 'E1'}}]
+    assert runs.task_progress(by_was, ITEMS)['done'] == 1
+    # a later run's map also covers what an earlier run (that sent none) finished
+    older = {'items': {'B1': 'done'}, 'current': None, 'renamed': {}}
+    newer = {'items': {'B2': 'done'}, 'current': None, 'renamed': {'B1': 'E1', 'B2': 'E2'}}
+    assert runs.task_progress([newer, older], ITEMS)['done'] == 2
+
+
+def test_a_renamed_map_ignores_anything_but_plain_ids():
+    got = runs.summarise([ev('r1', 'run_start', 0, task=1, renamed={'B1': 'E1', 'B2': '<script>', 'x': 'E2', 'B3': 5}),
+                          ev('r1', 'item_state', 1, 'B4', **{'from': 'queued', 'to': 'done', 'was': ['E9']})],
+                         datetime.datetime(2026, 11, 23, 9, 5, tzinfo=datetime.timezone.utc))
+    assert got[0]['renamed'] == {'B1': 'E1'}

@@ -461,9 +461,30 @@ def free_request_ids(d, qtext):
     text, mapping = queue.free_ids(qtext, items.read_text(encoding='utf-8'))
     if mapping:
         items.write_text(text, encoding='utf-8')
+        save_renamed(d.parent.parent, {new: old for old, new in mapping.items()})
         say(f"request '{d.name}': item IDs already in the queue were moved to a free letter: "
             + ', '.join(f'{a} -> {b}' for a, b in mapping.items()))
     return mapping
+
+
+RENAMED_FILE = Path('run') / 'renamed.json'
+
+
+def load_renamed(auto):
+    """-> {queue id: the id the central task gave it} for items free_request_ids moved; {} when none or unreadable."""
+    try:
+        data = json.loads((auto / RENAMED_FILE).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str)} if isinstance(data, dict) else {}
+
+
+def save_renamed(auto, new_to_old):
+    """Add {queue id: task's id} pairs to .auto/run/renamed.json, so run_start and item_state events can tell the
+    central service which of the task's items a renamed queue item is (its progress counts the task's own ids)."""
+    merged = {**load_renamed(auto), **new_to_old}
+    (auto / RENAMED_FILE).parent.mkdir(parents=True, exist_ok=True)
+    (auto / RENAMED_FILE).write_text(json.dumps(merged, indent=2, sort_keys=True) + '\n', encoding='utf-8')
 
 
 def request_errors(d, qtext, cfg):
@@ -1194,9 +1215,11 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         say(autosafe.account_check_line(account_check))
     # the central task this run builds (decision record 0007): the task page shows the run's progress live
     task_number = autotasks.run_task(auto, auto / 'pending' / request if request else None, new_branch)
+    renamed = load_renamed(auto) if task_number is not None else {}
     ledger.emit('run_start', detail={'branch': branch, 'base': base, 'max_iterations': max_iterations,
                                      'user': user, 'account': account, 'account_check': account_check,
-                                     **({'task': task_number} if task_number is not None else {})})
+                                     **({'task': task_number} if task_number is not None else {}),
+                                     **({'renamed': renamed} if renamed else {})})
     exit_code, reason = None, 'error'
     usage_stop = None                       # {window, utilization, resets_at} when the run stops at the plan-usage threshold
     published = None
@@ -1208,7 +1231,8 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         prev = statuses.get(item, ('queued', ''))[0]
         statuses[item] = (state, detail)
         if prev != state:
-            ledger.emit('item_state', item, {'from': prev, 'to': state})
+            ledger.emit('item_state', item, {'from': prev, 'to': state,
+                                             **({'was': renamed[item]} if item in renamed else {})})
 
     source = transport or central_transport(cfg) or autodeliver.LocalTransport(auto)
     pusher = source if isinstance(source, autodeliver.HttpTransport) else None

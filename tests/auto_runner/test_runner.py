@@ -984,3 +984,31 @@ def test_a_request_a_person_wrote_still_gets_the_clash_reported(project):
     assert ar.apply_pending(project, project, ar.autocfg.load(project), '.auto/queue.md', limit=1) == []
     reasons = next((project / '.auto' / 'rejected').iterdir()) / 'REASONS.txt'
     assert 'A1: this ID is already used' in reasons.read_text(encoding='utf-8')
+
+
+def test_renamed_ids_are_saved_and_sent_with_the_runs_events(project):
+    req = project / '.auto' / 'pending' / 'task-7-x'
+    req.mkdir(parents=True)
+    (req / 'items.md').write_text(CENTRAL_ITEMS, encoding='utf-8')
+    (req / 'task.json').write_text(json.dumps({'number': 7, 'claim': 'c'}), encoding='utf-8')
+    ar.free_request_ids(req, QUEUE)
+    auto = project / '.auto'
+    assert ar.load_renamed(auto) == {'B1': 'A1', 'B2': 'A2'}
+    ar.save_renamed(auto, {'C1': 'Z1'})                                   # later renames are added, not replacing
+    assert ar.load_renamed(auto) == {'B1': 'A1', 'B2': 'A2', 'C1': 'Z1'}
+    (auto / 'run' / 'renamed.json').write_text('not json', encoding='utf-8')
+    assert ar.load_renamed(auto) == {}
+
+
+def test_a_run_tells_central_which_task_items_its_renamed_items_are(project):
+    req = project / '.auto' / 'pending' / 'task-7-x'
+    req.mkdir(parents=True)
+    (req / 'items.md').write_text(CENTRAL_ITEMS, encoding='utf-8')
+    (req / 'task.json').write_text(json.dumps({'number': 7, 'claim': 'c'}), encoding='utf-8')
+    ar.run(project, max_iterations=4, claude=fake_agent(), enqueue='task-7-x', allow_dirty=True)
+    events = [json.loads(line) for line in (project / '.auto' / 'events.jsonl').read_text(encoding='utf-8').splitlines()]
+    start = next(e for e in events if e['type'] == 'run_start')
+    assert start['detail']['task'] == 7 and start['detail']['renamed'] == {'B1': 'A1', 'B2': 'A2'}
+    states = [e for e in events if e['type'] == 'item_state']
+    assert {e['item']: e['detail'].get('was') for e in states if e['item'] in ('B1', 'B2')} == {'B1': 'A1', 'B2': 'A2'}
+    assert all('was' not in e['detail'] for e in states if e['item'] in ('A1', 'A2'))

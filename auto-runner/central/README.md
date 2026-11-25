@@ -388,6 +388,10 @@ Delivery words for real pushes are **unverified** until push is tried live.
 - A run names the task it builds (`task` in its `run_start` and `run_end` events, plugin 0.21.0+), so the **task page**
   shows the build live: items done out of the task's own items, the item in progress, the latest run's state and tests,
   blocked items, and every run of the task. The runs page links each run to its task.
+- When the runner had to move a task's item IDs to a free letter (they clashed with ones already in the queue), it
+  says which task item each moved one is: `renamed` {queue id: task's id} in `run_start` and `was` in `item_state`.
+  `runs.task_progress` counts them as the task's own IDs again, using the map from any run of the task (so a later run's
+  map also covers what an earlier run finished); a value that is not a plain item ID is ignored. Unverified live.
 
 ## Runs
 
