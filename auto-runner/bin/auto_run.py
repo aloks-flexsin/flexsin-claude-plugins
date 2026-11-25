@@ -1044,6 +1044,24 @@ def project_slug(project, cfg):
     return cfg['central']['project'].strip() if autosafe.central_enabled(cfg) else Path(project).name
 
 
+def record_refused_start(project, group, cfg=None):
+    """Write a run-level `friction` event (refused_start:<group>, item null) to the project's ledger, so the next push sends
+    it (decision record 0011). `group` is a fixed code (`newer_installed` or a preflight group), never a message. Recording
+    never changes the refusal: a ledger that cannot be written is skipped."""
+    try:
+        if cfg is None:
+            cfg = autocfg.load(project)
+        slug = project_slug(project, cfg)
+    except (autocfg.ConfigError, KeyError, AttributeError):
+        slug = Path(project).name
+    run_id = f'{datetime.now().strftime("%Y%m%d-%H%M")}-{uuid.uuid4().hex[:6]}'
+    try:
+        autoevents.Ledger(Path(project) / AUTO_DIR, run_id, slug).emit(
+            'friction', None, autoevents.friction_detail('refused_start', group))
+    except OSError:
+        pass
+
+
 def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False, allow_dirty=False,
         claude=run_claude, tests=run_tests, transport=None, browser_runner=None, pr_runner=None, sleep=time.sleep,
         journey_hooks=None):
@@ -1057,6 +1075,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
     newer = autoupdate.newer_installed()
     if newer:
         mine = autoupdate.installed_version()
+        record_refused_start(project, 'newer_installed')
         raise RunnerError(f'This runner is auto-runner {mine}, but {newer[0]} is installed. Start the installed one instead: '
                           f'python "{Path(newer[1]) / "bin" / "auto_run.py"}" (or restart Claude so /auto-runner:auto uses it).')
     cfg = autocfg.load(project)
@@ -1067,8 +1086,10 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
     if not git(project, 'rev-parse', '--git-dir', check=False):
         raise RunnerError(f'{project} is not a git repository.')
     base = autocfg.detect_base_branch(project, cfg)
-    problems = autosafe.preflight(project, cfg, base)
-    if problems:
+    groups = autosafe.preflight_groups(project, cfg, base)
+    if groups:
+        record_refused_start(project, groups[0][0], cfg)
+        problems = [message for _, message in groups]
         raise RunnerError('Preflight refused to start:\n- ' + '\n- '.join(problems))
     wt = worktree_path(project, cfg)
     check_only = cfg['check_only'] or not cfg['test_command']

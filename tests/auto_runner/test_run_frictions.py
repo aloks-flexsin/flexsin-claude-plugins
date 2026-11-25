@@ -4,10 +4,10 @@ import json
 
 import pytest
 
-from tests.auto_runner.test_friction import limited_agent
+from tests.auto_runner.test_friction import install_record, limited_agent
 from tests.auto_runner.test_path_and_permissions import refused, use
 from tests.auto_runner.test_red_rounds import fixer, suite
-from tests.auto_runner.test_runner import ar, code_agent, events, fake_agent, project, with_doc_map  # noqa: F401
+from tests.auto_runner.test_runner import ar, code_agent, events, fake_agent, project, set_cfg, with_doc_map  # noqa: F401
 
 
 def frictions(p):
@@ -78,3 +78,56 @@ def test_a_usage_limit_stop_is_a_usage_stop(project):
 def test_a_clean_run_records_no_friction(project):
     assert ar.run(project, max_iterations=2, claude=fake_agent()) == 0
     assert frictions(project) == []
+
+
+# --- refused starts (R4) -------------------------------------------------------------------------------------------------
+
+def refused_starts(p):
+    """-> [(item, signature)] of the refused_start events; each one run-level and named after the project folder."""
+    found = [(item, sig) for item, sig in frictions(p) if sig.startswith('refused_start')]
+    assert all(e['project'] == p.name for e in events(p) if e['type'] == 'friction')
+    return found
+
+
+def deny_nothing(p):
+    (p / '.claude' / 'settings.json').write_text(json.dumps({'permissions': {'deny': []}}), encoding='utf-8')
+
+
+def test_a_newer_installed_version_records_a_refused_start_and_still_refuses(project):
+    install_record('99.0.0', 'C:/cache/auto-runner/99.0.0')
+    calls = []
+    with pytest.raises(ar.RunnerError, match=r'but 99\.0\.0 is installed') as e:
+        ar.run(project, max_iterations=1, claude=fake_agent(calls=calls))
+    assert 'auto_run.py' in str(e.value) and calls == []
+    assert refused_starts(project) == [(None, 'refused_start:newer_installed')]
+
+
+def test_a_preflight_refusal_for_a_missing_test_command_records_no_tests(project):
+    set_cfg(project, test_command='')
+    with pytest.raises(ar.RunnerError, match='Preflight refused to start:\n- No test_command'):
+        ar.run(project, max_iterations=1, claude=fake_agent())
+    assert refused_starts(project) == [(None, 'refused_start:no_tests')]
+
+
+def test_only_the_first_failed_group_is_recorded_also_on_a_dry_run(project):
+    set_cfg(project, test_command='')
+    deny_nothing(project)
+    with pytest.raises(ar.RunnerError, match='must deny'):
+        ar.run(project, dry_run=True)
+    assert refused_starts(project) == [(None, 'refused_start:no_tests')]
+
+
+def test_preflight_groups_name_the_group_of_each_problem(project):
+    deny_nothing(project)
+    cfg = ar.autocfg.load(project)
+    cfg['test_command'] = ''
+    groups = ar.autosafe.preflight_groups(project, cfg, 'main')
+    assert [g for g, _ in groups] == ['no_tests', 'settings']
+    assert 'test_command' in groups[0][1] and 'must deny' in groups[1][1]
+    assert ar.autosafe.preflight(project, cfg, 'main') == [m for _, m in groups]
+
+
+def test_a_ready_project_has_no_preflight_groups_and_records_no_refusal(project):
+    assert ar.autosafe.preflight_groups(project, ar.autocfg.load(project), 'main') == []
+    assert ar.run(project, max_iterations=1, claude=fake_agent()) == 0
+    assert refused_starts(project) == []

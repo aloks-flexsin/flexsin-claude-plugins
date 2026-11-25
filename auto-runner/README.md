@@ -317,8 +317,14 @@ per signature per item per run:
 | `fix_round` | `suite`, `journey` | a red suite reopens the item, or a failed journey queues a fix item |
 | `retry` | `exit_<code>` | the agent exited early after a refusal and the item is retried |
 | `usage_stop` | `limit`, `budget`, `threshold` | a usage limit, the attempt's `--max-budget-usd`, or the plan-usage threshold stops the item or the run |
+| `refused_start` | `newer_installed`, or the first failed preflight group | the runner refuses to start (also with `--dry-run`); `item` is null and the event is written to `.auto/events.jsonl` before the error, so the next push sends it. The refusal message is unchanged |
 
-`refused_start`, `central_error` and `plan_changes` are emitted by later items.
+The preflight groups come from `autosafe.preflight_groups(project, cfg, base)`, which returns `[(group, message)]` with one
+fixed code per check: `worktree`, `runner_name`, `model`, `base_url`, `journey`, `central`, `env_file`, `path_prepend`,
+`publish`, `principles`, `capability`, `no_commit`, `no_tests`, `settings`. `autosafe.preflight()` returns the same messages
+without the groups.
+
+`central_error` and `plan_changes` are emitted by later items.
 
 ## Modules (all stdlib, all unverified beyond fakes)
 Every child process (the agent, the test command, git) is read as UTF-8, with an undecodable byte replaced rather than
