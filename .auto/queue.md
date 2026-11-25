@@ -265,7 +265,7 @@ Test layout: central tests go in `tests/central/`. Runner and gate tests go in `
   *Slice:* 1 Plan approval by policy
   *Kind:* feature
 
-- [ ] **B3 Policy and plan gate.** Add `bin/autogates.py` with the policy loader (`.claude/supervisor-policy.json`, read from the base ref through an injected reader, returning the blob SHA). The policy keys here are `base` and `restricted_paths`. The loader validates the keys. Add the pure `plan_gate(task, policy)` function covering the five checks in decision 5. A missing or invalid policy file means the plan is left for a person. Update `auto-runner/README.md` in the same commit (the policy file, its keys, the fact that it is read from the base).
+- [x] **B3 Policy and plan gate.** Add `bin/autogates.py` with the policy loader (`.claude/supervisor-policy.json`, read from the base ref through an injected reader, returning the blob SHA). The policy keys here are `base` and `restricted_paths`. The loader validates the keys. Add the pure `plan_gate(task, policy)` function covering the five checks in decision 5. A missing or invalid policy file means the plan is left for a person. Update `auto-runner/README.md` in the same commit (the policy file, its keys, the fact that it is read from the base).
   *Acceptance:* `tests/auto_runner/test_supervisor_gates.py` passes, including a plan naming a restricted path, "Needs a person" not "None.", an item with no Acceptance line, a missing policy file, and an all-clear case.
   *Slice:* 1 Plan approval by policy
   *Kind:* feature
