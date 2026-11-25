@@ -140,6 +140,7 @@ class FakeTasks:
         self.beat_claims = []                     # (number, claim) of every heartbeat the service took
         self.reports = []                         # every report the service took
         self.claims_made = 0                      # fresh claims handed out by `next`
+        self.refuse_heartbeat = None              # an HTTP status (e.g. 403): every task heartbeat is answered with it
 
     def add(self, number, title, description='', comment='', claim='claim-1'):
         self.tasks[number] = {'number': number, 'title': title, 'description': description, 'comment': comment,
@@ -196,7 +197,10 @@ class FakeTasks:
 
     def _heartbeat(self, number, data):
         """POST /api/v1/tasks/N/heartbeat as the service answers it: 409 when the claim is not the task's (released,
-        reassigned or expired), else the claim is kept alive; `state` ('queued'/'building') and `note` are recorded."""
+        reassigned or expired), else the claim is kept alive; `state` ('queued'/'building') and `note` are recorded.
+        With `refuse_heartbeat` set, every heartbeat is answered with that status instead."""
+        if self.refuse_heartbeat:
+            return self._reply(self.refuse_heartbeat, {'error': 'refused (simulated)'})
         task = self.tasks.get(number)
         if task is None:
             return self._reply(404, {'error': 'no such task'})

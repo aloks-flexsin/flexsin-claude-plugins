@@ -114,6 +114,20 @@ def reopen_build(project, number, env=None, send=None):
         pass                                            # best effort: the claim expires and the task is taken again
 
 
+def check_claim(project, number, claim, env=None, send=None):
+    """Is `claim` still this computer's hold on task `number`? -> 'ok' or 'lost' (409: released, reassigned or expired).
+    Beats the task with state 'queued' (never 'building': the task stays Queued until its run begins). Any other refusal
+    raises TaskError; an unreachable service raises TransportUnavailable."""
+    try:
+        transport(project, env, send).request('POST', f'/api/v1/tasks/{int(number)}/heartbeat',
+                                              {'claim': claim, 'state': 'queued'})
+    except autodeliver.TransportRefused as e:
+        if getattr(e, 'status', None) == 409:
+            return 'lost'
+        raise TaskError(str(e)) from None
+    return 'ok'
+
+
 SAFE_CHARS = re.compile(r'[^A-Za-z0-9._-]')
 
 
