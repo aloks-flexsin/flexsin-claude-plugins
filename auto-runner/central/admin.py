@@ -40,7 +40,7 @@ def _list_page(error=None, status=200, form_email="", link=None):
     total = len(rows)
     if q:
         rows = [a for a in rows if q in a["email"].lower() or q in (a["name"] or "").lower()]
-    page = render_template("admin_accounts.html", accounts=rows, total=total, q=q, roles=accounts.ROLES, error=error,
+    page = render_template("admin_accounts.html", accounts=rows, total=total, q=q, roles=accounts.ROLES, invite_roles=accounts.INVITE_ROLES, error=error,
                            form_email=form_email, link=link, lifetime_hours=int(invites.LIFETIME.total_seconds() // 3600))
     return page, status
 

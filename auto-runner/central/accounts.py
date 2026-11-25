@@ -8,7 +8,9 @@ import secrets
 
 from . import passwords
 
-ROLES = ("admin", "user")
+ROLES = ("admin", "user", "supervisor")
+INVITE_ROLES = ("admin", "user")      # what an invite or the add-account form may give; a supervisor is made by the CLI only
+SUPERVISOR = "supervisor"
 MAX_EMAIL = 320
 
 
@@ -133,7 +135,9 @@ def set_role(db, account_id, role):
     """Change the role and commit. The last enabled admin cannot be demoted."""
     if role not in ROLES:
         raise AccountError("role must be one of %s" % ", ".join(ROLES))
-    _require(db, account_id)
+    current = _require(db, account_id)
+    if SUPERVISOR in (role, current["role"]) and role != current["role"]:
+        raise AccountError("the supervisor role cannot be given or taken away here; use the command line")
     sql = "UPDATE account SET role = ? WHERE id = ?"
     if role != "admin":
         sql += _NOT_LAST_ADMIN

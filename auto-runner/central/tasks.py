@@ -85,6 +85,8 @@ def for_project(db, project_id):
 
 
 def _can_run(db, project, account):
+    if account["role"] == accounts.SUPERVISOR:             # a supervisor never runs tasks
+        return False
     return projects.allows(projects.effective_role(db, project, account), "developer")
 
 
@@ -92,6 +94,8 @@ def create(db, project, by, assignee, title, description, moment, status="open",
     """Add a task and commit -> its row. People add tasks for themselves; an admin for any member who can run runners."""
     title = _text(title, MAX_TITLE, "the title", required=True)
     description = _text(description, MAX_TEXT, "the description")
+    if by["role"] == accounts.SUPERVISOR:
+        raise TaskError("a supervisor account does not create tasks", 403)
     if assignee["id"] != by["id"] and by["role"] != projects.ADMIN:
         raise TaskError("only an admin adds tasks for someone else", 403)
     if not _can_run(db, project, assignee):

@@ -32,7 +32,7 @@ and an owner, manager or admin answers it there.
 | `notifications.py` | In-app notifications: `notify` (members only, no duplicates), `resolve`, `unread_count`, `for_account`, `delivery`, `recent`; the Notifications page, open and read-all (the admins' log is in `admin.py`) |
 | `push.py` | Browser push subscriptions: `POST /push/subscribe`, `POST /push/unsubscribe`, the Account page's push section |
 | `attachments.py` | Task screenshots (`task_attachment`): `add`, `for_task`, `get`, `delete`; upload, view and delete routes; the 4 MB request cap and its 413 page |
-| `cli.py` | `python -m central init-db` and `python -m central create-admin --email X` |
+| `cli.py` | `python -m central init-db`, `python -m central create-admin --email X` and `python -m central supervisor-create X` |
 | `api/index.py`, `vercel.json` | Vercel entry point; every route is rewritten to it |
 | `templates/`, `static/style.css` | The pages (`base.html` holds the top bar) and their one stylesheet, served by Flask at `/static/style.css` because the CSP allows only same-origin styles; no inline styles or scripts |
 
@@ -91,6 +91,11 @@ may not stick over plain http. The API endpoints do not use the cookie.
 - There is no self sign-up. Five failed sign-ins lock an account for 15 minutes.
 - Sessions expire after 12 hours, or 2 hours idle. A password change or reset signs the person out everywhere.
 - Global roles `admin` and `user`; project roles `owner`, `manager`, `developer`, `viewer`. Non-members get 404.
+- A third global role, `supervisor`, is for the supervisor account (it reviews and merges; see decision 0010). Create it with
+  `python -m central supervisor-create <email>` (asks for the password twice, like `create-admin`). Add it to a project as a
+  **manager** member. It is never an assignee and never creates tasks (`tasks._can_run` and `tasks.create` refuse it).
+  Invites and the add-account form do not offer or accept it (`accounts.INVITE_ROLES`), and `/admin/accounts` shows the role
+  but refuses to give it to anyone or take it away (the command line is the only way in). Existing roles and routes are unchanged.
 - Every sign-in (success and failure, never the password) and every account, token, membership and decision action is audited.
 - **One project per repository.** On the create form the admin pastes the repository URL; the slug and name may be left
   empty and are then filled in from it (`projects.slug_from_repo`: the repository's name, lower case, other characters as
@@ -162,6 +167,37 @@ may not stick over plain http. The API endpoints do not use the cookie.
   when no plan waits; 404 for an unknown task); it records `task.plan.<decision>` with `"via": "api"`, so the Activity
   line ends "(through the API)", and returns `{task}`.
 - Table `project_task` (init-db creates it).
+- **Supervisor read API** (`supervisor.py`, personal tokens, read-only): `GET /api/v1/supervisor/whoami` returns
+  `{role, email}` for any valid token (role is `null` for a project token). `GET /api/v1/supervisor/state?project=<slug>`
+  needs the `supervisor` account role (403 for any other role, 401 without a token, 404 only for an unknown project once the
+  role is accepted). It returns `{project, tasks, runners, blockers}`: each task has the `/api/v1/tasks/<N>` fields plus
+  `plan_rounds` (the count of the task's `supervisor.plan.changes` audit rows), `plan_decided` (the supervisor's decision
+  on the task's current plan post, or null; a new plan post starts afresh) and `merged_at`; runners use the runner API
+  shape; blockers are the open ones (`OPEN`, `ESCALATED`). No claim ids appear and nothing is written.
+- **Plan decision** `POST /api/v1/supervisor/tasks/<n>/plan-decision?project=<slug>` with
+  `{"decision": "approve" | "changes" | "escalate", "reasons": [...], "policy_sha": "...", "comment": "..."}`. Needs the
+  `supervisor` account role (403 otherwise, 401 without a token) and, for approve and changes, membership as manager (it
+  calls `tasks.decide`, so the same rules apply: the plan must be waiting, else 409). `changes` without a comment uses the
+  reasons as the comment. **Round cap:** the round count is the number of `supervisor.plan.changes` audit rows for the task
+  (no column); a `changes` when it is already 2 becomes `escalate` (`"converted": true`). `escalate` does not call
+  `tasks.decide`: the plan stays in review, the managers are notified (the usual "plan waiting" notification) and a person
+  decides. Every call writes one `supervisor.plan.<decision>` audit row (detail: number, policy_sha, reasons, round,
+  converted). **Re-running is safe:** when the current plan post already has a supervisor decision the call changes
+  nothing and answers 200 with `"already": true`. Tests: `tests/central/test_supervisor_api.py`,
+  `tests/central/test_supervisor_e2e.py`.
+- **Merge record** `POST /api/v1/supervisor/tasks/<n>/merge?project=<slug>` with
+  `{"phase": "decided" | "done" | "failed" | "refused", "sha": "...", "method": "...", "reasons": [...], "evidence": {...},
+  "merge_sha": "..."}`. Supervisor role only (403 otherwise, 401 without a token). It merges nothing: the supervisor's pass
+  calls the forge between `decided` and `done` / `failed`. Each call writes one `supervisor.merge.<phase>` audit row (detail:
+  number, sha, method, reasons, evidence, merge_sha); `done` also sets `project_task.merged_at`. `sha` is required except for
+  `refused`. `decided` for a merged task answers 409; `done` and `failed` need an earlier `decided` for the same SHA (else
+  409). **Re-running is safe:** a `refused` that repeats the task's previous row (same SHA and reasons) and a `done` for a
+  merged task change nothing and answer 200 with `"already": true`. The task page and the task list show "Merged <time>"
+  once `merged_at` is set. Tests: `tests/central/test_supervisor_e2e.py`, `tests/central/test_tasks_pages.py`.
+- Column `project_task.merged_at` (nullable; written by the merge route's `done` phase). **Migration:** run `python -m central init-db` once
+  (it adds the column to an existing database and keeps all data); until then the new routes answer with the
+  "database update needed" error. **Rollback:** deploy the previous code; the unused nullable column is harmless and may stay
+  (to remove it: `ALTER TABLE project_task DROP COLUMN merged_at`).
 
 ## Task screenshots (`attachments.py`)
 
