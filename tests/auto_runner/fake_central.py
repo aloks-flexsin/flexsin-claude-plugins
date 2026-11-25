@@ -122,8 +122,13 @@ class FakeTasks:
     the task then waits in plan_review), POST /api/v1/tasks/next, and a task's screenshots (`attach()`; listed in
     GET /api/v1/tasks/N, bytes from GET /api/v1/tasks/N/attachments/<id>), and POST /api/v1/tasks/N/decide (a waiting
     plan approved, sent back with a comment or rejected; 409 when no plan waits, 400 for changes without a comment), and
-    POST /api/v1/tasks/N/heartbeat (409 when the claim does not match, as the service answers a lost claim).
-    `posted` keeps every plan the runner posted, `downloads` every screenshot it fetched, `decisions` every decision."""
+    POST /api/v1/tasks/N/heartbeat (409 when the claim does not match, as the service answers a lost claim), and
+    POST /api/v1/tasks/N/report (409 on a stale claim; done ends the claim, stopped keeps the task building).
+    `next` hands out an approved, building or queued task first (action `build`, a fresh claim each time, as the
+    service re-claims a task to resume it), then a planning one (action `plan`).
+    `posted` keeps every plan the runner posted, `downloads` every screenshot it fetched, `decisions` every decision,
+    `beat_claims` the (number, claim) of every heartbeat taken, `reports` every report taken
+    ({'number', 'claim', 'result', 'branch', 'note'})."""
 
     def __init__(self):
         self.tasks = {}                           # number -> task dict (number, title, description, comment, status, claim)
@@ -132,6 +137,9 @@ class FakeTasks:
         self.downloads = []                       # (number, attachment id) of every screenshot the runner fetched
         self.decisions = []                       # (number, decision, comment) of every plan decided through the API
         self.heartbeats = []                      # (number, state) of every heartbeat the service took
+        self.beat_claims = []                     # (number, claim) of every heartbeat the service took
+        self.reports = []                         # every report the service took
+        self.claims_made = 0                      # fresh claims handed out by `next`
 
     def add(self, number, title, description='', comment='', claim='claim-1'):
         self.tasks[number] = {'number': number, 'title': title, 'description': description, 'comment': comment,
@@ -167,6 +175,9 @@ class FakeTasks:
         m = re.fullmatch(r'/api/v1/tasks/(\d+)/heartbeat', path)
         if m and method == 'POST':
             return self._heartbeat(int(m.group(1)), json.loads(body.decode('utf-8')))
+        m = re.fullmatch(r'/api/v1/tasks/(\d+)/report', path)
+        if m and method == 'POST':
+            return self._report(int(m.group(1)), json.loads(body.decode('utf-8')))
         m = re.fullmatch(r'/api/v1/tasks/(\d+)(/plan)?', path)
         task = self.tasks.get(int(m.group(1))) if m else None
         if task is None:
@@ -196,6 +207,7 @@ class FakeTasks:
         if data.get('note'):
             task['note'] = str(data['note'])[:300]
         self.heartbeats.append((number, data.get('state')))
+        self.beat_claims.append((number, data['claim']))
         return self._reply(200, {'task': {k: v for k, v in task.items() if k != 'claim'}, 'claim': task['claim']})
 
     def _decide(self, number, data):
@@ -217,14 +229,40 @@ class FakeTasks:
         self.decisions.append((number, data['decision'], comment))
         return self._reply(200, {'task': {k: v for k, v in task.items() if k != 'claim'}})
 
+    def _report(self, number, data):
+        """POST /api/v1/tasks/N/report as the service answers it: 409 on a stale claim or a task not being built; done
+        ends the claim, stopped leaves the task building with its claim. Every report taken is kept in `reports`."""
+        task = self.tasks.get(number)
+        if task is None:
+            return self._reply(404, {'error': 'no such task'})
+        if not task['claim'] or data.get('claim') != task['claim']:
+            return self._reply(409, {'error': 'the claim is not yours'})
+        if task['status'] not in ('building', 'queued'):
+            return self._reply(409, {'error': 'task %d is %s; only a task being built is reported' % (number, task['status'])})
+        if data.get('result') not in ('done', 'stopped'):
+            return self._reply(400, {'error': 'result must be done or stopped'})
+        self.reports.append({'number': number, 'claim': data['claim'], 'result': data['result'],
+                             'branch': data.get('branch'), 'note': data.get('note')})
+        task.update(status='done' if data['result'] == 'done' else 'building', branch=data.get('branch'),
+                    note=data.get('note'))
+        if data['result'] == 'done':
+            task['claim'] = None
+        return self._reply(200, {'task': {k: v for k, v in task.items() if k != 'claim'}})
+
     def _next(self):
-        """POST /api/v1/tasks/next: the oldest planning task, claimed again (the service's reply carries no screenshots;
-        the runner lists them with GET /api/v1/tasks/N)."""
-        for number in sorted(self.tasks):
-            task = self.tasks[number]
-            if task['status'] == 'planning':
-                public = {k: v for k, v in task.items() if k not in ('claim', 'attachments')}
-                return self._reply(200, {'task': public, 'claim': task['claim'], 'action': 'plan'})
+        """POST /api/v1/tasks/next: the oldest approved, building or queued task with a fresh claim (action `build`; an
+        approved one becomes building, as the service re-claims a task to resume it), else the oldest planning task,
+        claimed again (action `plan`). The reply carries no screenshots; the runner lists them with GET /api/v1/tasks/N."""
+        for wanted, action in ((('approved', 'building', 'queued'), 'build'), (('planning',), 'plan')):
+            for number in sorted(self.tasks):
+                task = self.tasks[number]
+                if task['status'] in wanted:
+                    if action == 'build':
+                        self.claims_made += 1
+                        task.update(claim=f'claim-{number}-{self.claims_made}',
+                                    status='building' if task['status'] == 'approved' else task['status'])
+                    public = {k: v for k, v in task.items() if k not in ('claim', 'attachments')}
+                    return self._reply(200, {'task': public, 'claim': task['claim'], 'action': action})
         return self._reply(200, {'task': None})
 
     def _collection(self, method, body):

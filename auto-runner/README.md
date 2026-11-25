@@ -96,6 +96,13 @@ The runner can also be started by hand: `python bin/auto_run.py [--project DIR] 
   end of the run. Once it is merged, the next run starts a new branch in the same worktree. Requests are no longer added
   between iterations. "Merged" is judged by ancestry, so after a **squash** merge remove the worktree
   (`git worktree remove <project>-auto`) before the next run.
+- **Resuming a request:** `--enqueue <slug>` for a request whose items are all in the queue already, each with the same
+  text (ignoring the tick and the runner's status line), resumes it instead of refusing it: the runner prints
+  `request '<slug>' is already queued on <branch>: resuming it`, adopts the request's `task.json` as the current task
+  (so a central task stopped part-way and taken again by watch mode beats and reports with its new claim), removes
+  `.auto/pending/<slug>/` and carries on as a run without `--enqueue`. While another run holds the lock it only says the
+  request is checked and waiting, and touches neither the folder nor `.auto/run/current-task.json`. A request with only
+  some of its IDs queued, or with changed item text, is refused as before.
 - **Push and pull request:** see "Publishing a run"; both are on unless turned off.
 
 Create `.auto/STOP` to stop a run between iterations. `.auto/lock` keeps a second run out; delete it by hand only if a run died.
