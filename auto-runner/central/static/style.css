@@ -357,6 +357,7 @@ ul.plain{padding-left:18px}
 .role-form select{min-width:0;padding:6px 8px;font-size:14px}
 .row-menu .pop-body{width:auto;min-width:220px}
 .row-menu>summary{padding:6px 12px}
+.friction-sig{overflow-wrap:anywhere}
 .pop-body form{margin:0}
 .pop-body .btn{width:100%;justify-content:flex-start}
 .pop-body input[type=email],.pop-body input[type=text]{min-width:0;width:100%}

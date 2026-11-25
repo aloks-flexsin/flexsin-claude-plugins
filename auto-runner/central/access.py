@@ -5,7 +5,8 @@
 - `/projects/<slug>` is the project Overview (any member; shell.overview): what needs attention, who is working now,
   recent activity. Settings: `/projects/<slug>/settings/members` (any member; owners and admins add, re-role and remove
   members), `/settings/repository` (the repository URL; owners and admins change it with `POST /projects/<slug>/repo`,
-  audited as `project.repo_url`) and `/settings/tokens` (machine tokens, below; `/projects/<slug>/tokens` redirects).
+  audited as `project.repo_url`, and "Share runner frictions with the auto-runner project", on by default, switched by
+  owners and admins with `POST /projects/<slug>/share-frictions`, audited as `project.share_frictions`) and `/settings/tokens` (machine tokens, below; `/projects/<slug>/tokens` redirects).
 - The guard answers 404 to anyone signed out, to non-members and to members below `min_role`: never 403.
 - Project creation and every membership change (and refusal) write an audit row with the project's id.
 - `/projects/<slug>/tokens` (managers, owners and admins) creates, revokes and rotates API tokens (see tokens.py);
@@ -17,7 +18,7 @@ import functools
 
 from flask import Blueprint, abort, g, jsonify, make_response, redirect, render_template, request, url_for
 
-from . import accounts, audit, auth, identities, invites, projects, sessions, tokens, ui
+from . import accounts, audit, auth, frictions, identities, invites, projects, sessions, tokens, ui
 from .db import get_db
 
 bp = Blueprint("projects", __name__)
@@ -119,6 +120,7 @@ def members_page(slug):
 
 def _repository_page(error=None, status=200):
     return render_template("project_repository.html", project=g.project, error=error,
+                           shares_frictions=frictions.shares(g.project),
                            can_manage=projects.allows(g.project_role, "owner")), status
 
 
@@ -140,6 +142,18 @@ def repo_url_set(slug):
         return _repository_page(error=str(exc), status=400)
     after = projects.get_by_slug(db, slug)["repo_url"]
     _record(db, "project.repo_url", {"from": before, "to": after})
+    return redirect(url_for("projects.repository_page", slug=slug))
+
+
+@bp.post("/projects/<slug>/share-frictions")
+@project_access("owner")
+def share_frictions_set(slug):
+    value = request.form.get("share", "")
+    if value not in ("0", "1"):
+        return _repository_page(error='share is "1" (on) or "0" (off)', status=400)
+    db = get_db()
+    before = frictions.set_sharing(db, g.project["id"], value == "1")
+    _record(db, "project.share_frictions", {"from": before, "to": value == "1"})
     return redirect(url_for("projects.repository_page", slug=slug))
 
 

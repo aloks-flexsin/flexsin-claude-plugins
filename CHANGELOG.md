@@ -5,6 +5,25 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Central: runner frictions close the loop (decision record 0011). Rejecting a drafted friction task (rejecting its plan
+  or closing it) mutes the signature with "task #N rejected"; a task reported done marks it `fixed`. A fixed signature
+  counts only days after the fix, and reaching the threshold again drafts "Runner friction came back: <signature>",
+  linking the earlier task (`previous_task_number`); the Frictions page shows Fixed and the earlier task's link.
+  Unverified on the live service.
+
+## [0.23.0] - 2026-11-25
+
+### Added
+- Runner self-reflection, first slice (decision record 0011): the runner records what got in its way as `friction`
+  events in event.v1, with one of eight closed kinds and a fixed-vocabulary subject, never project content; the central
+  service accepts and validates the same type. Recorded at most once per signature per item per run:
+  `permission_denied` (`Bash:<executable>` or the tool name), `gate_stop` (docs, changelog, browser, journey, suite,
+  stale), `fix_round` (suite, journey), `retry` (`exit_<code>`), `usage_stop` (limit, budget, threshold),
+  `refused_start` (`newer_installed` or the failed preflight group, from the new `autosafe.preflight_groups`) and
+  `central_error` (`http_<status>:<route>`, e.g. `http_409:/api/v1/tasks/N/heartbeat` for a lost claim, or
+  `unreachable`) for failed heartbeats, reports, wait notes and event pushes. `autotasks.beat`, `finish` and
+  `wait_note` take an optional `on_error(status, route)`; `autodeliver.push` also returns `skipped_status` and
+  `error_status`. Counting and drafting on the central side come in later items.
 - Central: a "turn on push" bar under the top bar of every signed-in page (not the Account page) when push is set up,
   shown once per browser: only when push is supported, not blocked, not yet subscribed here and not answered before
   (`localStorage["push-ask"]`). Turn on uses the same `enablePush` steps as the Account page; Not now hides it for
