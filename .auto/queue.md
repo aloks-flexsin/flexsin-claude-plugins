@@ -305,7 +305,7 @@ Test layout: central tests go in `tests/central/`. Runner and gate tests go in `
   *Slice:* 3 Queue order and runner control
   *Kind:* feature
 
-- [ ] **B11 Supervisor runner control.** `runners.can_control` also allows the supervisor account. Add `POST /api/v1/supervisor/runners/<id>/<pause|resume|wake>` with audit rows. Resume is allowed only when `control_by` is the supervisor. `wake` is a new `control` value returned by the beat. The Runs and Overview pages show "Paused by the Supervisor". Pause behaviour for people is unchanged. Update `auto-runner/central/README.md` in the same commit (the route strings, `wake`, the page text).
+- [x] **B11 Supervisor runner control.** `runners.can_control` also allows the supervisor account. Add `POST /api/v1/supervisor/runners/<id>/<pause|resume|wake>` with audit rows. Resume is allowed only when `control_by` is the supervisor. `wake` is a new `control` value returned by the beat. The Runs and Overview pages show "Paused by the Supervisor". Pause behaviour for people is unchanged. Update `auto-runner/central/README.md` in the same commit (the route strings, `wake`, the page text).
   *Acceptance:* these exact tests pass: `tests/central/test_supervisor_api.py::test_supervisor_cannot_resume_a_persons_pause`; `tests/central/test_runners.py::test_beat_returns_wake`; `tests/central/test_pages.py::test_runs_page_shows_paused_by_supervisor` (verify the pages test file name).
   *Slice:* 3 Queue order and runner control
   *Kind:* feature

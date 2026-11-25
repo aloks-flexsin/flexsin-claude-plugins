@@ -256,8 +256,17 @@ may not stick over plain http. The API endpoints do not use the cookie.
 - `POST /api/v1/runners/beat?project=<slug>` (personal tokens only, developer or above) with
   `{label, state, task: N|null, spend_usd}`, sent by a watching runner each step and when idle. The first beat for a
   label creates the runner, owned by that person; a label belongs to one person per project, so another person's token
-  gets 403. Returns `{runner, control}`, where `control` is `null`, `"pause"` (wait without claiming) or `"stop"` (end
-  cleanly).
+  gets 403. Returns `{runner, control}`, where `control` is `null`, `"pause"` (wait without claiming), `"stop"` (end
+  cleanly) or `"wake"` (see Supervisor control below).
+- **Supervisor control:** `POST /api/v1/supervisor/runners/<id>/<pause|resume|wake>?project=<slug>` (personal token of a
+  `supervisor` account; anyone else gets 403, an unknown runner or action 404). The supervisor account also counts in
+  `runners.can_control`. Pause sets `control` to `"pause"` (409 on a runner asked to stop). **Resume** works only when the
+  pause was made by the supervisor (`control_by`); a person's pause or stop gets 403, nothing to resume 409. **`wake`** is a
+  new `control` value: the next beat returns `"wake"` ("look for work now") and clears it, so it is said once; it is refused
+  (409) while a pause or stop is pending. Repeating a call changes nothing (`changed: false`). Each change writes a
+  `supervisor.runner.pause`, `.resume` or `.wake` audit row. The Overview and Runs pages show **"Paused by the
+  Supervisor"** for a supervisor pause; what people do (Pause, Resume, Stop) is unchanged, and a person may resume the
+  supervisor's pause. Unverified on the live service.
 - A runner whose last beat is 2 hours old or more is **silent** (`silent: true`); its next beat brings it back.
 - Audit: `runner.start` (first beat of a label) and `runner.back` (a beat after silence); ordinary beats are not audited.
 - Table `runner` (init-db adds it to an existing database). The task API is unchanged. Unverified on the live service.

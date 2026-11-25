@@ -28,7 +28,7 @@
       </div>
       {% if r.can_control %}
       <div class="row-actions">
-        {% if r.control %}{{ control_form(r, "resume", "Resume runner", "Resume " ~ name ~ "?", "It takes work again at its next step. A runner that has already ended must be started again on its computer.", next_url) }}
+        {% if r.control in ("pause", "stop") %}{{ control_form(r, "resume", "Resume runner", "Resume " ~ name ~ "?", "It takes work again at its next step. A runner that has already ended must be started again on its computer.", next_url) }}
         {% else %}{{ control_form(r, "pause", "Pause runner", "Pause " ~ name ~ "?", "It finishes the step it is on, then waits without taking new work until someone resumes it.", next_url) }}{% endif %}
         {% if r.control != "stop" %}{{ control_form(r, "stop", "Stop runner", "Stop " ~ name ~ "?", "It finishes the step it is on and ends. Someone has to start it again on its computer.", next_url) }}{% endif %}
       </div>

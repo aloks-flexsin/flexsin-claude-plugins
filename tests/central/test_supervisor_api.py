@@ -1,6 +1,6 @@
 import pytest
 
-from central import accounts, audit, personal, projects, tasks
+from central import accounts, audit, personal, projects, runners, tasks
 
 from .test_tasks import PW, START, add, clock, decide, plan, take, team  # noqa: F401  (fixtures)
 from .test_repo_url import AT, conn, world  # noqa: F401  (fixtures)
@@ -158,3 +158,52 @@ def test_escalate_needs_a_waiting_plan_and_keeps_it_waiting(app, team, conn, sup
     assert send(app, sup_token, add(team), 'escalate').status_code == 409
     assert send(app, sup_token, n, 'escalate', reasons=['Needs a person']).status_code == 200
     assert tasks.get(conn, team['alpha']['id'], n)['status'] == 'plan_review'
+
+
+def runner_action(app, token, runner_id, action, project='alpha'):
+    return new_client(app).post('/api/v1/supervisor/runners/%s/%s?project=%s' % (runner_id, action, project),
+                                headers={'Authorization': 'Bearer ' + token})
+
+
+@pytest.fixture
+def a_runner(app, team, conn):
+    from .test_runners import LABEL, beat
+    beat(app, team)
+    return runners.get(conn, team['alpha']['id'], LABEL)
+
+
+def test_supervisor_pauses_resumes_and_wakes_a_runner(app, team, conn, sup_token, a_runner):
+    from .test_runners import beat
+    rid = a_runner['id']
+    resp = runner_action(app, sup_token, rid, 'pause')
+    assert resp.status_code == 200 and resp.get_json()['changed'] and resp.get_json()['runner']['control'] == 'pause'
+    assert runner_action(app, sup_token, rid, 'pause').get_json()['changed'] is False      # repeating changes nothing
+    assert beat(app, team).get_json()['control'] == 'pause'
+    assert runner_action(app, sup_token, rid, 'wake').status_code == 409                   # a pause is not overridden
+    assert runner_action(app, sup_token, rid, 'resume').get_json()['runner']['control'] is None
+    assert runner_action(app, sup_token, rid, 'resume').status_code == 409                 # nothing left to resume
+    assert runner_action(app, sup_token, rid, 'wake').get_json()['runner']['control'] == 'wake'
+    assert beat(app, team).get_json()['control'] == 'wake' and beat(app, team).get_json()['control'] is None
+    assert [r['action'] for r in audit.rows(conn) if r['action'].startswith('supervisor.runner.')] == [
+        'supervisor.runner.pause', 'supervisor.runner.resume', 'supervisor.runner.wake']
+
+
+def test_supervisor_cannot_resume_a_persons_pause(app, team, conn, sup_token, a_runner):
+    from .test_runner_pages import control_url, post
+    assert post(team['clients']['dev'], control_url(a_runner, 'pause'), confirm='1').status_code == 302
+    assert runner_action(app, sup_token, a_runner['id'], 'resume').status_code == 403
+    assert runners.get(conn, team['alpha']['id'], a_runner['label'])['control'] == 'pause'
+    assert runner_action(app, sup_token, a_runner['id'], 'wake').status_code == 409
+    assert audit.rows(conn, 'supervisor.runner.resume') == []
+
+
+def test_runner_control_is_for_the_supervisor_only(app, team, conn, sup_token, a_runner):
+    rid = a_runner['id']
+    assert runner_action(app, team['token']['dev'], rid, 'pause').status_code == 403
+    assert runner_action(app, team['token']['manager'], rid, 'pause').status_code == 403
+    assert new_client(app).post('/api/v1/supervisor/runners/%s/pause?project=alpha' % rid).status_code == 401
+    assert runner_action(app, sup_token, rid, 'stop').status_code == 404
+    assert runner_action(app, sup_token, rid, 'nope').status_code == 404
+    assert runner_action(app, sup_token, 'nope', 'pause').status_code == 404
+    assert runner_action(app, sup_token, rid, 'pause', project='nope').status_code == 404
+    assert runners.get(conn, team['alpha']['id'], a_runner['label'])['control'] is None

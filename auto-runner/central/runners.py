@@ -3,7 +3,8 @@
 A runner sends `POST /api/v1/runners/beat?project=<slug>` with a personal token each step and when idle:
 `{"label": ..., "state": ..., "task": N or null, "spend_usd": today's spend}`. The first beat for a label creates the
 runner, owned by the token's account; a label belongs to one person in a project, so another person's token gets 403.
-The reply carries `control`: null (carry on), "pause" (wait without claiming) or "stop" (end cleanly). A runner whose
+The reply carries `control`: null (carry on), "pause" (wait without claiming), "stop" (end cleanly) or "wake" (the
+Supervisor asks it to look for work now; said once, then cleared). A runner whose
 last beat is older than SILENT_AFTER is shown as silent. People set `control` from the pages (Pause, Resume and Stop, at the end of this
 file); the task API does not change.
 """
@@ -21,7 +22,7 @@ from .db import get_db
 bp = Blueprint("runners", __name__)
 
 SILENT_AFTER = datetime.timedelta(hours=2)
-CONTROLS = ("pause", "stop")
+CONTROLS = ("pause", "stop", "wake")
 MAX_LABEL, MAX_STATE = 200, 100
 
 
@@ -60,15 +61,17 @@ def _spend(value):
     return round(float(value), 4)
 
 
+_SELECT = ("SELECT r.*, a.email AS account_email, c.role AS control_role FROM runner r"
+           " JOIN account a ON a.id = r.account_id LEFT JOIN account c ON c.id = r.control_by")
+
+
 def get(db, project_id, label):
-    return db.query_one("SELECT r.*, a.email AS account_email FROM runner r JOIN account a ON a.id = r.account_id"
-                        " WHERE r.project_id = ? AND r.label = ?", (project_id, label))
+    return db.query_one(_SELECT + " WHERE r.project_id = ? AND r.label = ?", (project_id, label))
 
 
 def for_project(db, project_id):
     """The project's runners, most recent beat first."""
-    return db.query("SELECT r.*, a.email AS account_email FROM runner r JOIN account a ON a.id = r.account_id"
-                    " WHERE r.project_id = ? ORDER BY r.beat_at DESC, r.label", (project_id,))
+    return db.query(_SELECT + " WHERE r.project_id = ? ORDER BY r.beat_at DESC, r.label", (project_id,))
 
 
 def silent(row, moment):
@@ -134,6 +137,9 @@ def api_beat():
                      project_id=g.token_project["id"], detail={"label": row["label"], "state": row["state"]})
         db.commit()
     out = public(row, moment)
+    if row["control"] == "wake":                             # a wake is said once
+        db.execute("UPDATE runner SET control = NULL WHERE id = ? AND control = 'wake'", (row["id"],))
+        db.commit()
     return jsonify(runner=out, control=out["control"])
 
 
@@ -144,7 +150,7 @@ def api_beat():
 # first (`data-confirm` dialog, or `ui.confirm_page` without JavaScript), sets `control` (what the next beat returns)
 # and writes an audit row `runner.pause`, `runner.resume` or `runner.stop`.
 
-ACTIONS = {"pause": "pause", "resume": None, "stop": "stop"}
+ACTIONS = {"pause": "pause", "resume": None, "stop": "stop", "wake": "wake"}   # wake: the Supervisor's API only
 _STATE = re.compile(r"^(watching|planning|building|paused)\b(?:\s*#(\d+))?", re.I)
 ASK = {
     "pause": ("Pause %s?", "It finishes the step it is on, then waits without taking new work until someone resumes it.",
@@ -159,13 +165,12 @@ WORDS = {"watching": "Watching for work", "planning": "Planning", "building": "B
 
 
 def by_id(db, project_id, runner_id):
-    return db.query_one("SELECT r.*, a.email AS account_email FROM runner r JOIN account a ON a.id = r.account_id"
-                        " WHERE r.project_id = ? AND r.id = ?", (project_id, runner_id))
+    return db.query_one(_SELECT + " WHERE r.project_id = ? AND r.id = ?", (project_id, runner_id))
 
 
 def can_control(row, account):
-    """The runner's own person and admins."""
-    return account is not None and (row["account_id"] == account["id"] or account["role"] == "admin")
+    """The runner's own person, admins and the supervisor account."""
+    return account is not None and (row["account_id"] == account["id"] or account["role"] in ("admin", "supervisor"))
 
 
 def words(row, moment):
@@ -186,7 +191,9 @@ def view(row, moment, account, project):
     key, task, text = words(row, moment)
     control = row["control"] if row["control"] in CONTROLS else None
     note = None
-    if control == "pause":
+    if control == "pause" and row["control_role"] == "supervisor":
+        note = "Paused by the Supervisor"
+    elif control == "pause":
         note = "Paused by a person" if key == "paused" else "Asked to pause: it waits after the step it is on"
     elif control == "stop":
         note = "Asked to stop: it ends after the step it is on"
@@ -213,7 +220,7 @@ def set_control(db, row, action, account, moment):
 @bp.post("/projects/<slug>/runners/<runner_id>/<action>")
 @project_access("viewer")
 def control_runner(slug, runner_id, action):
-    if action not in ACTIONS:
+    if action not in ASK:
         abort(404)
     db, moment = get_db(), auth.now()
     row = by_id(db, g.project["id"], runner_id)

@@ -120,3 +120,22 @@ def test_a_runner_of_another_project_is_not_reachable(app, team, conn):
     row = runner(conn, team)
     resp = post(team['clients']['dev'], '/projects/beta/runners/%s/pause' % row['id'], confirm='1')
     assert resp.status_code == 404 and runner(conn, team)['control'] is None
+
+
+def test_runs_page_shows_paused_by_supervisor(app, team, conn):
+    from central import accounts, personal
+    from .test_tasks import PW
+    beat(app, team)
+    row = runner(conn, team)
+    sup = accounts.create(conn, 'sup@example.com', PW, role='supervisor')
+    token = personal.create_token(conn, sup['id'], 'sup', START)
+    url = '/api/v1/supervisor/runners/%s/pause?project=alpha' % row['id']
+    assert team['clients']['viewer'].post(url, headers={'Authorization': 'Bearer ' + token}).status_code == 200
+    for path in PAGES:
+        text = page(team, 'viewer', path)
+        assert 'Paused by the Supervisor' in text and 'Paused by a person' not in text
+    assert runners.can_control(runner(conn, team), sup) is True
+    post(team['clients']['dev'], control_url(row, 'resume'), confirm='1')                    # a person may still resume
+    assert runner(conn, team)['control'] is None
+    post(team['clients']['dev'], control_url(row, 'pause'), confirm='1')
+    assert 'Paused by the Supervisor' not in page(team, 'viewer', '/projects/alpha/runs')    # a person's pause is theirs

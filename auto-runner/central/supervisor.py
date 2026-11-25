@@ -280,3 +280,40 @@ def set_order():
         changed.append(number)
     db.commit()
     return jsonify(changed=changed)
+
+
+@bp.post("/api/v1/supervisor/runners/<runner_id>/<action>")
+def control_runner(runner_id, action):
+    """The supervisor pauses, resumes or wakes a runner, with `?project=<slug>`. Supervisor role only (403); an unknown
+    runner or action is 404. Resume works only on a pause the supervisor made (403 on a person's pause or stop, 409 when
+    nothing is paused). Pause is refused (409) on a runner asked to stop, and wake on one with a pause or stop pending.
+    Repeating a call changes nothing. Each change writes a `supervisor.runner.<action>` audit row. Answers
+    `{"runner", "changed"}`."""
+    db = get_db()
+    account = _caller(db)
+    if account is None or account["role"] != accounts.SUPERVISOR:
+        tokens._fail(403, "runner control needs a supervisor account")
+    if action not in ("pause", "resume", "wake"):
+        return _error("no such action", 404)
+    project = projects.get_by_slug(db, request.args.get("project"))
+    row = runners.by_id(db, project["id"], runner_id) if project else None
+    if row is None:
+        return _error("no such runner", 404)
+    current = row["control"] or None
+    if action == "resume":
+        if current in ("pause", "stop") and row["control_role"] != accounts.SUPERVISOR:
+            return _error("this runner was paused or stopped by a person; only a person can resume it", 403)
+        if current not in ("pause", "stop"):
+            return _error("this runner is not paused", 409)
+    elif action == "pause" and current == "stop":
+        return _error("this runner is asked to stop", 409)
+    elif action == "wake" and current in ("pause", "stop"):
+        return _error("this runner is asked to %s; waking it would override that" % current, 409)
+    moment = auth.now()
+    changed = runners.set_control(db, row, action, account, moment)
+    if changed:
+        audit.record(db, "supervisor.runner." + action, sessions.iso(moment), account_id=account["id"],
+                     project_id=project["id"], detail={"label": row["label"], "owner": row["account_email"],
+                                                       "state": row["state"]})
+    db.commit()
+    return jsonify(runner=runners.public(runners.by_id(db, project["id"], runner_id), moment), changed=changed)
