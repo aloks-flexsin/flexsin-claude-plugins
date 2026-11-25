@@ -406,6 +406,23 @@ Delivery words for real pushes are **unverified** until push is tried live.
   the blocker shows RESUMED once the runner reports that it took the item up again. A blocker cannot be answered twice
   from the page.
 
+## Runner frictions (decision record 0011; `frictions.py`)
+
+- Counting happens at ingest, into tables shared by all projects. A friction's signature is `kind` or `kind:subject`.
+  - `friction_count` (key signature + project): `count`, `first_seen`, `last_seen`.
+  - `friction_day` (key signature + project + `day`, a UTC date `YYYY-MM-DD`): the count that day, for the 30-day window
+    and for counting only what came after a fix or an unmute.
+  - `friction_signature` (key signature): `kind`, `subject`, `state` (`watching`, `drafted`, `muted`, `fixed`), the
+    drafted task (`task_project_id`, `task_number`, `previous_task_number`), `changed_by`, `changed_at`, `reason`. A new
+    signature starts `watching` with no `changed_at`; counting never changes an existing row's state.
+- Each newly stored `friction` event adds one to all three; a duplicate event id changes nothing. A plan sent back
+  ("changes" decision, on the page or through the API) counts `plan_changes` the same way.
+- Times and days are the service's own clock (when the event arrived), not the runner's.
+- Per-project opt-out: `project.share_frictions` (on by default). Owners and admins switch "Share runner frictions with
+  the auto-runner project" on Settings › Repository (`POST /projects/<slug>/share-frictions` with `share` = `1` or `0`,
+  CSRF, audited `project.share_frictions` with `from`/`to`; anyone else gets 404). Events of a project that does not
+  share are still stored as events, but not counted.
+
 ## API
 
 Send a token as `Authorization: Bearer ...`. A missing, wrong or revoked token gets 401; a token without the needed scope
@@ -451,7 +468,7 @@ The task page shows the claim through the `ui.runner` macro.
 
 | Endpoint | Scope | What it does |
 | --- | --- | --- |
-| `POST /api/v1/events` | `ingest` | One `event.v1` object or a list. Replies `accepted`, `duplicates`, `ids`, `duplicate_ids`. The same id with a different body gets 409, an unknown schema or bad event 400, a body over 256 KB 413, more than 120 requests a minute per token 429 (counted per process). The event's `project` must be the token's project. Run-level events (`run_start`, `run_end`, `publish`) have no item; a `friction` event (decision record 0011) has a null item or an item ID, and its detail is exactly `{"kind", "subject"}`: kind one of `permission_denied`, `gate_stop`, `fix_round`, `retry`, `usage_stop`, `refused_start`, `central_error`, `plan_changes`, subject matching `^[A-Za-z0-9_.+:/-]{0,80}$`, anything else 400 (the same rules as the plugin, held equal by a parity test). Secrets in `detail` are redacted before storing. |
+| `POST /api/v1/events` | `ingest` | One `event.v1` object or a list. Replies `accepted`, `duplicates`, `ids`, `duplicate_ids`. The same id with a different body gets 409, an unknown schema or bad event 400, a body over 256 KB 413, more than 120 requests a minute per token 429 (counted per process). The event's `project` must be the token's project. Run-level events (`run_start`, `run_end`, `publish`) have no item; a `friction` event (decision record 0011) has a null item or an item ID, and its detail is exactly `{"kind", "subject"}`: kind one of `permission_denied`, `gate_stop`, `fix_round`, `retry`, `usage_stop`, `refused_start`, `central_error`, `plan_changes`, subject matching `^[A-Za-z0-9_.+:/-]{0,80}$`, anything else 400 (the same rules as the plugin, held equal by a parity test). Secrets in `detail` are redacted before storing. A newly stored friction event of a project that shares frictions is counted (see Runner frictions). |
 | `GET /api/v1/projects` | personal token, no project | `{"account", "projects": [{"slug", "name", "repo_url", "role", "can_run"}]}`: the signed-in person's projects (every project for an admin), for the plugin's "my projects" and clone. Project tokens get 401. |
 | `GET /api/v1/project` | any | `{"slug", "name", "repo_url", "account"}` of the token's project (`account`: the signed-in email for a personal token, else null) (`repo_url` is null for a project made before the column existed). The plugin's init and join use it to check they are pointed at the right repository. |
 | `GET /api/v1/deliveries/pending` | `pull` | `{"deliveries": [...]}`: the project's answers not yet acknowledged, oldest first; each is marked delivered. |
@@ -473,12 +490,15 @@ None of these steps has been tried. Check each result before going on.
    ```
    (`pip install -r central/requirements.txt` first, for psycopg.) It is safe to run again; it creates any table an older
    database lacks (for example `invite`). On a database made by an older
-   version it also adds the columns listed in `db.COLUMNS_ADDED` (`project.repo_url`, `project.repo_key`) and prints each
-   one, fills `repo_key` from each project's repository URL and creates the unique index `project_repo_key`.
+   version it also adds the columns listed in `db.COLUMNS_ADDED` (`project.repo_url`, `project.repo_key`,
+   `project.share_frictions` as `INTEGER NOT NULL DEFAULT 1`, so every existing project shares frictions until an owner
+   switches it off) and prints each one, creates the three friction tables, fills `repo_key` from each project's repository URL and creates the unique index `project_repo_key`.
    **If two projects already name the same repository it stops before changing anything** (exit code 3) and lists them as
    `host/owner/repo: slug, slug`; keep one (move its members and tokens, delete the others) and run it again. The same
    change by hand: `ALTER TABLE project ADD COLUMN IF NOT EXISTS repo_url VARCHAR(500);`,
-   `ALTER TABLE project ADD COLUMN IF NOT EXISTS repo_key VARCHAR(500);`, fill `repo_key`, then
+   `ALTER TABLE project ADD COLUMN IF NOT EXISTS repo_key VARCHAR(500);`,
+   `ALTER TABLE project ADD COLUMN IF NOT EXISTS share_frictions INTEGER NOT NULL DEFAULT 1;`, the friction tables'
+   `CREATE TABLE` statements from `schema.sql`, fill `repo_key`, then
    `CREATE UNIQUE INDEX IF NOT EXISTS project_repo_key ON project (repo_key);`.
 2. **Vercel project.** Create a new Vercel project from this repository with the root directory `auto-runner/central`.
    Set the environment variables for Production: `SECRET_KEY` (from

@@ -15,6 +15,7 @@
   version on). Action `resumed` moves a known blocker row to RESUMED.
 - A `friction` event (decision record 0011) may have a null item (run-level) or an item ID; its detail is exactly
   `{"kind", "subject"}`, kind one of the eight FRICTION_KINDS, subject matching `^[A-Za-z0-9_.+:/-]{0,80}$`.
+  Each newly stored friction event of a project that shares frictions is counted (frictions.record); a duplicate is not.
 """
 import collections
 import datetime
@@ -26,7 +27,7 @@ import threading
 
 from flask import Blueprint, current_app, g, jsonify, request
 
-from . import auth, identities, notifications, sessions, tokens
+from . import auth, frictions, identities, notifications, sessions, tokens
 from .db import get_db
 
 bp = Blueprint("ingest", __name__)
@@ -292,6 +293,8 @@ def store(db, project, events, at):
                 _upsert_blocker(db, project, clean, body, at)
             elif _resumed_blocker(clean):
                 _mark_resumed(db, project["id"], clean, at)
+            elif clean["type"] == "friction":
+                frictions.record(db, project, clean["detail"]["kind"], clean["detail"]["subject"], at)
     except Exception:
         db.rollback()
         raise

@@ -27,7 +27,7 @@ import secrets
 
 from flask import Blueprint, abort, g, jsonify, make_response, redirect, render_template, request, url_for
 
-from . import accounts, audit, auth, identities, notifications, projects, sessions, tokens, ui
+from . import accounts, audit, auth, frictions, identities, notifications, projects, sessions, tokens, ui
 from .access import project_access
 from .db import get_db
 
@@ -248,6 +248,7 @@ def decide(db, project, row, account, decision, comment, moment):
         notifications.notify(db, [row["assignee_id"]], project, "changes", notifications.task_text("changes", row),
                              notifications.task_link(project, row["number"]),
                              notifications.task_key(project, row["number"], "changes"), moment)
+        frictions.record(db, project, "plan_changes", "", at)      # a plan sent back is a friction (record 0011)
     db.commit()
     return get(db, project["id"], row["number"])
 
