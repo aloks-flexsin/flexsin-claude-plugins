@@ -148,7 +148,7 @@ def test_sent_back_comment_reaches_the_prompt(setup):
 def test_no_screenshots_leaves_the_prompt_without_the_section(setup):
     claude = FakeClaude([PLAN])
     run(setup, claude)
-    assert 'SCREENSHOTS' not in claude.planner_prompts()[0]
+    assert 'SCREENSHOTS attached to the task' not in claude.planner_prompts()[0]   # the section header; the prompt file only mentions it
 
 
 def test_screenshots_are_downloaded_and_named_before_the_task(setup):
