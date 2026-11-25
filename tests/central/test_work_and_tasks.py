@@ -97,7 +97,8 @@ def test_tasks_list_tabs_mine_and_search(app, team, conn):
     add(team, title='Admin report', who='admin', assignee=team['accounts']['dev']['id'])
     add(team, title='Owner thing', who='owner')
     c = team['clients']['dev']
-    page = c.get('/projects/alpha/tasks').get_data(as_text=True)                   # opens on the first tab with tasks
+    assert 'class="board"' in c.get('/projects/alpha/tasks').get_data(as_text=True)   # the board is the default
+    page = c.get('/projects/alpha/tasks?view=list').get_data(as_text=True)         # opens on the first tab with tasks
     assert 'aria-current="page">Needs approval <span class="count">1</span>' in page and 'CSV export' in page
     assert 'Open <span class="count">3</span>' in page and 'Dark sidebar' not in page
     page = c.get('/projects/alpha/tasks?state=open&mine=1').get_data(as_text=True)
@@ -109,9 +110,9 @@ def test_tasks_list_tabs_mine_and_search(app, team, conn):
 
 
 def test_an_empty_project_offers_the_first_task(team):
-    page = team['clients']['dev'].get('/projects/alpha/tasks').get_data(as_text=True)
+    page = team['clients']['dev'].get('/projects/alpha/tasks?view=list').get_data(as_text=True)
     assert 'No tasks yet.' in page and 'href="/projects/alpha/tasks/new">Add the first task' in page
-    assert 'Add the first task' not in team['clients']['viewer'].get('/projects/alpha/tasks').get_data(as_text=True)
+    assert 'Add the first task' not in team['clients']['viewer'].get('/projects/alpha/tasks?view=list').get_data(as_text=True)
 
 
 # ---------- New task ----------

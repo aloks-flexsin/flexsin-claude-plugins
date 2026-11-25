@@ -486,6 +486,14 @@ STATES = (("approval", "Needs approval", ("plan_review",)),
           ("done", "Done", ("done", "rejected")))
 
 
+BOARD_COLUMNS = (("open", "Open", ("open",)),
+                 ("planning", "Planning", ("planning", "changes_requested")),
+                 ("approval", "Needs approval", ("plan_review",)),
+                 ("ready", "Ready", ("approved", "queued")),
+                 ("building", "Building", ("building",)),
+                 ("done", "Done", ("done", "rejected")))
+
+
 def _can_add(db):
     return _can_run(db, g.project, g.account) or g.account["role"] == projects.ADMIN
 
@@ -499,9 +507,19 @@ def _list_page():
     rows = [r for r in rows if (not mine or r["assignee_id"] == g.account["id"]) and (not q or q.lower() in r["title"].lower())]
     tabs = [{"key": k, "label": label, "rows": [r for r in rows if r["status"] in statuses]} for k, label, statuses in STATES]
     state = request.args.get("state")
-    if state not in [t["key"] for t in tabs]:
-        state = next((t["key"] for t in tabs if t["rows"]), "approval")
-    shown = next(t["rows"] for t in tabs if t["key"] == state)
+    view = request.args.get("view")
+    if view not in ("board", "list"):
+        view = "list" if state else "board"
+    columns = None
+    if view == "board":
+        shown = rows
+        columns = [{"key": k, "label": label,
+                    "rows": sorted((r for r in rows if r["status"] in statuses), key=lambda r: r["updated_at"], reverse=True)}
+                   for k, label, statuses in BOARD_COLUMNS]
+    else:
+        if state not in [t["key"] for t in tabs]:
+            state = next((t["key"] for t in tabs if t["rows"]), "approval")
+        shown = next(t["rows"] for t in tabs if t["key"] == state)
     building = [r for r in shown if r["status"] == "building" or r["live"]]
     if building:
         from . import runs as _runs
@@ -509,7 +527,7 @@ def _list_page():
         for r in building:
             r["progress"] = _runs.task_progress([x for x in task_runs if x["task"] == r["number"]], r["items"])
     return render_template("tasks.html", project=g.project, tabs=tabs, state=state, tasks=shown, mine=mine, q=q,
-                           any_tasks=bool(for_project(db, g.project["id"])), can_add=_can_add(db))
+                           view=view, columns=columns, any_tasks=bool(for_project(db, g.project["id"])), can_add=_can_add(db))
 
 
 def _new_page(error=None, status=200, form=None):

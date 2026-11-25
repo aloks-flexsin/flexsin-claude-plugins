@@ -5,23 +5,48 @@
 {% block content %}
 {{ header(project, "tasks") }}
 {% set keep = {"slug": project.slug} %}{% if mine %}{% set _ = keep.update(mine="1") %}{% endif %}{% if q %}{% set _ = keep.update(q=q) %}{% endif %}
+{% macro card(t) %}
+    <div class="board-card">
+      <span class="task-no">#{{ t.number }}</span>
+      <a class="row-title" href="{{ url_for('tasks.task_page', slug=project.slug, number=t.number) }}">{{ t.title }}</a>
+      <div class="row-sub">{{ ui.person(t.assignee_email) }}{% if t.live %} <span class="muted">· {{ ui.runner(t.claim_runner) }}</span>{% elif t.claim_id and t.status in ('planning', 'building', 'approved', 'changes_requested') %} <span class="warn-line">· runner quiet, claim expired</span>{% endif %}
+        {% if t.pr_url %}<span class="muted">· <a href="{{ t.pr_url }}" rel="noopener noreferrer">PR {{ t.pr_url | pr_label }}</a></span>{% endif %}</div>
+      {{ ui.status("task", t.status) }}
+      {% if t.progress %}{{ ui.progress(t.progress.done, t.progress.total, ("on " ~ t.progress.current) if t.progress.current else "") }}{% endif %}
+    </div>
+{% endmacro %}
 <div class="toolbar">
+  <nav class="view-toggle" aria-label="Task view">
+    <a href="{{ url_for('tasks.tasks_page', view='board', **keep) }}"{% if view == 'board' %} aria-current="page"{% endif %}>Board</a>
+    <a href="{{ url_for('tasks.tasks_page', view='list', **keep) }}"{% if view == 'list' %} aria-current="page"{% endif %}>List</a>
+  </nav>
+  {% if view == 'list' %}
   <nav class="state-tabs" aria-label="Task state">
     {% for t in tabs %}
     <a href="{{ url_for('tasks.tasks_page', state=t.key, **keep) }}"{% if t.key == state %} aria-current="page"{% endif %}>{{ t.label }} <span class="count">{{ t.rows | length }}</span></a>
     {% endfor %}
   </nav>
+  {% endif %}
   <form method="get" action="{{ url_for('tasks.tasks_page', slug=project.slug) }}" class="search" role="search">
-    <input type="hidden" name="state" value="{{ state }}">
+    {% if view == 'board' %}<input type="hidden" name="view" value="board">{% else %}<input type="hidden" name="state" value="{{ state }}">{% endif %}
     <label class="sr-only" for="task-q">Search task titles</label>
     <input id="task-q" type="search" name="q" value="{{ q }}" placeholder="Search titles" maxlength="200">
     <label class="mine-toggle"><input type="checkbox" name="mine" value="1"{% if mine %} checked{% endif %}> Mine only</label>
     <button type="submit" class="btn">Filter</button>
-    {% if q or mine %}<a href="{{ url_for('tasks.tasks_page', slug=project.slug, state=state) }}">Clear</a>{% endif %}
+    {% if q or mine %}<a href="{{ url_for('tasks.tasks_page', slug=project.slug, view='board') if view == 'board' else url_for('tasks.tasks_page', slug=project.slug, state=state) }}">Clear</a>{% endif %}
   </form>
 </div>
 
-{% if tasks %}
+{% if view == 'board' and any_tasks %}
+<div class="board">
+  {% for c in columns %}
+  <section class="board-col" aria-labelledby="col-{{ c.key }}">
+    <h2 id="col-{{ c.key }}">{{ c.label }} <span class="count">{{ c.rows | length }}</span></h2>
+    {% for t in c.rows %}{{ card(t) }}{% else %}<p class="muted">Nothing here.</p>{% endfor %}
+  </section>
+  {% endfor %}
+</div>
+{% elif view == 'list' and tasks %}
 <div class="list">
   {% for t in tasks %}
   <div class="list-row">
