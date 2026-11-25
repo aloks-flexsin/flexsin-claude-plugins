@@ -296,7 +296,7 @@ Delivery words for real pushes are **unverified** until push is tried live.
 - `ui.py` gives every page one way to show things: `ago` / `when_abs` (relative and absolute time, from the injectable
   clock), one status vocabulary with tone and shape (`STATUS`), runner reasons in words (`reason_text`, `next_step`),
   people (`display_name`, `initials`; `account.name` when set, else the email's local part), runners
-  (`runner_label`), and `md`, an escape-first Markdown subset for plans (no HTML, no links). `templates/_ui.html` holds
+  (`runner_label`), and `md`, an escape-first Markdown subset for plans: headings, lists, bold, italic, code, fenced code blocks, pipe tables (in a sideways-scrolling `.table-wrap`) and `http(s)` links (`rel="noopener noreferrer"`; other URLs stay text); no HTML. `templates/_ui.html` holds
   the matching macros (status chip, person, runner, time, progress, copy field, empty state, danger form).
 - **Actions that cannot be undone ask first:** remove a member, disable an account, revoke all of an account's tokens,
   revoke a personal or machine token, replace a machine token, reject a plan, take a task back or give it to someone

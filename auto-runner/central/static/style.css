@@ -304,6 +304,10 @@ details.pop>summary::-webkit-details-marker,details.more>summary::-webkit-detail
 form.drop-over{outline:2px dashed var(--brand);outline-offset:4px;border-radius:var(--radius)}
 .md h1,.md h2,.md h3,.md h4{font-size:15px;text-transform:none;letter-spacing:0;color:var(--text);margin:14px 0 6px}
 .md>:first-child{margin-top:0}
+.table-wrap{overflow-x:auto;margin:0 0 14px;max-width:100%}
+.table-wrap table{margin:0;min-width:max-content;box-shadow:none}
+.md pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;overflow-x:auto;margin:0 0 14px}
+.md pre code{background:none;padding:0;word-break:normal;white-space:pre}
 .md p:last-child,.md ul:last-child{margin-bottom:0}
 .note-card{border-color:color-mix(in srgb,var(--attn-mark) 45%,var(--line))}
 .checklist{list-style:none;padding:0;margin:0}

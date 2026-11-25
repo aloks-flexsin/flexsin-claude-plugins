@@ -47,3 +47,13 @@ def test_board_card_puts_runner_and_pr_on_own_lines(team, conn):
     assert 'bhawish' in card and 'pull/3' in card
     assert not re.search(r'>\s*·', card)
     assert card.count('<div class="row-sub') == 3
+
+
+def test_task_page_renders_a_plan_table(app, team):
+    from .test_tasks import api, take
+    n = add(team)
+    claim = take(app, team)['claim']
+    api(app, 'POST', '/api/v1/tasks/%d/plan' % n, team['token']['dev'],
+        {'claim': claim, 'plan': '## Reuse check\n| A | B | C |\n| --- | --- | --- |\n| 1 | 2 | 3 |', 'items': '- [ ] **E1 Export.** ...'})
+    page = team['clients']['dev'].get('/projects/alpha/tasks/%d' % n).get_data(as_text=True)
+    assert '<table' in page and 'table-wrap' in page
