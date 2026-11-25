@@ -128,3 +128,49 @@ def test_the_form_carries_csrf_and_a_post_without_it_gets_400(signed_in):
     assert resp.status_code == 400 and _set_cookie_headers(resp, 'theme') == []
     forged = signed_in.post('/theme', data={'theme': 'dark', 'next': '/my', 'csrf_token': 'forged'})
     assert forged.status_code == 400 and _set_cookie_headers(forged, 'theme') == []
+
+
+# --- V4: WCAG contrast of the attention colours, read from style.css ----------------------------------------------
+
+def _vars(selector):
+    css = CSS.read_text(encoding='utf-8')
+    out = {}
+    for block in re.findall(re.escape(selector) + r'\{([^}]*)\}', css):
+        out.update(re.findall(r'--([\w-]+):\s*(#[0-9a-fA-F]{6})', block))
+    return out
+
+
+def _lum(color):
+    chans = [int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    lin = [v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4 for v in chans]
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+
+def _ratio(a, b):
+    hi, lo = sorted((_lum(a), _lum(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _tokens(theme):
+    tokens = _vars(':root')
+    if theme == 'dark':
+        tokens.update(_vars(':root[data-theme="dark"]'))
+    return tokens
+
+
+@pytest.mark.parametrize('theme', ['light', 'dark'])
+def test_attention_pill_text_has_contrast(theme):
+    t = _tokens(theme)
+    assert _ratio(t['on-attn-mark'], t['attn-mark']) >= 4.5
+
+
+@pytest.mark.parametrize('theme', ['light', 'dark'])
+def test_decision_bar_muted_text_has_contrast(theme):
+    t = _tokens(theme)
+    assert _ratio(t['attn-muted'], t['attn-soft']) >= 4.5
+
+
+def test_pill_and_decision_bar_use_those_colours():
+    css = CSS.read_text(encoding='utf-8')
+    assert '.pill.attention{background:var(--attn-mark);color:var(--on-attn-mark)}' in css
+    assert '--muted:var(--attn-muted)' in css

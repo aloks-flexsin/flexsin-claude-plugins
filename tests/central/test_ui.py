@@ -50,7 +50,7 @@ def test_reasons_people_and_runners_in_words():
 def test_markdown_subset():
     html = ui.md('## Intent\nLet users **download** `csv`.\n\n- [ ] **E1 Link.** x\n  *Acceptance:* a test\n1. one\n2. two')
     assert '<h4>Intent</h4>' in html and '<strong>download</strong>' in html and '<code>csv</code>' in html
-    assert '<ul>\n<li><strong>E1 Link.</strong> x<br>*Acceptance:* a test</li>\n</ul>' in html
+    assert '<ul>\n<li><strong>E1 Link.</strong> x<br><em>Acceptance:</em> a test</li>\n</ul>' in html
     assert '<ol>\n<li>one</li>\n<li>two</li>\n</ol>' in html
 
 
@@ -61,6 +61,35 @@ def test_markdown_never_lets_markup_through(evil):
     assert '<script' not in out and '<img' not in out and '<iframe' not in out and '<svg' not in out
     assert 'onclick=' not in out.replace('onclick=x&gt;', '') or '&lt;b onclick' in out
     assert '<a ' not in out
+
+
+TABLE = '| Need | Found | Verdict |\n| --- | :---: | --- |\n| Dates | `datetime` | **use** |\n| <b>x</b> | y |'
+
+
+def test_markdown_table():
+    out = ui.md('Before\n\n' + TABLE + '\n\nAfter')
+    assert '<div class="table-wrap"><table><thead>' in out and out.count('<th>') == 3
+    assert '<td><code>datetime</code></td><td><strong>use</strong></td>' in out
+    assert '<td>&lt;b&gt;x&lt;/b&gt;</td><td>y</td><td></td>' in out        # escaped; short row padded
+    assert '<p>Before</p>' in out and '<p>After</p>' in out
+
+
+def test_markdown_italic_and_bold():
+    out = ui.md('*Acceptance:* a test and **bold** and 2 * 3 * 4')
+    assert '<em>Acceptance:</em>' in out and '<strong>bold</strong>' in out and '<em>bold</em>' not in out
+    assert '2 * 3 * 4' in out
+
+
+def test_markdown_fenced_block_is_literal():
+    out = ui.md('```\n<script>x</script>\n**no** [a](https://e.com)\n```\nafter')
+    assert '<pre><code>&lt;script&gt;x&lt;/script&gt;\n**no** [a](https://e.com)</code></pre>' in out
+    assert '<script' not in out and '<p>after</p>' in out
+
+
+def test_markdown_links_only_http():
+    out = ui.md('[docs](https://example.com/a?b=1&c=2) and [x](javascript:alert(1)) and [y](//e.com)')
+    assert '<a href="https://example.com/a?b=1&amp;c=2" rel="noopener noreferrer">docs</a>' in out
+    assert out.count('<a ') == 1 and 'href="javascript' not in out
 
 
 def test_app_js_is_served_and_loaded_by_every_page(client):

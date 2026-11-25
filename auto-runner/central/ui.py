@@ -6,8 +6,8 @@ small Markdown renderer for plans, and the confirm step for actions that cannot 
   account)"), `display_name`, `initials`, `md`.
 - `STATUS`: (kind, value) -> (label, tone, shape). Tones: neutral, info, attention (a person must act), ok, bad.
   Shapes make status readable without colour (ring, dot, square).
-- `md(text)`: escape-first Markdown subset (headings, bullet and numbered lists, **bold**, `code`, paragraphs). Nothing
-  of the input becomes markup except those; no links, no HTML, no attributes.
+- `md(text)`: escape-first Markdown subset (headings, bullet and numbered lists, **bold**, *italic*, `code`, fenced
+  code blocks, pipe tables, http(s) links, paragraphs). Nothing else of the input becomes markup; no HTML.
 - `confirm_or_page(...)`: a destructive POST without `confirm=1` renders confirm.html (the same form again with
   `confirm=1`, saying what will happen); with JavaScript the dialog in app.js adds `confirm=1` before posting.
 """
@@ -98,7 +98,7 @@ STATUS = {
     ("task", "done"): ("Done", "ok", "dot"),
     ("task", "rejected"): ("Rejected", "neutral", "dot"),
     # a task's queue items
-    ("item", "queued"): ("Queued", "neutral", "ring"),
+    ("item", "queued"): ("Not started", "neutral", "ring"),
     ("item", "running"): ("In progress", "info", "dot"),
     ("item", "done"): ("Done", "ok", "dot"),
     ("item", "blocked"): ("Blocked", "attention", "square"),
@@ -194,12 +194,40 @@ def runner_label(label):
 
 _BOLD = re.compile(r"\*\*(.+?)\*\*")
 _CODE = re.compile(r"`([^`]+)`")
+_EM = re.compile(r"(?<![*\w])\*(?![\s*])([^*]+?)(?<![\s*])\*(?![*\w])")
+_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
+_TABLE_SEP = re.compile(r"^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?$")
 
 
 def _inline(text):
-    out = html.escape(text, quote=True)
-    out = _CODE.sub(lambda m: "<code>%s</code>" % m.group(1), out)
-    return _BOLD.sub(lambda m: "<strong>%s</strong>" % m.group(1), out)
+    """Escape first; code spans and links are set aside so nothing else is applied inside them."""
+    out = html.escape(text.replace("\x00", ""), quote=True)
+    stash = []
+
+    def keep(markup):
+        stash.append(markup)
+        return "\x00%d\x00" % (len(stash) - 1)
+    out = _CODE.sub(lambda m: keep("<code>%s</code>" % m.group(1)), out)
+    out = _LINK.sub(lambda m: keep('<a href="%s" rel="noopener noreferrer">%s</a>' % (m.group(2), m.group(1))), out)
+    out = _BOLD.sub(lambda m: "<strong>%s</strong>" % m.group(1), out)
+    out = _EM.sub(lambda m: "<em>%s</em>" % m.group(1), out)
+    while "\x00" in out:
+        out = re.sub("\x00(\\d+)\x00", lambda m: stash[int(m.group(1))], out)
+    return out
+
+
+def _cells(line):
+    s = line.strip()
+    s = s[1:] if s.startswith("|") else s
+    s = s[:-1] if s.endswith("|") else s
+    return [c.strip() for c in s.split("|")]
+
+
+def _table(head, rows):
+    n = len(head)
+    body = "".join("<tr>%s</tr>" % "".join("<td>%s</td>" % _inline(c) for c in (r + [""] * n)[:n]) for r in rows)
+    return ('<div class="table-wrap"><table><thead><tr>%s</thead><tbody>%s</tbody></table></div>'
+            % ("".join("<th>%s</th>" % _inline(c) for c in head) + "</tr>", body))
 
 
 def md(text):
@@ -217,12 +245,33 @@ def md(text):
         if lst:
             out.append("</%s>" % lst)
             lst = None
-    for line in lines:
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
         s = line.strip()
         h = re.match(r"(#{1,4})\s+(.*)", s)
         b = re.match(r"[-*]\s+(?:\[[ xX]\]\s+)?(.*)", s)
         n = re.match(r"\d+[.)]\s+(.*)", s)
-        if not s:
+        if s.startswith("```"):
+            flush_para()
+            close_list()
+            code = []
+            while i < len(lines) and not lines[i].strip().startswith("```"):
+                code.append(lines[i])
+                i += 1
+            i += 1
+            out.append("<pre><code>%s</code></pre>" % html.escape("\n".join(code), quote=True))
+        elif "|" in s and i < len(lines) and "|" in lines[i] and _TABLE_SEP.match(lines[i].strip()):
+            flush_para()
+            close_list()
+            rows = []
+            i += 1
+            while i < len(lines) and lines[i].strip() and "|" in lines[i]:
+                rows.append(_cells(lines[i]))
+                i += 1
+            out.append(_table(_cells(s), rows))
+        elif not s:
             flush_para()
             close_list()
         elif h:

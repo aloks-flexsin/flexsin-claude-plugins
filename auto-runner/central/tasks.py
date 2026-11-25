@@ -646,6 +646,22 @@ def _activity(db, project, number, task_runs):
     return out[:30]
 
 
+def _closed(db, project, number):
+    """Who closed the task and when, from its newest `task.close` audit row; None when there is none."""
+    rows = db.query("SELECT a.at, a.detail, acc.email FROM audit a LEFT JOIN account acc ON acc.id = a.account_id"
+                    " WHERE a.project_id = ? AND a.action = 'task.close' ORDER BY a.at DESC, a.id DESC LIMIT 50",
+                    (project["id"],))
+    for r in rows:
+        d = r["detail"]
+        try:
+            d = json.loads(d) if isinstance(d, str) else (d or {})
+        except ValueError:
+            d = {}
+        if d.get("number") == number:
+            return {"by": r["email"], "at": r["at"]}
+    return None
+
+
 def _detail(number, error=None, status=200):
     db, moment = get_db(), auth.now()
     row = get(db, g.project["id"], number)
@@ -655,13 +671,15 @@ def _detail(number, error=None, status=200):
     task_runs = _runs.for_task(db, g.project["id"], number, moment)
     progress = _runs.task_progress(task_runs, row["items"])
     states = (progress or {}).get("states", {})
-    items = [dict(i, state="done" if i["ticked"] and i["id"] not in states else states.get(i["id"], "queued"))
+    items = [dict(i, state="done" if i["ticked"] and i["id"] not in states else states.get(i["id"], "queued"),
+                  show_state=row["status"] != "done" or i["id"] in states)
              for i in _runs.parse_items(row["items"])]
+    closed = _closed(db, g.project, number) if row["status"] == "rejected" else None
     live = claim_live(row, moment)
     from . import attachments as _att
     shots = [dict(a, can_delete=_att.can_delete(a, g.account)) for a in _att.for_task(db, g.project["id"], number)]
     page = render_template("task.html", project=g.project, task=row, describe=DESCRIBE.get(row["status"], row["status"]),
-                           runs=task_runs, progress=progress, items=items, steps=STEPS,
+                           runs=task_runs, progress=progress, items=items, steps=STEPS, closed=closed,
                            step=STEP_OF.get(row["status"]), stale_hours=int(_runs.STALE.total_seconds() // 3600),
                            live=live, quiet=bool(row["claim_id"]) and not live and row["status"] in RUNNER_SIDE,
                            can_decide=row["status"] == "plan_review" and can_decide(db, g.project, row, g.account),
@@ -669,7 +687,7 @@ def _detail(number, error=None, status=200):
                            is_admin=g.account["role"] == projects.ADMIN, assignees=_runners(db, g.project),
                            activity=_activity(db, g.project, number, task_runs), error=error,
                            ttl_hours=int(CLAIM_TTL.total_seconds() // 3600), shots=shots,
-                           can_upload=projects.allows(g.project_role, _att.UPLOAD_ROLE),
+                           can_upload=projects.allows(g.project_role, _att.UPLOAD_ROLE) and row["status"] not in ("done", "rejected"),
                            shot_limits={"size": _att.LIMIT_TEXT, "count": _att.MAX_PER_TASK, "bytes": _att.MAX_SIZE})
     return page, status
 

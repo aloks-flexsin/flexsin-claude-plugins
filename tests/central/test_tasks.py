@@ -315,6 +315,22 @@ def test_the_assignee_and_an_admin_close_an_open_task_with_a_reason(app, team, c
     assert 'closed this task: Not needed any more.' in page and 'Dev closed' in page
 
 
+def test_a_closed_task_says_why_and_by_whom_and_takes_no_screenshots(app, team, conn):
+    n = add(team)
+    page = team['clients']['dev'].get('/projects/alpha/tasks/%d' % n).get_data(as_text=True)
+    assert 'No runner has taken it yet' in page and 'Add screenshots' in page
+    assert close(team, n, confirm='1').status_code == 302
+    page = team['clients']['dev'].get('/projects/alpha/tasks/%d' % n).get_data(as_text=True)
+    assert 'Why it was closed' in page and 'Not needed any more.' in page and 'Closed by' in page
+    assert "Runner's last report" not in page and 'Add screenshots' not in page
+    assert '<span class="count" title="open tasks">' in page and ' open tasks</span>' in page
+
+
+def test_item_labels_say_what_is_true(app, team, conn):
+    from central import ui
+    assert ui.STATUS[('item', 'queued')][0] == 'Not started'
+
+
 def test_close_is_for_deciders_and_shows_its_form_only_to_them(app, team, conn):
     n = add(team, who='manager')
     assert close(team, n, who='dev', confirm='1').status_code == 403            # a developer who is not the assignee
