@@ -258,7 +258,7 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Slice:* 1 Planner sees the screenshots
   *Kind:* fix
 
-- [x] **R15 Same step in the prompt contract.** In `docs/planner-prompt.md`, the instruction file for the headless planner, the `Read the project's rules files…` paragraph gets a sentence telling it to read the listed screenshots first. Mirror it in step 1 of `commands/auto.md` only if that wording differs, and then update `auto-runner/README.md` again as the doc-map requires for `commands/`. Add the CHANGELOG entry for R14 and R15 together.
+- [ ] **R15 Same step in the prompt contract.** In `docs/planner-prompt.md`, the instruction file for the headless planner, the `Read the project's rules files…` paragraph gets a sentence telling it to read the listed screenshots first. Mirror it in step 1 of `commands/auto.md` only if that wording differs, and then update `auto-runner/README.md` again as the doc-map requires for `commands/`. Add the CHANGELOG entry for R14 and R15 together.
   *Acceptance:* `python -m pytest -q` is green, including the doc-map check, and a test asserts that `docs/planner-prompt.md` mentions screenshots.
   *Slice:* 1 Planner sees the screenshots
   *Kind:* fix
