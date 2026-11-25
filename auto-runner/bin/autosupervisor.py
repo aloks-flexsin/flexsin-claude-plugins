@@ -121,10 +121,32 @@ def merge_step(project, http, read, base_ref, forge, merger):
     return out
 
 
+ORDER = '/api/v1/supervisor/order?project=%s'
+
+
+def order_step(project, http):
+    """Rank the open tasks (`autogates.order`) and send only the ranks that differ from the state's. -> list of
+    {"task", "rank", "reason", "error"} for the ranks it changed (empty when the order is already right)."""
+    status, state = http('GET', STATE % quote(project, safe=''))
+    if status != 200 or not isinstance(state, dict):
+        return [{'task': None, 'rank': None, 'reason': None, 'error': 'could not read the state'}]
+    current = {t.get('number'): t.get('rank') for t in state.get('tasks', [])}
+    changes = [o for o in gates.order(state.get('tasks', [])) if current.get(o['number']) != o['rank']]
+    if not changes:
+        return []
+    code, body = http('PUT', ORDER % quote(project, safe=''), {'orders': changes})
+    if code != 200 or not isinstance(body, dict):
+        return [{'task': None, 'rank': None, 'reason': None,
+                 'error': (body.get('error') if isinstance(body, dict) else None) or 'the order was refused'}]
+    return [dict(task=o['number'], rank=o['rank'], reason=o['reason'], error=None) for o in changes]
+
+
 def run_pass(project, http, read, base_ref, forge, merger):
-    """One Supervisor pass: the plan step, then the merge step. -> {"plans": [...], "merges": [...]}."""
+    """One Supervisor pass: the plan step, the merge step, then the order step.
+    -> {"plans": [...], "merges": [...], "orders": [...]}."""
     return {'plans': plan_step(project, http, read, base_ref),
-            'merges': merge_step(project, http, read, base_ref, forge, merger)}
+            'merges': merge_step(project, http, read, base_ref, forge, merger),
+            'orders': order_step(project, http)}
 
 
 # ---- entry point (`/auto-runner:supervisor`) ----
@@ -188,6 +210,9 @@ def summary(result):
     for m in result['merges']:
         what = 'task %s %s' % (m['task'], m['outcome']) if m['task'] is not None else m['outcome']
         lines.append('merge: ' + what + (': ' + '; '.join(m['reasons']) if m['reasons'] else ''))
+    for o in result.get('orders', []):
+        lines.append('order: ' + (o['error'] if o['task'] is None else
+                                  'task %s -> rank %s (%s)' % (o['task'], o['rank'], o['reason'])))
     return lines or ['Nothing to do: no plan waits and no pull request is ready.']
 
 
@@ -214,7 +239,8 @@ def main(argv=None, env=None, http=None, read=None, forge=None, out=print):
                       forge, env['AUTO_SUPERVISOR_MERGER'])
     for line in summary(result):
         out(line)
-    bad = [p for p in result['plans'] if p['error']] + [m for m in result['merges'] if m['outcome'] in ('error', 'failed')]
+    bad = [p for p in result['plans'] if p['error']] + [m for m in result['merges'] if m['outcome'] in ('error', 'failed')] + [
+        o for o in result.get('orders', []) if o['error']]
     return EXIT_ERRORS if bad else EXIT_OK
 
 

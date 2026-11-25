@@ -71,7 +71,8 @@ def plan_marks(db, project_id):
 def _task(marks, row, moment):
     mark = marks.get(row["number"], {})
     out = tasks.public(row, moment, full=True)
-    out.update(plan_rounds=mark.get("rounds", 0), plan_decided=mark.get("decided"), merged_at=row["merged_at"])
+    out.update(plan_rounds=mark.get("rounds", 0), plan_decided=mark.get("decided"), merged_at=row["merged_at"],
+               created_at=row["created_at"])
     return out
 
 
@@ -235,3 +236,47 @@ def merge_record(number):
                          "merge_sha": merge_sha})
     db.commit()
     return jsonify(task=tasks.public(row, moment), phase=phase, already=False)
+
+
+@bp.put("/api/v1/supervisor/order")
+def set_order():
+    """The supervisor sets queue ranks, with `?project=<slug>` and `{"orders": [{"number", "rank", "reason"}]}`. Supervisor
+    role only. Every number must be a task of the project and every rank a whole number of 1 or more, or nothing is
+    written (400/404). A rank equal to the stored one is skipped; each changed rank is written with one
+    `supervisor.order` audit row (detail: number, from, to, reason). Answers `{"changed": [numbers]}`, so repeating a
+    call changes nothing."""
+    db = get_db()
+    account = _caller(db)
+    if account is None or account["role"] != accounts.SUPERVISOR:
+        tokens._fail(403, "queue order needs a supervisor account")
+    project = projects.get_by_slug(db, request.args.get("project"))
+    if project is None:
+        return _error("no such project", 404)
+    body = request.get_json(silent=True)
+    orders = body.get("orders") if isinstance(body, dict) else None
+    if not isinstance(orders, list) or len(orders) > 1000:
+        return _error('orders is a list of {"number", "rank", "reason"}', 400)
+    wanted = {}
+    for o in orders:
+        number, rank = (o.get("number"), o.get("rank")) if isinstance(o, dict) else (None, None)
+        if (not all(isinstance(v, int) and not isinstance(v, bool) for v in (number, rank)) or rank < 1
+                or number in wanted):
+            return _error("each order needs a distinct whole task number and a rank of 1 or more", 400)
+        reason = o.get("reason")
+        wanted[number] = (rank, reason.strip()[:300] if isinstance(reason, str) else "")
+    rows = {}
+    for number in wanted:
+        rows[number] = tasks.get(db, project["id"], number)
+        if rows[number] is None:
+            return _error("no such task: %d" % number, 404)
+    at = sessions.iso(auth.now())
+    changed = []
+    for number, (rank, reason) in wanted.items():
+        if rows[number]["rank"] == rank:
+            continue
+        db.execute("UPDATE project_task SET rank = ? WHERE id = ?", (rank, rows[number]["id"]))
+        audit.record(db, "supervisor.order", at, account_id=account["id"], project_id=project["id"],
+                     detail={"number": number, "from": rows[number]["rank"], "to": rank, "reason": reason})
+        changed.append(number)
+    db.commit()
+    return jsonify(changed=changed)

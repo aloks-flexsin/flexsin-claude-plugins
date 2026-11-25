@@ -300,7 +300,7 @@ Test layout: central tests go in `tests/central/`. Runner and gate tests go in `
   *Slice:* 3 Queue order and runner control
   *Kind:* feature
 
-- [ ] **B10 Queue order step.** Add the pure `order(tasks)` (a task that unblocks others first, then unblock count, then age, never crossing a person's priority) in `autogates.py`, and `PUT /api/v1/supervisor/order`. The pass writes ranks only when they change, with a `supervisor.order` audit row giving the reason for each. Update both READMEs in the same commit (the route string and the order rules).
+- [x] **B10 Queue order step.** Add the pure `order(tasks)` (a task that unblocks others first, then unblock count, then age, never crossing a person's priority) in `autogates.py`, and `PUT /api/v1/supervisor/order`. The pass writes ranks only when they change, with a `supervisor.order` audit row giving the reason for each. Update both READMEs in the same commit (the route string and the order rules).
   *Acceptance:* `tests/central/test_supervisor_e2e.py::test_queue_order_j6` passes. `tests/auto_runner/test_supervisor_gates.py::test_order_never_crosses_priority` passes.
   *Slice:* 3 Queue order and runner control
   *Kind:* feature

@@ -152,7 +152,7 @@ def test_done_when_one_pass(app, team, conn, sup):
         assert 'Merged' in team['clients']['dev'].get(url).get_data(as_text=True)
     # a second pass does nothing: the task is merged and the plan is decided
     again = sup_mod.run_pass('alpha', http, reader(), 'origin/main', forge, MERGER)
-    assert again == dict(plans=[], merges=[]) and len(forge.merges) == 1
+    assert again['plans'] == [] and again['merges'] == [] and again['orders'] == [] and len(forge.merges) == 1
     assert len(audit_for(conn, 'supervisor.merge.decided')) == 1
 
 
@@ -227,3 +227,51 @@ def test_the_merge_route_is_supervisor_only_and_validates(app, team, conn, sup):
     again = api(app, 'POST', path, sup, dict(phase='done', sha='s')).get_json()
     assert again['already'] is True and len(audit_for(conn, 'supervisor.merge.done')) == 1
     assert api(app, 'POST', path, sup, body).status_code == 409                                  # already merged
+
+
+STATE_URL = '/api/v1/supervisor/state?project=alpha'
+ORDER_URL = '/api/v1/supervisor/order?project=alpha'
+
+
+def test_queue_order_j6(app, team, conn, sup, clock):
+    # J6: one pass ranks the open tasks (priority, then who unblocks others, then age) and writes only what changed
+    from datetime import timedelta
+    http = http_for(app, sup)
+    n = {}
+    for key, form in (('p2', dict(priority='2')), ('p1', dict(priority='1')), ('old', {}), ('young', {})):
+        clock.now = clock.now + timedelta(minutes=1)
+        n[key] = add(team, title=key, **form)
+    clock.now = clock.now + timedelta(minutes=1)
+    n['waits'] = add(team, title='waits', depends_on=str(n['young']))
+    want = [n[k] for k in ('p1', 'p2', 'young', 'old', 'waits')]
+    out = sup_mod.order_step('alpha', http)
+    assert [(o['task'], o['rank']) for o in out] == list(zip(want, range(1, 6)))
+    assert 'unblocks 1 task' in out[2]['reason']
+    ranks = {t['number']: t['rank'] for t in http('GET', STATE_URL)[1]['tasks']}
+    assert [ranks[x] for x in want] == [1, 2, 3, 4, 5]
+    rows = audit_for(conn, 'supervisor.order')
+    assert len(rows) == 5 and all(r['detail']['reason'] and r['detail']['from'] is None for r in rows)
+    # a second pass writes nothing; when a task is finished only the ranks that moved are written
+    assert sup_mod.order_step('alpha', http) == [] and len(audit_for(conn, 'supervisor.order')) == 5
+    conn.execute("UPDATE project_task SET status = 'done' WHERE number = ?", (n['p1'],))
+    conn.commit()
+    assert [o['task'] for o in sup_mod.order_step('alpha', http)] == want[1:]
+    assert len(audit_for(conn, 'supervisor.order')) == 9
+
+
+def test_the_order_route_is_supervisor_only_and_validates(app, team, conn, sup):
+    n = add(team, title='one')
+    dev = api(app, 'PUT', ORDER_URL, team['token']['dev'], dict(orders=[dict(number=n, rank=1)]))
+    assert dev.status_code == 403 and tasks.get(conn, team['alpha']['id'], n)['rank'] is None
+    head = {'Authorization': 'Bearer ' + sup}
+    for bad in (None, 'x', [dict(number=n, rank=0)], [dict(number=n, rank='1')], [dict(number=n, rank=True)],
+                [dict(number=n, rank=1), dict(number=n, rank=2)]):
+        assert new_client(app).put(ORDER_URL, json=dict(orders=bad), headers=head).status_code == 400
+    two = dict(orders=[dict(number=n, rank=1), dict(number=99, rank=2)])
+    assert new_client(app).put(ORDER_URL, json=two, headers=head).status_code == 404
+    assert tasks.get(conn, team['alpha']['id'], n)['rank'] is None
+    ok = new_client(app).put(ORDER_URL, json=dict(orders=[dict(number=n, rank=3, reason='why')]), headers=head)
+    assert ok.status_code == 200 and ok.get_json() == dict(changed=[n])
+    assert tasks.get(conn, team['alpha']['id'], n)['rank'] == 3
+    [row] = audit_for(conn, 'supervisor.order')
+    assert row['detail'] == {'number': n, 'from': None, 'to': 3, 'reason': 'why'}

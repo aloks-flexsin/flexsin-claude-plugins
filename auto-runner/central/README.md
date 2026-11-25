@@ -189,14 +189,20 @@ may not stick over plain http. The API endpoints do not use the cookie.
   409). **Re-running is safe:** a `refused` that repeats the task's previous row (same SHA and reasons) and a `done` for a
   merged task change nothing and answer 200 with `"already": true`. The task page and the task list show "Merged <time>"
   once `merged_at` is set. Tests: `tests/central/test_supervisor_e2e.py`, `tests/central/test_tasks_pages.py`.
+- **Queue order** `PUT /api/v1/supervisor/order?project=<slug>` with `{"orders": [{"number", "rank", "reason"}]}`. Supervisor
+  role only (403 otherwise, 401 without a token). Every number must be a task of the project (404) and every rank a whole
+  number of 1 or more, with no number twice (400); on any error nothing is written. A rank equal to the stored `rank` is
+  skipped; each changed rank is written and gets one `supervisor.order` audit row (detail: number, from, to, reason).
+  Answers `{"changed": [numbers]}`. The state's task objects now carry `created_at`. No schema change (the `rank` column
+  is from the priority item). Tests: `tests/central/test_supervisor_e2e.py`.
 - Column `project_task.merged_at` (nullable; written by the merge route's `done` phase). **Migration:** run `python -m central init-db` once
   (it adds the column to an existing database and keeps all data); until then the new routes answer with the
   "database update needed" error. **Rollback:** deploy the previous code; the unused nullable column is harmless and may stay
   (to remove it: `ALTER TABLE project_task DROP COLUMN merged_at`).
 - **Task priority and dependencies** (`project_task.priority`, `depends_on`, `rank`; all nullable). `priority` is an integer,
   lower is more urgent, NULL sorts last. `depends_on` is a list of task numbers of the same project (stored as JSON text,
-  returned by the task API as a list). `rank` is the queue position within a priority; nothing writes it yet (the
-  supervisor's order step will), and NULL sorts last. `priority` and `depends_on` are optional when a task is created: the
+  returned by the task API as a list). `rank` is the queue position within a priority; the supervisor's order step
+  writes it (see **Queue order** below), and NULL sorts last. `priority` and `depends_on` are optional when a task is created: the
   "Priority" and "Waits for tasks" fields of the new-task form (numbers separated by commas, `#3, 4` also works) and the
   `priority` / `depends_on` keys of `POST /api/v1/tasks`. Create answers 400 for a priority that is not a whole number,
   a `depends_on` that is not a list of task numbers, a number that is no task of the project, or the task's own number.
