@@ -5,6 +5,8 @@ Central tasks from the plugin's side (decision record 0007, step 4). Needs the c
     python autotasks.py next   [--project DIR]                      # claim my next task; print what to do (plan or build)
                                                                     # and download its screenshots (paths printed under
                                                                     # "Screenshots", in .auto/run/tasks/<N>/attachments/)
+    python autotasks.py attachments N [--project DIR]               # download task N's screenshots again and print the
+                                                                    # "Screenshots" block, without claiming anything
     python autotasks.py plan N --plan FILE --items FILE [--project DIR]   # post the plan of task N; it waits for approval
     python autotasks.py start N [--project DIR]                     # an approved task N -> .auto/pending/task-N-<brief>/
     python autotasks.py record --slug SLUG --title T --plan FILE --items FILE [--project DIR]
@@ -370,9 +372,21 @@ def finish(t, auto_dir, done, branch, pr_url, note, on_error=None):
     return f'task {task["number"]} reported stopped ({note})'
 
 
+def print_screenshots(paths, problems):
+    """Print the `--- Screenshots ---` block of `next` and `attachments`; nothing when there is nothing to say.
+    It neither catches nor raises."""
+    if paths or problems:
+        print('--- Screenshots ---')
+        for p in paths:
+            print(p)
+        for p in problems:
+            print(f'Not downloaded: {p}')
+        print()
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('cmd', choices=('next', 'plan', 'start', 'record', 'propose', 'list', 'decide'))
+    ap.add_argument('cmd', choices=('next', 'attachments', 'plan', 'start', 'record', 'propose', 'list', 'decide'))
     ap.add_argument('number', nargs='?', type=int)
     ap.add_argument('decision', nargs='?', choices=tuple(DECISIONS))
     ap.add_argument('--comment', default='')
@@ -384,6 +398,8 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if a.cmd == 'decide' and (a.number is None or a.decision is None):
         ap.error('decide needs the task number and approve, changes or reject')
+    if a.cmd == 'attachments' and a.number is None:
+        ap.error('attachments needs the task number')
     read = lambda p: Path(p).read_text(encoding='utf-8') if p else ''   # noqa: E731
     try:
         if a.cmd == 'next':
@@ -400,13 +416,9 @@ def main(argv=None):
                 paths, problems = fetch_attachments(a.project, task['number'])
             except (TaskError, autodeliver.TransportUnavailable, OSError) as e:
                 paths, problems = [], [f'could not list them ({e})']
-            if paths or problems:
-                print('--- Screenshots ---')
-                for p in paths:
-                    print(p)
-                for p in problems:
-                    print(f'Not downloaded: {p}')
-                print()
+            print_screenshots(paths, problems)
+        elif a.cmd == 'attachments':
+            print_screenshots(*fetch_attachments(a.project, a.number))
         elif a.cmd == 'plan':
             task = post_plan(a.project, a.number, read(a.plan), read(a.items))
             print(f'Task {task["number"]}: the plan waits for approval on the central page (Tasks).')

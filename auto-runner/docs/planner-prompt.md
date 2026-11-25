@@ -11,7 +11,8 @@ only, in Markdown, with the sections below in this order and these exact heading
 Read the project's rules files (the `rules_files` key of `.claude/auto.json`, usually `CLAUDE.md`) and the queue file
 (the `queue_file` key, default `.auto/queue.md`). Note the IDs already used there and in `.auto/pending/`. Explore the
 code the task touches, including what it already has to build on (components, UI library, helpers, packages), so the
-plan reuses them instead of writing new code.
+plan reuses them instead of writing new code. If the task text has a SCREENSHOTS section, open each listed path with
+Read first and treat what the screenshots show as part of the task; name any screenshot that could not be downloaded.
 
 ## Intent
 The outcome the user wants, for whom, how success will be seen, and what is out of scope. If the request's wording and

@@ -69,8 +69,8 @@ def parse_cost(output):
     return None
 
 
-def build_prompt(project, cfg, task, previous=None, findings=None):
-    """The planner's prompt: the prompt file, the principles, the task text (and its sent-back comment), and for the one
+def build_prompt(project, cfg, task, previous=None, findings=None, screenshots=(), problems=()):
+    """The planner's prompt: the prompt file, the principles, the task's screenshots, the task text (and its sent-back comment), and for the one
     revision the previous plan with the spec check's findings."""
     parts = [PROMPT_FILE.read_text(encoding='utf-8').strip()]
     principles = autocfg.principles_path(project, cfg)
@@ -79,6 +79,11 @@ def build_prompt(project, cfg, task, previous=None, findings=None):
             parts.append('ENGINEERING PRINCIPLES:\n' + principles.read_text(encoding='utf-8')[:autocfg.PRINCIPLES_MAX].strip())
         except OSError:
             pass
+    if screenshots or problems:
+        lines = ['SCREENSHOTS attached to the task. Open each path below with Read and treat what it shows as part of the task:']
+        lines += [f'- {p}' for p in screenshots]
+        lines += [f'- NOT downloaded, so not seen: {x}' for x in problems]
+        parts.append('\n'.join(lines))
     text = f'TASK {task["number"]}: {task.get("title", "")}\n{(task.get("description") or "").strip()}'
     if (task.get('comment') or '').strip():
         text += f'\n\nThe previous plan was sent back with this comment:\n{task["comment"].strip()}'
@@ -151,6 +156,10 @@ def plan(project, number, claude=None, env=None, send=None):
         claim = autotasks._claim(project, number)
         t = autotasks.transport(project, env, send)
         task = autotasks._call(t, 'GET', f'/api/v1/tasks/{int(number)}')['task']
+        try:
+            shots, shot_problems = autotasks.fetch_attachments(project, number, env, send)
+        except (autotasks.TaskError, autodeliver.TransportUnavailable, OSError) as e:
+            shots, shot_problems = [], [f'could not list the screenshots ({e})']
     except (autocfg.ConfigError, autotasks.TaskError, autodeliver.TransportUnavailable, OSError) as e:
         return {**result, 'reason': str(e)}
 
@@ -172,10 +181,10 @@ def plan(project, number, claude=None, env=None, send=None):
 
     try:
         try:
-            text = planner(build_prompt(project, cfg, task))
+            text = planner(build_prompt(project, cfg, task, screenshots=shots, problems=shot_problems))
             check = autospec.check(project, text, counted, cfg)
             if check['status'] == 'findings':
-                text = planner(build_prompt(project, cfg, task, text, check['findings']))
+                text = planner(build_prompt(project, cfg, task, text, check['findings'], shots, shot_problems))
                 check = autospec.check(project, text, counted, cfg)
         except ValueError as e:
             return {**result, 'status': 'refused', 'reason': str(e), 'spent_usd': spent[0]}
