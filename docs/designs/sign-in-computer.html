@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design: Sign in a computer – Central</title>
+<link rel="stylesheet" href="central.css">
+</head>
+<body>
+<!-- Approved design for the central service (sidebar redesign). Static mock-up with example data; not used by the app.
+     All design pages: index.html. -->
+<div class="app light" id="app">
+  <header class="top">
+    <a class="brand" href="my-work.html">auto-runner <span>central</span></a>
+    <span class="updated"><span class="live-dot" aria-hidden="true"></span>Updated 12 sec ago</span>
+    <div class="top-right">
+      <a class="bell" href="notifications.html" aria-label="Notifications, 3 waiting" title="Notifications">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 3a6 6 0 0 0-6 6v4l-2 3h16l-2-3V9a6 6 0 0 0-6-6zm-2 15a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path></svg>
+        <span class="pill attention">3</span>
+      </a>
+      <button class="user" type="button" aria-label="Account menu" aria-haspopup="menu"><span class="av" aria-hidden="true">AS</span><span>Alok</span>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </button>
+    </div>
+  </header>
+  <div class="auth-wrap" style="padding-top: 6vh">
+    <div class="auth-card" style="max-width: 480px">
+      <h1>Sign in a computer</h1>
+      <div data-if="asking">
+        <div class="panel">
+          <p class="muted small" style="margin: 0">This code asks for a token for <strong style="color: var(--text)">Alok</strong>:</p>
+          <div class="code" aria-label="Code KQ4M 7RXD">KQ4M-7RXD</div>
+          <dl class="facts" style="margin-bottom: 16px">
+            <dt>Computer</dt><dd><strong>ALOK-LAPTOP</strong></dd>
+            <dt>Repository</dt><dd><code>flexsin-claude-plugins</code></dd>
+            <dt>Identity</dt><dd>signs in for <strong>alok</strong> with Claude account <strong>bhawish</strong></dd>
+            <dt>Requested</dt><dd>just now</dd>
+            <dt>Expires</dt><dd>in 9 min 40 sec</dd>
+          </dl>
+          <p class="warn-box"><strong>Approve only a code you started yourself, just now, in Claude.</strong> If someone sent you this code, deny it.</p>
+          <div class="form-actions" style="justify-content: flex-end"><button class="btn danger" type="button" data-act="deny">Deny</button><button class="btn primary" type="button" data-act="approve">Approve</button></div>
+        </div>
+      </div>
+      <div data-if="approved" hidden>
+        <div class="result" role="status"><p><strong>Approved.</strong> Go back to Claude: it finishes signing in by itself within a few seconds.</p><p style="margin: 0">You can see and revoke this computer’s token under <a href="settings.html">Settings › My tokens</a>.</p></div>
+      </div>
+      <div data-if="denied" hidden>
+        <div class="panel" role="status"><p style="margin: 0"><strong>Denied.</strong> That computer gets no token.</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var cfg = {"groups": {"done": ["asking", "approved", "denied"]}, "acts": {"approve": ["done", "approved"], "deny": ["done", "denied"]}};
+  var app = document.getElementById('app');
+  function press(sel, btn) { document.querySelectorAll(sel).forEach(function (b) { b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); }); }
+  document.querySelectorAll('[data-theme]').forEach(function (b) {
+    b.addEventListener('click', function () { app.className = 'app ' + b.getAttribute('data-theme'); press('[data-theme]', b); });
+  });
+  document.querySelectorAll('[data-act]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var a = cfg.acts[b.getAttribute('data-act')];
+      if (!a) return;
+      if (a[0] === 'toggle') {
+        var el = document.querySelector('[data-if="' + a[1] + '"]');
+        el.hidden = !el.hidden;
+        document.querySelectorAll('[aria-expanded]').forEach(function (x) { if (cfg.acts[x.getAttribute('data-act')] === a) x.setAttribute('aria-expanded', el.hidden ? 'false' : 'true'); });
+      } else if (a[0] === 'filter') {
+        document.querySelectorAll('[data-kind]').forEach(function (li) { li.hidden = a[1] !== 'all' && li.getAttribute('data-kind') !== a[1]; });
+        press('[data-act^="f"]', b);
+      } else {
+        (cfg.groups[a[0]] || []).forEach(function (c) { var el = document.querySelector('[data-if="' + c + '"]'); if (el) el.hidden = c !== a[1]; });
+        document.querySelectorAll('[data-act]').forEach(function (x) { var xa = cfg.acts[x.getAttribute('data-act')]; if (xa && xa[0] === a[0] && x.hasAttribute('aria-pressed')) x.setAttribute('aria-pressed', xa[1] === a[1] ? 'true' : 'false'); });
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>

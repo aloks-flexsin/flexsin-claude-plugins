@@ -163,7 +163,7 @@ def test_init_db_adds_the_column_to_an_older_database(db_url):
     old.execute("INSERT INTO project (id, slug, name, created_at) VALUES ('p1', 'old', 'Old', ?)", (AT,))
     old.commit()
     old.close()
-    assert db.init_db(db_url) == ['project.repo_url', 'project.repo_key']
+    assert db.init_db(db_url) == ['project.repo_url', 'project.repo_key', 'project.share_frictions']
     assert db.init_db(db_url) == []          # a second run changes nothing
     conn = db.connect(db_url)
     try:

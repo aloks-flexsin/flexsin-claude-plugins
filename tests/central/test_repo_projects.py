@@ -90,7 +90,7 @@ def _old(db_url, rows):
 
 def test_init_db_fills_the_keys_and_makes_them_unique(db_url):
     _old(db_url, [('a', FORMS[0]), ('b', 'https://github.com/example/b.git'), ('c', None)])
-    assert db.init_db(db_url) == ['project.repo_key']
+    assert db.init_db(db_url) == ['project.repo_key', 'project.share_frictions']
     c = db.connect(db_url)
     try:
         assert {r['slug']: r['repo_key'] for r in c.query('SELECT slug, repo_key FROM project')} == {
