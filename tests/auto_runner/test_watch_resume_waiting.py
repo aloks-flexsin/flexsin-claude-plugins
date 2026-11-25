@@ -113,7 +113,7 @@ def test_a_waiting_task_request_is_built_again_without_a_new_claim(watched, monk
     calls, slugs, started = Calls(monkeypatch), [], []
     out = aw.step(p, None, ENV, svc.send, build=waiting_build(slugs), on_start=lambda n, a: started.append((n, a)))
     assert slugs == [d.name] and started == [(7, 'build')]
-    assert calls.taken == [] and calls.started == []
+    assert len(calls.taken) == 1 and calls.started == []     # it waited: E3 claims the next task in the same step
     assert out['task'] == 7 and out['action'] == 'build' and out['title'] == 'Plan of task 7'
     assert out['ok'] is True and out['waiting'] is True and out['detail'] == aw.WAITING_DETAIL
     assert svc.heartbeats == [(7, 'queued')] and svc.tasks[7]['status'] == 'queued'
@@ -235,7 +235,7 @@ def test_the_watch_loop_resumes_a_waiting_request_and_reports_waiting(watched, m
     assert aw.watch(p, None, ENV, runners.send, build=waiting_build(slugs), clock=clock.time, sleep=clock.sleep,
                     max_steps=1) == 0
     assert 'task 7 (build): waiting, waits for an earlier branch to be merged' in capsys.readouterr().out
-    assert 'building #7' in runners.states() and calls.taken == [] and len(slugs) == 1
+    assert 'building #7' in runners.states() and len(calls.taken) == 1 and len(slugs) == 1
 
 
 class Clock:

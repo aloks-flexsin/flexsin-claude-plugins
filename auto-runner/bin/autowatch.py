@@ -233,7 +233,9 @@ def step(project,claude=None, env=None, send=None, build=None, meter=None, on_st
     `meter`, every `claude -p` of the step goes through it (spend and usage limit); `on_start(number, action)` is called
     once the task is claimed, before it is planned or built (the loop beats from it).
     A task request already waiting in `.auto/pending/` (first in line, its claim still the one this computer holds) is
-    built again before anything new is claimed; a claim the service says is lost drops the claim file and the folder."""
+    built again before anything new is claimed; a claim the service says is lost drops the claim file and the folder.
+    When that resumed build only waits, the next task is claimed in the same step (`_while_waiting`)."""
+    base = claude
     waiting = _waiting_request(project)
     if waiting:
         number, folder, claim = waiting
@@ -250,6 +252,8 @@ def step(project,claude=None, env=None, send=None, build=None, meter=None, on_st
                 _build(project, folder.name, out, claude, env, send, build, meter)
             except Exception as e:              # one failed task never ends the loop; the task stays Queued
                 out['detail'] = f'{type(e).__name__}: {e}'
+            if out.get('waiting'):
+                return _while_waiting(project, out, base, env, send, meter, on_start)
             return out
     reply = autotasks.take_next(project, env, send)
     task = reply.get('task')
@@ -264,8 +268,7 @@ def step(project,claude=None, env=None, send=None, build=None, meter=None, on_st
         claude = meter.wrap(base, number, action)
     try:
         if action == 'plan':
-            r = autoplan.plan(project, number, claude, env, send)
-            out.update(ok=r['status'] == 'posted', detail=r['status'] + (f': {r["reason"]}' if r['reason'] else ''))
+            _plan(project, number, out, claude, env, send)
         else:
             slug = autotasks.start(project, number, env, send)
             _build(project, slug, out, claude, env, send, build, meter)
@@ -273,6 +276,46 @@ def step(project,claude=None, env=None, send=None, build=None, meter=None, on_st
         out['detail'] = f'{type(e).__name__}: {e}'
         if action != 'plan':
             autotasks.reopen_build(project, number, env, send)      # still Queued: make it takeable again
+    return out
+
+
+def _plan(project, number, out, claude, env, send):
+    """Plan task `number` and put the result in `out` (raises what autoplan.plan raises)."""
+    r = autoplan.plan(project, number, claude, env, send)
+    out.update(ok=r['status'] == 'posted', detail=r['status'] + (f': {r["reason"]}' if r['reason'] else ''))
+
+
+def _while_waiting(project, waited, claude, env, send, meter, on_start):
+    """A resumed build only waited (`waited`): claim the next task so planning goes on meanwhile -> the outcome.
+    A `plan` answer is planned as usual; its outcome, when it succeeds, is marked `waiting` (the loop then waits one
+    poll), and a failed plan's outcome is returned unchanged. A `build` answer is only started (its own pending folder,
+    heartbeat `queued`: no `on_start`, no build) and later steps resume it once it is first in line; if starting it
+    fails it is reopened. No task, a build answer, or a claim the service refused or could not answer -> `waited`."""
+    try:
+        reply = autotasks.take_next(project, env, send)
+    except (autotasks.TaskError, autodeliver.TransportUnavailable, autocfg.ConfigError, OSError):
+        return waited                           # the resumed build's outcome stands; the next step claims again
+    task = reply.get('task')
+    if not task:
+        return waited
+    number, action = task['number'], reply.get('action') or 'plan'
+    if action != 'plan':
+        try:
+            autotasks.start(project, number, env, send)
+        except Exception:
+            autotasks.reopen_build(project, number, env, send)      # still Queued: make it takeable again
+        return waited
+    if on_start:
+        on_start(number, 'plan')
+    out = {'task': number, 'action': 'plan', 'title': task.get('title', ''), 'ok': False, 'detail': ''}
+    if meter:
+        claude = meter.wrap(claude or autoplan._run_claude, number, 'plan')
+    try:
+        _plan(project, number, out, claude, env, send)
+    except Exception as e:                      # one failed task never ends the loop
+        out['detail'] = f'{type(e).__name__}: {e}'
+    if out['ok']:
+        out['waiting'] = True                   # a request still waits: the loop waits one poll before the next step
     return out
 
 

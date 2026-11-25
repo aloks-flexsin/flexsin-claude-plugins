@@ -5,6 +5,10 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Fixed
+- Watch mode: while a task request waits for an earlier branch to be merged, planning goes on. After a resumed build
+  that only waited, the same step claims the next task: a plan task is planned (a posted plan is reported as waiting,
+  a failed one as failed), and a build task only gets its own pending folder and is built later, once it is first in
+  line. A build task that cannot be started is reopened. Unverified against the live service.
 - Runner: re-enqueuing a request that is already queued (every item ID present with the same text) resumes it instead of
   refusing it, so a central task stopped after its first item and taken again by watch mode works its remaining items
   on the same branch and reports with its new claim. The pending folder is removed and its `task.json` adopted; while
