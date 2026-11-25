@@ -96,9 +96,9 @@ ul{padding-left:20px;margin:0 0 12px}
 pre.wrap{white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px}
 
 /* ---------- UX foundations (audit PR 1): tones, chips, people, progress, copy, confirm, buttons ---------- */
-:root{--info:#2f5bea;--info-soft:#e7edfd;--attn:#8a5300;--attn-soft:#fff0d1;--attn-mark:#c27a00;--bad:#9b2316;--bad-soft:#fde7e4;
+:root{--info:#2f5bea;--info-soft:#e7edfd;--attn:#8a5300;--attn-soft:#fff0d1;--attn-mark:#9a5b00;--on-attn-mark:#ffffff;--attn-muted:#4a5260;--bad:#9b2316;--bad-soft:#fde7e4;
   --bad-mark:#c8382a;--okc:#146c3a;--ok-mark:#1f8a4c;--neutral:#3a4150;--neutral-soft:#eef0f3}
-:root[data-theme="dark"]{--info:#9db0ff;--info-soft:#1d2540;--attn:#ffc078;--attn-soft:#3a2a14;--attn-mark:#ffc078;
+:root[data-theme="dark"]{--info:#9db0ff;--info-soft:#1d2540;--attn:#ffc078;--attn-soft:#3a2a14;--attn-mark:#ffc078;--on-attn-mark:#1b1200;--attn-muted:#c4ccd8;
   --bad:#ff8787;--bad-soft:#3a1e22;--bad-mark:#ff8787;--okc:#69db7c;--ok-mark:#69db7c;--neutral:#c8cdd6;--neutral-soft:#232a36}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;line-height:1;padding:6px 10px;border-radius:999px;white-space:nowrap}
@@ -147,7 +147,7 @@ dialog.confirm-dialog p{color:var(--muted);margin:0}
 /* ---------- Shell (audit PR 2): top bar, account menu, project header and tabs, overview, project cards ---------- */
 .nav a[aria-current=page]{background:var(--brand-soft);color:var(--brand);font-weight:600}
 .pill{display:inline-block;min-width:20px;text-align:center;font-size:11px;font-weight:700;line-height:1;padding:3px 7px;border-radius:999px;vertical-align:1px}
-.pill.attention{background:var(--attn-mark);color:#fff}
+.pill.attention{background:var(--attn-mark);color:var(--on-attn-mark)}
 .pill.info{background:var(--info-soft);color:var(--info)}
 .pill.bad{background:var(--bad-soft);color:var(--bad)}
 .account-menu{position:relative;margin-left:auto}
@@ -267,7 +267,7 @@ label.mine-toggle{flex-direction:row;align-items:center;gap:6px;margin:0;flex:no
 .steps li.done::after{background:var(--okc)}
 .steps li.current{color:var(--brand);font-weight:600}
 .steps li.current .step-dot{border-color:var(--brand);background:var(--brand-soft)}
-.decision-bar{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;background:var(--attn-soft);border:1px solid color-mix(in srgb,var(--attn-mark) 45%,var(--line));border-radius:12px;padding:14px 16px;margin:0 0 18px}
+.decision-bar{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;background:var(--attn-soft);border:1px solid color-mix(in srgb,var(--attn-mark) 45%,var(--line));border-radius:12px;padding:14px 16px;margin:0 0 18px;--muted:var(--attn-muted)}
 .decision-bar.quiet{background:var(--surface);border-color:var(--line)}
 .decision-bar .progress{width:260px}
 .decision-actions{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap}

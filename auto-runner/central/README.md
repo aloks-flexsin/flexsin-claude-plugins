@@ -310,6 +310,10 @@ Delivery words for real pushes are **unverified** until push is tried live.
 - **Theme: light by default.** Pages render `<html data-theme="light">` whatever the system setting; dark colours apply
   only under `:root[data-theme="dark"]` in `static/style.css`. `ui.theme()` reads the `theme` cookie (`dark` switches,
   anything else is light) and a context processor hands it to `base.html`.
+- **Contrast rule.** Text must reach WCAG 4.5:1 in both themes. The attention pill uses `--on-attn-mark` on
+  `--attn-mark`, and `.decision-bar` sets `--muted` to `--attn-muted` so muted text reads on `--attn-soft`.
+  `tests/central/test_theme.py` parses `style.css` (`:root` and `:root[data-theme="dark"]`) and checks those pairs with
+  the WCAG formula; change a colour there and the test tells you if it fell below 4.5.
 - **Dark mode toggle.** The top bar (signed in and signed out) has one button, "Dark mode" when light and "Light mode"
   when dark. It posts `theme` and `next` (the current path) to `POST /theme` (`auth.py`, CSRF checked like every form),
   which accepts only `light` or `dark` (anything else is 400 and sets nothing), sets the `theme` cookie for one year
