@@ -13,7 +13,7 @@
     "*.key"
   ],
   "merge": {
-    "review": "required",
+    "review": "none",
     "method": "merge"
   }
 }
