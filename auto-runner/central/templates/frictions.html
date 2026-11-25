@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}Runner frictions{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Runner frictions</h1><p class="lead">Where unattended runs got stuck, across the projects that share their
+    frictions. Mute a signature to stop a task being drafted for it.
+    <a href="{{ url_for('admin.accounts_page') }}">Back to Accounts</a></p></div>
+</div>
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+
+<nav class="filter-chips" aria-label="Kind">
+  <a href="{{ url_for('frictions.frictions_page', state=state or None) }}"{% if not kind %} aria-current="page"{% endif %}>Every kind</a>
+  {% for k in kinds %}<a href="{{ url_for('frictions.frictions_page', kind=k, state=state or None) }}"{% if kind == k %} aria-current="page"{% endif %}>{{ k | replace("_", " ") }}</a>{% endfor %}
+</nav>
+<nav class="filter-chips" aria-label="State">
+  <a href="{{ url_for('frictions.frictions_page', kind=kind or None) }}"{% if not state %} aria-current="page"{% endif %}>Every state</a>
+  {% for s in states %}<a href="{{ url_for('frictions.frictions_page', kind=kind or None, state=s) }}"{% if state == s %} aria-current="page"{% endif %}>{{ ui_status("friction", s).label }}</a>{% endfor %}
+</nav>
+
+{% if rows %}
+<div class="list">
+  {% for f in rows %}
+  <div class="list-row friction-row">
+    <div class="grow">
+      <div><code class="friction-sig">{{ f.signature }}</code></div>
+      <div class="row-sub muted"><span>{{ f.kind | replace("_", " ") }}</span>
+        · <strong>{{ f.count }}</strong> time{{ "s" if f.count != 1 }}
+        · <span title="{{ f.projects | join(', ') }}">{{ f.projects | length }} project{{ "s" if f.projects | length != 1 }}</span>
+        {% if f.first_seen %}· first {{ ui.when(f.first_seen) }} · last {{ ui.when(f.last_seen) }}{% endif %}</div>
+      {% if f.reason %}<div class="row-sub muted">Muted: {{ f.reason }}</div>{% endif %}
+    </div>
+    {{ ui.status("friction", f.state) }}
+    {% if f.task_number %}{% if f.task_slug %}<a href="{{ url_for('tasks.task_page', slug=f.task_slug, number=f.task_number) }}">Task #{{ f.task_number }}</a>{% else %}<span class="muted">Task #{{ f.task_number }}</span>{% endif %}{% endif %}
+    {% if f.state == "muted" %}
+    <form method="post" action="{{ url_for('frictions.unmute_post') }}" class="inline" data-confirm="Unmute {{ f.signature }}?" data-confirm-detail="Only occurrences from now on count toward drafting a task." data-confirm-action="Unmute">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="signature" value="{{ f.signature }}">
+      <button type="submit" class="btn">Unmute</button>
+    </form>
+    {% else %}
+    <details class="pop row-menu">
+      <summary class="btn" aria-label="Mute {{ f.signature }}">Mute</summary>
+      <form method="post" action="{{ url_for('frictions.mute_post') }}" class="pop-body" data-confirm="Mute {{ f.signature }}?" data-confirm-detail="It is still counted, but no task is drafted for it until someone unmutes it." data-confirm-action="Mute">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="signature" value="{{ f.signature }}">
+        <label for="mr-{{ loop.index }}">Why mute it?</label>
+        <input id="mr-{{ loop.index }}" type="text" name="reason" maxlength="{{ max_reason }}" required>
+        <button type="submit" class="btn danger">Mute</button>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+{{ ui.empty("No runner friction matches." if kind or state else "No runner frictions yet.") }}
+{% endif %}
+{% endblock %}

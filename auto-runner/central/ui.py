@@ -126,6 +126,11 @@ STATUS = {
     ("blocker", "PENDING_DELIVERY"): ("Answered", "info", "ring"),
     ("blocker", "DELIVERED"): ("Answer picked up", "info", "dot"),
     ("blocker", "RESUMED"): ("Resumed", "ok", "dot"),
+    # runner friction signatures (frictions.py)
+    ("friction", "watching"): ("Watching", "info", "ring"),
+    ("friction", "drafted"): ("Drafted", "attention", "dot"),
+    ("friction", "muted"): ("Muted", "neutral", "square"),
+    ("friction", "fixed"): ("Fixed", "ok", "dot"),
 }
 
 REASONS = {

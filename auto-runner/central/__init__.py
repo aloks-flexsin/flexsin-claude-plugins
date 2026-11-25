@@ -79,8 +79,8 @@ def create_app(config=None):
 
     app.teardown_appcontext(db.close_db)
 
-    from . import (access, admin, attachments, auth, blockers, deliveries, ingest, invites, mywork, notifications,
-                   personal, push, runners, runs, shell, tasks, ui)
+    from . import (access, admin, attachments, auth, blockers, deliveries, frictions, ingest, invites, mywork,
+                   notifications, personal, push, runners, runs, shell, tasks, ui)
     attachments.init_app(app)                           # MAX_CONTENT_LENGTH and the 413 page
     auth.init_app(app)
     ui.init_app(app)
@@ -99,6 +99,7 @@ def create_app(config=None):
     app.register_blueprint(runners.bp)
     app.register_blueprint(notifications.bp)
     app.register_blueprint(push.bp)
+    app.register_blueprint(frictions.bp)
 
     _schema_guard(app)
 

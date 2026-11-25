@@ -422,6 +422,17 @@ Delivery words for real pushes are **unverified** until push is tried live.
   the auto-runner project" on Settings › Repository (`POST /projects/<slug>/share-frictions` with `share` = `1` or `0`,
   CSRF, audited `project.share_frictions` with `from`/`to`; anyone else gets 404). Events of a project that does not
   share are still stored as events, but not counted.
+- **Runner frictions page** (`GET /frictions`, admins only, anyone else 404; linked from Accounts' header): one row per
+  signature with its kind, total count, number of projects (their names on hover), first and last seen, state chip and
+  linked task, newest last-seen first. Filter chips narrow it by kind (`?kind=`) and state (`?state=`).
+  - **Mute** (`POST /frictions/mute`, form `signature` and `reason`, required, at most 500 characters): state `muted`
+    with the reason, `changed_by`, `changed_at`; it is still counted but never drafted. Audited `friction.mute`
+    (`signature`, `from`, `reason`).
+  - **Unmute** (`POST /frictions/unmute`, form `signature`, only for a muted row): state `watching`, reason cleared,
+    `changed_at` set, so, as after a fix, only occurrences after it count toward drafting. Audited `friction.unmute`
+    (`signature`, `reason_was`).
+  - Both need CSRF and confirm (a dialog with JavaScript, the confirm page without, `confirm=1`); an unknown signature
+    is 404; a refused change (no reason, already muted, not muted) is 400 and audited as `<action>.refused`.
 
 ## API
 

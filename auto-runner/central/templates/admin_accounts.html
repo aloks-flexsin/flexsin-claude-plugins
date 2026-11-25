@@ -5,7 +5,8 @@
 <div class="page-head">
   <div><h1>Accounts</h1><p class="lead">Everyone who can sign in, across all projects. To give someone a project, invite
     them from the project's Settings › Members instead: that adds the account and the membership in one step.
-    <a href="{{ url_for('admin.notifications_log') }}">Notification log</a></p></div>
+    <a href="{{ url_for('admin.notifications_log') }}">Notification log</a> ·
+    <a href="{{ url_for('frictions.frictions_page') }}">Runner frictions</a></p></div>
 </div>
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 {% if link %}
