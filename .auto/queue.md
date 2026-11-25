@@ -253,6 +253,73 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Slice:* 1 Ask once on any page
   *Kind:* feature
 
+Test layout: central tests go in `tests/central/`. Runner and gate tests go in `tests/auto_runner/`. The end-to-end tests drive the pass's logic through the real Flask test client with `FakeForge` and an injected HTTP function, and live in `tests/central/test_supervisor_e2e.py`. Item IDs use the letter S. Verify that S and B1–B13 are unused in the queue file and `.auto/pending/`. If they are used, take the next free letter.
+
+- [ ] **B1 Supervisor account role.** Add account role `supervisor` (`accounts.ROLES` becomes `('admin','user','supervisor')`) and a CLI command to create one (verify `accounts.py` and `cli.py`: `python -m central supervisor-create <email>`). It can be added to a project as a **manager** member. `tasks._can_run` and `tasks.create` reject an account with role `supervisor`, so it is never an assignee and never creates tasks. `invites.py` must not offer or accept `supervisor`. `admin.py` shows the role but refuses role changes to or from `supervisor`. Existing roles and routes must not change. Update `auto-runner/central/README.md` in the same commit (the role, the CLI command and the places above).
+  *Acceptance:* `tests/central/test_supervisor_identity.py` passes. A supervisor who is a manager member is refused as an assignee (`_can_run`), refused task creation, allowed to decide a plan, cannot be invited, and cannot be set to or from `supervisor` on the admin page.
+  *Slice:* 1 Plan approval by policy
+  *Kind:* feature
+
+- [ ] **B2 Supervisor read API, whoami and `merged_at`.** Add `GET /api/v1/supervisor/whoami` (returns the caller's account role, 200 for any valid token). Add `GET /api/v1/supervisor/state?project=<slug>` (supervisor account role required, 403 for any other role, 404 only for an unknown project). It returns the project's tasks with plan, items, status, branch, `pr_url`, `plan_rounds` (the number of `supervisor.plan.changes` audit rows for the task) and `merged_at`, plus runners and open blockers, using the existing row shapes. It is read-only, and no claim ids appear. Add the nullable `merged_at` column to `project_task` here (nothing writes it yet), with the migration note. Update `auto-runner/central/README.md` in the same commit (both route strings, the column, the migration and rollback).
+  *Acceptance:* `tests/central/test_supervisor_api.py::test_state_is_read_only_and_supervisor_only` passes for a supervisor, a developer, an admin and no token. In the same file, `::test_whoami_returns_role` and `::test_state_plan_rounds_counts_changes_rows` pass.
+  *Slice:* 1 Plan approval by policy
+  *Kind:* feature
+
+- [ ] **B3 Policy and plan gate.** Add `bin/autogates.py` with the policy loader (`.claude/supervisor-policy.json`, read from the base ref through an injected reader, returning the blob SHA). The policy keys here are `base` and `restricted_paths`. The loader validates the keys. Add the pure `plan_gate(task, policy)` function covering the five checks in decision 5. A missing or invalid policy file means the plan is left for a person. Update `auto-runner/README.md` in the same commit (the policy file, its keys, the fact that it is read from the base).
+  *Acceptance:* `tests/auto_runner/test_supervisor_gates.py` passes, including a plan naming a restricted path, "Needs a person" not "None.", an item with no Acceptance line, a missing policy file, and an all-clear case.
+  *Slice:* 1 Plan approval by policy
+  *Kind:* feature
+
+- [ ] **B4 Plan decision route and first pass.** Add `POST /api/v1/supervisor/tasks/<n>/plan-decision` (approve, changes or escalate). It calls `tasks.decide` and writes the audit rows with the policy SHA and reasons. It derives the round count from the `supervisor.plan.changes` audit rows for the task and converts a `changes` request into `escalate` when that count is already 2, with no new column. Add `bin/autosupervisor.py` with a plan step that uses B2, B3 and this route through an injected HTTP function. Re-running a pass must not duplicate decisions. Update both READMEs in the same commit (the route string, the plan step, the round cap).
+  *Acceptance:* `tests/central/test_supervisor_e2e.py::test_plan_approved_or_sent_back` passes (J1 and J2). In `tests/central/test_supervisor_api.py`, `::test_third_failing_plan_escalates` passes (the third failing plan returns escalate and writes `supervisor.plan.escalate`). `::test_rerun_does_not_duplicate_decision` passes.
+  *Slice:* 1 Plan approval by policy
+  *Kind:* feature
+
+- [ ] **B5 Forge adapter.** Add `bin/autoforge.py` with a `Forge` interface (`pr`, `changed_files`, `checks`, `reviews`, `merge(pr, sha, method)`), a `GithubForge` over `urllib` (token from `AUTO_SUPERVISOR_GITHUB_TOKEN`, never logged, injectable opener), and a `FakeForge` in `tests/auto_runner/`. The interface has no push or commit method. Update `auto-runner/README.md` in the same commit.
+  *Acceptance:* `tests/auto_runner/test_autoforge.py` passes using a recorded fake opener only (no network), and includes a test that the interface exposes no write-to-branch method and one that the token never appears in a logged line.
+  *Slice:* 2 Merge green PRs
+  *Kind:* internal
+
+- [ ] **B6 Merge gate.** Add the pure `merge_gate(task, pr, checks, reviews, policy, merger)` to `autogates.py` with the six conditions from decision 6. It returns a verdict plus the evidence and every reason it failed. `base` and `restricted_paths` already exist from B3, so this item adds only the policy keys `merge.review` and `merge.method`. Update `auto-runner/README.md` in the same commit.
+  *Acceptance:* `tests/auto_runner/test_supervisor_gates.py::test_merge_gate_table` passes with one case per refusal reason, plus an all-clear case.
+  *Slice:* 2 Merge green PRs
+  *Kind:* feature
+
+- [ ] **B7 Merge step, record route and Merged display.** Add `POST /api/v1/supervisor/tasks/<n>/merge` to write `merged_at` (the column exists from B2) plus the audit rows (`decided` before the forge call, `done` or `failed` after, and `refused` with the reasons). Add the merge step to the pass: it merges at the evaluated SHA and skips a task already merged. The task page and the task list show "Merged <time>" when `merged_at` is set. Update both READMEs in the same commit (the route string and the merge step).
+  *Acceptance:* `tests/central/test_supervisor_e2e.py::test_done_when_one_pass` (J5) and `::test_unsafe_prs_refused` (J4) pass. `tests/central/test_tasks_pages.py::test_merged_task_shows_merged_time` passes (task page and task list, J3).
+  *Slice:* 2 Merge green PRs
+  *Kind:* feature
+
+- [ ] **B8 Supervisor command.** Add `commands/supervisor.md` (`/auto-runner:supervisor`, run one pass and print a summary) and the `autosupervisor.py` entry point with its environment variables and exit codes. It calls `GET /api/v1/supervisor/whoami` first and refuses to run, with a clear message and a non-zero exit code, if the role is not `supervisor`. Update `auto-runner/README.md` in the same commit.
+  *Acceptance:* `tests/auto_runner/test_supervisor_pass.py::test_command_refuses_non_supervisor_token` passes, and the doc-map check passes.
+  *Slice:* 2 Merge green PRs
+  *Kind:* feature
+
+- [ ] **B9 Task priority and dependencies.** Add the nullable `priority`, `depends_on` and `rank` columns, with the migration note. `priority` and `depends_on` are optional on task create (form and API). Rules: `priority` is an integer, lower is more urgent, and NULL sorts last. `depends_on` is a list of task numbers in the same project. Create rejects numbers that do not exist, or that equal the task's own number. `take_next` orders by priority, then rank, then number, within the existing status order, and skips a task while any task in its `depends_on` is not `done`. Existing behaviour is unchanged when all are unset. Update `auto-runner/central/README.md` in the same commit (the fields, the rules, the migration and rollback).
+  *Acceptance:* in `tests/central/test_tasks.py` (verify the file name): `::test_take_next_priority_lower_first_null_last`, `::test_take_next_rank_within_priority`, `::test_take_next_skips_unfinished_dependency`, and `::test_create_rejects_unknown_or_self_dependency` pass, and the existing task tests pass unchanged.
+  *Slice:* 3 Queue order and runner control
+  *Kind:* feature
+
+- [ ] **B10 Queue order step.** Add the pure `order(tasks)` (a task that unblocks others first, then unblock count, then age, never crossing a person's priority) in `autogates.py`, and `PUT /api/v1/supervisor/order`. The pass writes ranks only when they change, with a `supervisor.order` audit row giving the reason for each. Update both READMEs in the same commit (the route string and the order rules).
+  *Acceptance:* `tests/central/test_supervisor_e2e.py::test_queue_order_j6` passes. `tests/auto_runner/test_supervisor_gates.py::test_order_never_crosses_priority` passes.
+  *Slice:* 3 Queue order and runner control
+  *Kind:* feature
+
+- [ ] **B11 Supervisor runner control.** `runners.can_control` also allows the supervisor account. Add `POST /api/v1/supervisor/runners/<id>/<pause|resume|wake>` with audit rows. Resume is allowed only when `control_by` is the supervisor. `wake` is a new `control` value returned by the beat. The Runs and Overview pages show "Paused by the Supervisor". Pause behaviour for people is unchanged. Update `auto-runner/central/README.md` in the same commit (the route strings, `wake`, the page text).
+  *Acceptance:* these exact tests pass: `tests/central/test_supervisor_api.py::test_supervisor_cannot_resume_a_persons_pause`; `tests/central/test_runners.py::test_beat_returns_wake`; `tests/central/test_pages.py::test_runs_page_shows_paused_by_supervisor` (verify the pages test file name).
+  *Slice:* 3 Queue order and runner control
+  *Kind:* feature
+
+- [ ] **B12 Pause, resume and wake step.** The pass pauses a project's runners when CI on the base head is red and resumes the ones it paused when it is green. It also wakes an idle watcher when a task is ready. Make `autowatch.py` poll at once on `wake` (verify its beat handling). A watcher that is silent is listed in the summary and is not touched. Update `auto-runner/README.md` in the same commit.
+  *Acceptance:* `tests/central/test_supervisor_e2e.py::test_pause_when_main_red_j7` passes, and `tests/auto_runner/test_autowatch.py::test_wake_polls_at_once` passes.
+  *Slice:* 3 Queue order and runner control
+  *Kind:* feature
+
+- [ ] **B13 Docs review.** Review that both READMEs already cover every route, column, environment variable, the policy file and the migration steps with rollback, and fix any gap. Update `docs/decisions/0010-supervisor.md`: record P0–P1b progress, the four questions with the recommended answers, and the note that policy is read from the base. Update `auto-runner/docs/delivery-contract.md` only if a contract changed. Do not edit `CLAUDE.md`, because 0010 says its rule changes wait for acceptance.
+  *Acceptance:* `python -m pytest -q` is green, including the doc-map check.
+  *Slice:* 3 Queue order and runner control
+  *Kind:* internal
+
 ## Needs a person (the runner never does these)
 - Push, merge, deploy, or anything outside this repository.
 - Decisions about what the product should do.
