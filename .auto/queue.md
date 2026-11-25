@@ -315,7 +315,7 @@ Test layout: central tests go in `tests/central/`. Runner and gate tests go in `
   *Slice:* 3 Queue order and runner control
   *Kind:* feature
 
-- [ ] **B13 Docs review.** Review that both READMEs already cover every route, column, environment variable, the policy file and the migration steps with rollback, and fix any gap. Update `docs/decisions/0010-supervisor.md`: record P0–P1b progress, the four questions with the recommended answers, and the note that policy is read from the base. Update `auto-runner/docs/delivery-contract.md` only if a contract changed. Do not edit `CLAUDE.md`, because 0010 says its rule changes wait for acceptance.
+- [x] **B13 Docs review.** Review that both READMEs already cover every route, column, environment variable, the policy file and the migration steps with rollback, and fix any gap. Update `docs/decisions/0010-supervisor.md`: record P0–P1b progress, the four questions with the recommended answers, and the note that policy is read from the base. Update `auto-runner/docs/delivery-contract.md` only if a contract changed. Do not edit `CLAUDE.md`, because 0010 says its rule changes wait for acceptance.
   *Acceptance:* `python -m pytest -q` is green, including the doc-map check.
   *Slice:* 3 Queue order and runner control
   *Kind:* internal
