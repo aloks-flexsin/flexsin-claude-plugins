@@ -452,6 +452,20 @@ def pending_requests(project):
     return sorted(p for p in pending.iterdir() if p.is_dir()) if pending.exists() else []
 
 
+def free_request_ids(d, qtext):
+    """An approved central task's request (it has task.json: no person is there to renumber it) whose item IDs clash with
+    the queue `qtext` gets them moved to a free letter, items.md rewritten. -> {old: new} (empty: nothing changed)."""
+    items = d / 'items.md'
+    if not (d / 'task.json').exists() or not items.exists():
+        return {}
+    text, mapping = queue.free_ids(qtext, items.read_text(encoding='utf-8'))
+    if mapping:
+        items.write_text(text, encoding='utf-8')
+        say(f"request '{d.name}': item IDs already in the queue were moved to a free letter: "
+            + ', '.join(f'{a} -> {b}' for a, b in mapping.items()))
+    return mapping
+
+
 def request_errors(d, qtext, cfg):
     """-> (items text, errors) for one pending request folder, checked against the queue text `qtext`."""
     items = d / 'items.md'
@@ -867,6 +881,7 @@ def apply_pending(project, wt, cfg, queue_rel, limit=None):
             break
         items = d / 'items.md'
         qtext = wq.read_text(encoding='utf-8')
+        free_request_ids(d, qtext)
         itext = items.read_text(encoding='utf-8') if items.exists() else ''
         _, errors = queue.validate(qtext, itext, require_kind=autocfg.changelog(cfg)['enabled'],
                                    require_slice=autocfg.principles(cfg)['require_slices'])
@@ -1080,6 +1095,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         if not req.exists():
             raise RunnerError(f'No request at {req} (expected items.md).')
         qsrc = wt / queue_rel if (wt / queue_rel).exists() else pq
+        free_request_ids(req.parent, qsrc.read_text(encoding='utf-8'))
         _, errors = queue.validate(qsrc.read_text(encoding='utf-8'), req.read_text(encoding='utf-8'),
                                    require_kind=autocfg.changelog(cfg)['enabled'],
                                    require_slice=autocfg.principles(cfg)['require_slices'])

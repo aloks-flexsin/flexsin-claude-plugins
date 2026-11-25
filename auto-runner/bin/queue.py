@@ -201,6 +201,33 @@ def parse_slice(block):
     return None
 
 
+def free_ids(queue_text, items_text):
+    """-> (items text, {old: new}) with every item-ID prefix of `items_text` that clashes with the queue (or repeats within
+    the request) moved to the first letter no queue or request item uses, A to Z. References to the moved IDs inside the
+    request move with them; nothing else changes. No clash -> the text unchanged and {}. For requests no person is
+    watching (an approved central task), where "pick the next free one" has nobody to answer it."""
+    split = re.compile(r'^([A-Z]{1,3})(\d+)$')
+    existing = {i for i, _, _ in parse_items(queue_text)}
+    ids = [i for i, _, _ in parse_items(items_text)]
+    clashing = {split.match(i).group(1) for i in ids if i in existing} | \
+               {split.match(i).group(1) for i in ids if ids.count(i) > 1}
+    if not clashing:
+        return items_text, {}
+    used = {split.match(i).group(1) for i in existing | set(ids)}
+    free = [c for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' if c not in used]
+    mapping, prefix_map = {}, {}
+    for prefix in sorted(clashing):
+        if not free:
+            return items_text, {}
+        prefix_map[prefix] = free.pop(0)
+    for i in ids:
+        p, n = split.match(i).groups()
+        if p in prefix_map:
+            mapping[i] = prefix_map[p] + n
+    text = re.sub(r'\b([A-Z]{1,3}\d+)\b', lambda m: mapping.get(m.group(1), m.group(1)), items_text)
+    return text, mapping
+
+
 def validate(queue_text, items_text, require_kind=False, require_slice=False):
     """-> (items, errors). Errors are plain sentences for the person who wrote the items.
     `require_kind` (the changelog is on) makes a missing `*Kind:*` line an error; off, old items without one stay valid.

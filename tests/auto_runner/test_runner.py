@@ -940,3 +940,47 @@ def test_stop_at_percent_is_validated(project):
         with pytest.raises(ar.autocfg.ConfigError):
             ar.autocfg.load(project)
     assert ar.USAGE_LIMIT_DEFAULTS['stop_at_percent'] == 90
+
+
+CENTRAL_ITEMS = (
+    'Item IDs use the letter A; A2 builds on A1.\n\n'
+    '- [ ] **A1 Clashing first.** Build the clashing first thing, with enough words to pass any length rule we might have.\n'
+    '  *Acceptance:* the file exists.\n  *Slice:* 1 The first thing\n\n'
+    '- [ ] **A2 Clashing second.** Build on A1 in a small file, with enough words to pass any length rule we might have.\n'
+    '  *Acceptance:* the file exists.\n  *Slice:* 1 The first thing\n')
+
+
+def test_free_ids_moves_a_clashing_prefix_and_its_references():
+    text, mapping = ar.queue.free_ids(QUEUE, CENTRAL_ITEMS)
+    assert mapping == {'A1': 'B1', 'A2': 'B2'}
+    assert '**B1 Clashing first.**' in text and '**B2 Clashing second.**' in text
+    assert 'Build on B1' in text and 'B2 builds on B1' in text
+    assert ar.queue.validate(QUEUE, text)[1] == []
+
+
+def test_free_ids_skips_letters_in_use_and_leaves_clean_requests_alone():
+    queue_text = QUEUE + '\n- [x] **B1 Done.** x\n  *Acceptance:* y\n'
+    assert ar.queue.free_ids(queue_text, CENTRAL_ITEMS)[1] == {'A1': 'C1', 'A2': 'C2'}
+    clean = CENTRAL_ITEMS.replace('A1', 'D1').replace('A2', 'D2')
+    assert ar.queue.free_ids(QUEUE, clean) == (clean, {})
+
+
+def test_a_central_task_request_with_clashing_ids_is_renumbered_not_rejected(project):
+    req = project / '.auto' / 'pending' / 'task-7-x'
+    req.mkdir(parents=True)
+    (req / 'items.md').write_text(CENTRAL_ITEMS, encoding='utf-8')
+    (req / 'task.json').write_text(json.dumps({'number': 7, 'claim': 'c'}), encoding='utf-8')
+    added = ar.apply_pending(project, project, ar.autocfg.load(project), '.auto/queue.md', limit=1)
+    assert added == ['task-7-x']
+    pq = (project / '.auto' / 'queue.md').read_text(encoding='utf-8')
+    assert '**B1 Clashing first.**' in pq and '**B2 Clashing second.**' in pq
+    assert not (project / '.auto' / 'rejected').exists()
+
+
+def test_a_request_a_person_wrote_still_gets_the_clash_reported(project):
+    req = project / '.auto' / 'pending' / 'mine'
+    req.mkdir(parents=True)
+    (req / 'items.md').write_text(CENTRAL_ITEMS, encoding='utf-8')
+    assert ar.apply_pending(project, project, ar.autocfg.load(project), '.auto/queue.md', limit=1) == []
+    reasons = next((project / '.auto' / 'rejected').iterdir()) / 'REASONS.txt'
+    assert 'A1: this ID is already used' in reasons.read_text(encoding='utf-8')
