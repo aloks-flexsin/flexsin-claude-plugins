@@ -423,6 +423,12 @@ Delivery words for real pushes are **unverified** until push is tried live.
 
 ## Runner frictions (decision record 0011; `frictions.py`)
 
+- Before `python -m central init-db` adds the friction tables and `project.share_frictions`, friction bookkeeping is
+  skipped, not failed: `frictions.record` and `frictions.task_ended` run in a savepoint, and a missing table or column
+  (`db.schema_missing`) rolls back only those writes and logs a warning. Event pushes, task reports, plan decisions
+  and closing a task keep working; counting starts once the migration has run. Any other error is raised as before.
+  The Frictions page and the Share setting still answer 503 "needs a database update" until then.
+
 - Counting happens at ingest, into tables shared by all projects. A friction's signature is `kind` or `kind:subject`.
   - `friction_count` (key signature + project): `count`, `first_seen`, `last_seen`.
   - `friction_day` (key signature + project + `day`, a UTC date `YYYY-MM-DD`): the count that day, for the 30-day window

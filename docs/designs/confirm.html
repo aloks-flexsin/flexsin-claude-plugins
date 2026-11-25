@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design: Confirm – Central</title>
+<link rel="stylesheet" href="central.css">
+</head>
+<body>
+<!-- Approved design for the central service (sidebar redesign). Static mock-up with example data; not used by the app.
+     All design pages: index.html. -->
+<div class="app light" id="app">
+  <header class="top">
+    <a class="brand" href="my-work.html">auto-runner <span>central</span></a>
+    <span class="updated"><span class="live-dot" aria-hidden="true"></span>Updated 12 sec ago</span>
+    <div class="top-right">
+      <a class="bell" href="notifications.html" aria-label="Notifications, 3 waiting" title="Notifications">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 3a6 6 0 0 0-6 6v4l-2 3h16l-2-3V9a6 6 0 0 0-6-6zm-2 15a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path></svg>
+        <span class="pill attention">3</span>
+      </a>
+      <button class="user" type="button" aria-label="Account menu" aria-haspopup="menu"><span class="av" aria-hidden="true">AS</span><span>Alok</span>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </button>
+    </div>
+  </header>
+  <div class="auth-wrap">
+    <div class="auth-card" style="max-width: 560px">
+      <div class="panel" style="padding: 24px">
+        <h1 style="font-size: 22px; text-align: left; margin: 0 0 8px">Remove Neha from Auto-runner?</h1>
+        <p class="muted" style="margin: 0 0 20px">Their runners stop working on this project at their next step, and tasks they are building go back to approved for someone else. Their account and other projects are not affected.</p>
+        <div class="form-actions" style="justify-content: flex-end"><a class="btn" href="project-settings.html">Keep it as it is</a><button class="btn danger-solid" type="button">Remove</button></div>
+      </div>
+      <p class="auth-note">Shown only when the browser runs no script. Otherwise the same question opens as a dialog over the page.</p>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

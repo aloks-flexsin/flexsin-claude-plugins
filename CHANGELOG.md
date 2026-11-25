@@ -10,6 +10,9 @@ All notable changes to this project are written here (Keep a Changelog).
   on the same branch and reports with its new claim. The pending folder is removed and its `task.json` adopted; while
   another run holds the lock the request only waits, untouched. The test fake `FakeTasks` now hands out build tasks
   with a fresh claim and takes `POST /api/v1/tasks/N/report`. Unverified against the live service.
+- Central: before `init-db` adds the runner-friction tables, event pushes with friction events, task reports, plan
+  decisions and closing a task failed with 503; the friction bookkeeping is now skipped (in a savepoint, with a
+  warning) until the migration runs, and everything else works.
 
 ### Added
 - Central: runner frictions close the loop (decision record 0011). Rejecting a drafted friction task (rejecting its plan

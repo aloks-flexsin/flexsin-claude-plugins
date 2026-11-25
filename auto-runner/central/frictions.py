@@ -34,7 +34,7 @@ from flask import Blueprint, abort, current_app, g, redirect, render_template, r
 
 from . import audit, auth, config, ingest, projects, sessions, ui
 from .admin import _require_admin
-from .db import get_db
+from .db import get_db, schema_missing
 
 STATES = ("watching", "drafted", "muted", "fixed")
 MAX_REASON = 500
@@ -57,7 +57,31 @@ def shares(project):
     return value is None or bool(int(value))
 
 
+def _guarded(db, fn, *args):
+    """Run friction bookkeeping `fn(db, *args)` inside a savepoint. When the friction tables or the share column are not
+    in the database yet (code deployed before `python -m central init-db`), roll back only these writes, log it and
+    return None, so the request that caused them (an event push, a report, a decision) still succeeds. Any other error
+    is raised as before."""
+    db.execute("SAVEPOINT friction_bookkeeping")
+    try:
+        out = fn(db, *args)
+    except Exception as exc:
+        db.execute("ROLLBACK TO SAVEPOINT friction_bookkeeping")
+        db.execute("RELEASE SAVEPOINT friction_bookkeeping")
+        if not schema_missing(exc):
+            raise
+        logging.getLogger(__name__).warning("friction bookkeeping skipped: run python -m central init-db (%s)", exc)
+        return None
+    db.execute("RELEASE SAVEPOINT friction_bookkeeping")
+    return out
+
+
 def record(db, project, kind, subject, at):
+    """Count one friction (see _record); skipped while the database lacks the friction tables."""
+    return _guarded(db, _record, project, kind, subject, at)
+
+
+def _record(db, project, kind, subject, at):
     """Count one friction for `project` at `at` (an ISO UTC time); -> the signature, or None when not shared."""
     row = db.query_one("SELECT share_frictions FROM project WHERE id = ?", (project["id"],))
     if row is None or not shares(row):
@@ -203,6 +227,11 @@ def draft_due(db, now, cfg=None):
 
 
 def task_ended(db, project, row, outcome, by, at):
+    """See _task_ended; skipped while the database lacks the friction tables."""
+    return _guarded(db, _task_ended, project, row, outcome, by, at)
+
+
+def _task_ended(db, project, row, outcome, by, at):
     """A task ended (`outcome` "rejected" or "done"): when it is the task linked to a drafted signature, mute it or mark
     it fixed; -> the signature, or None. `by` is the acting account id (or None); `at` an ISO time. Does not commit."""
     sig = db.query_one("SELECT * FROM friction_signature WHERE task_project_id = ? AND task_number = ?"

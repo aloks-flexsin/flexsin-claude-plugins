@@ -276,3 +276,4 @@ body{margin:0}
 .review button[aria-pressed=true]{background:#3b5bdb;border-color:#3b5bdb;color:#fff}
 [hidden]{display:none !important}
 @media (max-width:760px){.lower{grid-template-columns:minmax(0,1fr)}}
+.option:has(input:checked){border-color:var(--brand);background:var(--brand-soft)}
