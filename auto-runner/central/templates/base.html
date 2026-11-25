@@ -38,6 +38,18 @@
     <button type="submit" class="theme-toggle">{{ "Light mode" if theme == "dark" else "Dark mode" }}</button>
   </form>
 </div></header>
+{% if g.account and push_ask_key %}
+{# Queue item A1: hidden until static/app.js finds push support, no subscription and no earlier answer here. #}
+<div class="push-ask" data-push-ask data-vapid-public-key="{{ push_ask_key }}" data-csrf-token="{{ csrf_token() }}" data-subscribe-url="{{ url_for('push.subscribe_post') }}" hidden>
+  <div class="push-ask-in">
+    <p data-push-status>Get a notification when a plan or blocker waits for you.</p>
+    <div class="push-ask-actions">
+      <button type="button" class="btn primary" data-push-ask-on>Turn on</button>
+      <button type="button" class="btn" data-push-ask-off>Not now</button>
+    </div>
+  </div>
+</div>
+{% endif %}
 <main class="{% block main_class %}{% endblock %}">
 {% block content %}{% endblock %}
 </main>

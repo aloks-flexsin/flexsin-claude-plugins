@@ -12,9 +12,9 @@ Both are injected into templates by `init_app` whenever `g.project` / `g.account
 """
 import json
 
-from flask import g, request
+from flask import current_app, g, request
 
-from . import auth, blockers, notifications, projects, runners, runs, tasks, ui
+from . import auth, blockers, notifications, projects, push, runners, runs, tasks, ui
 from .db import get_db
 
 RECENT = 12
@@ -131,6 +131,9 @@ def init_app(app):
         db = get_db()
         out = {"nav_badge": nav_badge(db, account), "nav_endpoint": request.endpoint or "",
                "notif_count": notifications.unread_count(db, account["id"])}
+        # Queue item A1: the "turn on push" bar on every signed-in page except the Account page (its own section).
+        if push.configured() and request.endpoint != "admin.account_page":
+            out["push_ask_key"] = (current_app.config.get("CENTRAL_VAPID_PUBLIC_KEY") or "").strip()
         project = g.get("project")
         if project is not None:
             out["pnav"] = project_nav(db, project, account, g.get("project_role"), auth.now())
