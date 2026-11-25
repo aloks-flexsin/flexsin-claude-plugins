@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design: My work – Central</title>
+<link rel="stylesheet" href="central.css">
+</head>
+<body>
+<!-- Approved design for the central service's My work page (sidebar redesign). Static mock-up: content is
+     example data, links point at the other design files. The dark bar at the top is for reviewing only. -->
+<div class="review" role="region" aria-label="Design review controls">
+  <strong>Design · My work</strong>
+  <span>State:</span>
+  <button type="button" data-state="empty" aria-pressed="true">Nothing waiting</button>
+  <button type="button" data-state="waiting" aria-pressed="false">Something waiting</button>
+  <span>Use the Light / Dark switch in the sidebar for the theme.</span>
+  <a href="project.html">Project page design</a>
+</div>
+<div class="app light" id="app">
+  <header class="top">
+    <a class="brand" href="my-work.html">auto-runner <span>central</span></a>
+    <span class="updated"><span class="live-dot" aria-hidden="true"></span>Updated 12 sec ago</span>
+    <div class="top-right">
+      <a class="bell" href="#" aria-label="Notifications" title="Notifications">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 3a6 6 0 0 0-6 6v4l-2 3h16l-2-3V9a6 6 0 0 0-6-6zm-2 15a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        <span class="pill attention" data-when="waiting" hidden>3</span>
+      </a>
+      <button class="user" type="button" aria-label="Account menu" aria-haspopup="menu"><span class="av" aria-hidden="true">AS</span><span>Alok</span>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </header>
+  <div class="shell">
+    <nav class="side" aria-label="Main">
+      <div>
+        <a class="side-item head current" href="my-work.html" aria-current="page"><span class="grow">My work</span><span class="pill attention" data-when="waiting" hidden title="3 decisions wait for you">3</span></a>
+        <a class="side-item sub current" href="my-work.html"><span class="grow">All</span></a>
+        <a class="side-item sub" href="#"><span class="grow ellip">Auto-runner</span>
+          <span class="mk mk-run" data-when="empty" title="Running"><svg viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Running"><rect x="1" y="1" width="10" height="10" rx="1.5" fill="currentColor"/></svg></span>
+          <span class="mk mk-bad" data-when="waiting" hidden title="Blocked"><svg viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Blocked"><path d="M6 1l5.5 10H.5z" fill="currentColor"/></svg></span></a>
+        <a class="side-item sub" href="#"><span class="grow ellip">Client portal</span>
+          <span class="mk mk-run" title="Running"><svg viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Running"><rect x="1" y="1" width="10" height="10" rx="1.5" fill="currentColor"/></svg></span></a>
+        <a class="side-item sub" href="#"><span class="grow ellip">Ops dashboards</span>
+          <span class="mk mk-run" data-when="empty" title="Running"><svg viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Running"><rect x="1" y="1" width="10" height="10" rx="1.5" fill="currentColor"/></svg></span>
+          <span class="mk mk-attn" data-when="waiting" hidden title="Waits for you"><svg viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Waits for you"><circle cx="6" cy="6" r="5" fill="currentColor"/></svg></span></a>
+        <div class="legend" aria-hidden="true">
+          <span class="mk-attn"><svg viewBox="0 0 12 12" width="9" height="9"><circle cx="6" cy="6" r="5" fill="currentColor"/></svg>waits for you</span>
+          <span class="mk-run"><svg viewBox="0 0 12 12" width="9" height="9"><rect x="1" y="1" width="10" height="10" rx="1.5" fill="currentColor"/></svg>running</span>
+          <span class="mk-bad"><svg viewBox="0 0 12 12" width="9" height="9"><path d="M6 1l5.5 10H.5z" fill="currentColor"/></svg>blocked</span>
+        </div>
+      </div>
+      <div>
+        <div class="side-label">Projects</div>
+        <a class="side-item" href="project.html"><span class="grow ellip">Auto-runner</span></a>
+        <a class="side-item" href="#"><span class="grow ellip">Client portal</span></a>
+        <a class="side-item" href="#"><span class="grow ellip">Ops dashboards</span></a>
+        <a class="side-item side-more" href="#"><span class="grow">See all 7 projects</span></a>
+      </div>
+      <div>
+        <div class="side-label">Admin</div>
+        <a class="side-item" href="#"><span class="grow">Accounts</span></a>
+        <a class="side-item" href="#"><span class="grow">Notification log</span></a>
+      </div>
+      <div class="side-foot">
+        <div class="seg" role="group" aria-label="Theme">
+          <button type="button" data-theme="light" aria-pressed="true">Light</button>
+          <button type="button" data-theme="dark" aria-pressed="false">Dark</button>
+        </div>
+        <a class="side-item" href="#"><span class="grow">Settings</span></a>
+        <button class="side-btn" type="button"><span class="grow">Log out</span></button>
+      </div>
+    </nav>
+    <main class="content">
+      <h1>Hi Alok</h1>
+      <p class="lead" data-when="waiting" hidden><strong>3 decisions wait for you.</strong> Across your projects.</p>
+      <p class="lead" data-when="empty">Nothing waits for you. Across your projects.</p>
+      <div class="cols">
+        <div class="stack">
+          <section class="panel" aria-labelledby="h-waiting" data-when="waiting" hidden>
+            <div class="panel-head"><h2 id="h-waiting">Waiting for you <span class="pill attention">3</span></h2><span class="panel-sub">Oldest first</span></div>
+            <div class="cards">
+              <div class="action-card bad">
+                <div class="card-top"><span class="chip tone-bad"><span class="mark square"></span>Blocker · item 3</span><span>Auto-runner</span></div>
+                <a class="title" href="#">Should the Board view remember the last filter per browser?</a>
+                <span class="sub">Asked by Alok (bhawish account) on #16 UI UX · 6 min ago</span>
+                <div class="card-actions"><a class="btn primary" href="#">Answer</a></div>
+              </div>
+              <div class="action-card attention">
+                <div class="card-top"><span class="chip tone-attention"><span class="mark"></span>Needs approval</span><span>Auto-runner</span></div>
+                <a class="title" href="#">#18 Weekly email digest of finished tasks</a>
+                <span class="sub">For Bhawish · 4 items · 18 min ago</span>
+                <div class="card-actions"><button class="btn primary" type="button">Approve</button><a class="btn" href="#">Read plan</a></div>
+              </div>
+              <div class="action-card attention">
+                <div class="card-top"><span class="chip tone-attention"><span class="mark"></span>Needs approval</span><span>Ops dashboards</span></div>
+                <a class="title" href="#">#11 Night shift dashboard</a>
+                <span class="sub">For Neha · 9 items · 1 h ago</span>
+                <div class="card-actions"><a class="btn primary" href="#">Read plan</a></div>
+              </div>
+            </div>
+          </section>
+          <section class="panel" aria-labelledby="h-done">
+            <div class="panel-head"><h2 id="h-done">Recently done</h2><a class="panel-sub" href="#">All history</a></div>
+            <ul class="feed">
+              <li><span class="chip tone-ok"><span class="mark"></span>Done</span><span class="grow"><a href="#">#15 Ask once per browser to turn on push notifications</a><span class="sub">Auto-runner · Alok · <a href="#">PR #42</a></span></span><span class="when">1 h ago</span></li>
+              <li><span class="chip tone-ok"><span class="mark"></span>Done</span><span class="grow"><a href="#">#13 Stop the run when usage nears the plan limit</a><span class="sub">Auto-runner · Bhawish · <a href="#">PR #41</a></span></span><span class="when">Yesterday</span></li>
+              <li><span class="chip tone-ok"><span class="mark"></span>Done</span><span class="grow"><a href="#">#5 Kanban style task view</a><span class="sub">Auto-runner · Alok · <a href="#">PR #40</a></span></span><span class="when">Yesterday</span></li>
+              <li><span class="chip tone-ok"><span class="mark"></span>Done</span><span class="grow"><a href="#">#9 Invoice PDF footer shows the GST number</a><span class="sub">Client portal · Neha · <a href="#">PR #18</a></span></span><span class="when">2 days ago</span></li>
+              <li><span class="chip tone-ok"><span class="mark"></span>Done</span><span class="grow"><a href="#">#12 Check the Claude account before a run</a><span class="sub">Auto-runner · Alok · <a href="#">PR #39</a></span></span><span class="when">3 days ago</span></li>
+            </ul>
+          </section>
+          <div class="notice" role="status" data-when="empty" style="display:flex;align-items:center;gap:12px;border-style:dashed;background:var(--surface)">
+            <span class="dot ok" aria-hidden="true" style="margin:0"></span>
+            <span><b style="color:var(--text)">Nothing waiting.</b> No plan or blocker needs you. New ones appear at the top of this column.</span>
+          </div>
+        </div>
+        <section class="panel" aria-labelledby="h-progress">
+          <div class="panel-head"><h2 id="h-progress">In progress</h2><span class="panel-sub">Yours first, then the team's</span></div>
+          <h3>My progress <span class="pill info">2</span></h3>
+          <div class="row">
+            <span class="av" aria-hidden="true">AS</span>
+            <span class="grow"><a class="title" href="#">#16 UI UX: board and task page fixes</a><span class="sub">Auto-runner · Alok (bhawish account)</span></span>
+            <span class="chip tone-info"><span class="mark"></span>Building</span>
+            <div class="progress"><div class="progress-head"><span>3 of 7</span><span>on card spacing</span></div><div class="track"><div class="fill" style="width:43%"></div></div></div>
+          </div>
+          <div class="row">
+            <span class="av" aria-hidden="true">AS</span>
+            <span class="grow"><a class="title" href="#">#17 Sidebar layout for My work and projects</a><span class="sub">Auto-runner · Alok (alok-pers account)</span></span>
+            <span class="chip tone-neutral"><span class="mark ring"></span>Planning</span>
+            <div class="progress"><div class="progress-head"><span>Writing plan</span><span>4 min</span></div><div class="track"><div class="fill" style="width:15%"></div></div></div>
+          </div>
+          <h3>Team progress <span class="pill info">2</span></h3>
+          <div class="row">
+            <span class="av" aria-hidden="true">BH</span>
+            <span class="grow"><a class="title" href="#">#24 Retry failed payment webhooks</a><span class="sub">Client portal · Bhawish (bhawish account)</span></span>
+            <span class="chip tone-info"><span class="mark"></span>Building</span>
+            <div class="progress"><div class="progress-head"><span>5 of 9</span><span>on tests</span></div><div class="track"><div class="fill" style="width:56%"></div></div></div>
+          </div>
+          <div class="row">
+            <span class="av" aria-hidden="true">NE</span>
+            <span class="grow"><a class="title" href="#">#8 Stock ageing query for the warehouse view</a><span class="sub">Ops dashboards · Neha (neha account)</span></span>
+            <span class="chip tone-info"><span class="mark"></span>Building</span>
+            <div class="progress"><div class="progress-head"><span>2 of 4</span><span>on SQL review</span></div><div class="track"><div class="fill" style="width:50%"></div></div></div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+(function () {
+  var app = document.getElementById('app');
+  function press(sel, btn) {
+    document.querySelectorAll(sel).forEach(function (b) { b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); });
+  }
+  document.querySelectorAll('[data-theme]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      app.className = 'app ' + b.getAttribute('data-theme');
+      press('[data-theme]', b);
+    });
+  });
+  document.querySelectorAll('[data-state]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var state = b.getAttribute('data-state');
+      document.querySelectorAll('[data-when]').forEach(function (el) { el.hidden = el.getAttribute('data-when') !== state; });
+      press('[data-state]', b);
+    });
+  });
+})();
+</script>
+</body>
+</html>

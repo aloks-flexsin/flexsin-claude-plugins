@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design: project page – Central</title>
+<link rel="stylesheet" href="central.css">
+</head>
+<body>
+<!-- Approved design for a project's page in the central service (sidebar redesign): the Kanban board with
+     recent activity / history and runners / runs below it. Static mock-up with example data. -->
+<div class="review" role="region" aria-label="Design review controls">
+  <strong>Design · Project page</strong>
+  <span>Use the Light / Dark switch in the sidebar for the theme.</span>
+  <a href="my-work.html">My work design</a>
+</div>
+<div class="app light" id="app">
+  <header class="top">
+    <a class="brand" href="my-work.html">auto-runner <span>central</span></a>
+    <span class="updated"><span class="live-dot" aria-hidden="true"></span>Updated 8 sec ago</span>
+    <div class="top-right">
+      <a class="bell" href="#" aria-label="Notifications, 3 waiting" title="Notifications">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 3a6 6 0 0 0-6 6v4l-2 3h16l-2-3V9a6 6 0 0 0-6-6zm-2 15a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        <span class="pill attention">3</span>
+      </a>
+      <button class="user" type="button" aria-label="Account menu" aria-haspopup="menu"><span class="av" aria-hidden="true">AS</span><span>Alok</span>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </header>
+  <div class="shell">
+    <nav class="side" aria-label="Main">
+      <div>
+        <a class="side-item head" href="my-work.html"><span class="grow">My work</span><span class="pill attention" title="3 decisions wait for you">3</span></a>
+        <a class="side-item sub" href="my-work.html"><span class="grow">All</span></a>
+        <a class="side-item sub" href="my-work.html"><span class="grow ellip">Auto-runner</span><span class="mk mk-bad" title="Blocked"><svg viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Blocked"><path d="M6 1l5.5 10H.5z" fill="currentColor"/></svg></span></a>
+        <a class="side-item sub" href="my-work.html"><span class="grow ellip">Client portal</span><span class="mk mk-run" title="Running"><svg viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Running"><rect x="1" y="1" width="10" height="10" rx="1.5" fill="currentColor"/></svg></span></a>
+        <a class="side-item sub" href="my-work.html"><span class="grow ellip">Ops dashboards</span><span class="mk mk-attn" title="Waits for you"><svg viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Waits for you"><circle cx="6" cy="6" r="5" fill="currentColor"/></svg></span></a>
+      </div>
+      <div>
+        <div class="side-label">Projects</div>
+        <a class="side-item current" href="project.html" aria-current="page"><span class="grow ellip">Auto-runner</span></a>
+        <a class="side-item" href="#"><span class="grow ellip">Client portal</span></a>
+        <a class="side-item" href="#"><span class="grow ellip">Ops dashboards</span></a>
+        <a class="side-item side-more" href="#"><span class="grow">See all 7 projects</span></a>
+      </div>
+      <div>
+        <div class="side-label">Admin</div>
+        <a class="side-item" href="#"><span class="grow">Accounts</span></a>
+        <a class="side-item" href="#"><span class="grow">Notification log</span></a>
+      </div>
+      <div class="side-foot">
+        <div class="seg" role="group" aria-label="Theme">
+          <button type="button" data-theme="light" aria-pressed="true">Light</button>
+          <button type="button" data-theme="dark" aria-pressed="false">Dark</button>
+        </div>
+        <a class="side-item" href="#"><span class="grow">Settings</span></a>
+        <button class="side-btn" type="button"><span class="grow">Log out</span></button>
+      </div>
+    </nav>
+    <main class="content">
+      <div class="proj-head">
+        <div>
+          <div class="crumb"><a href="#">Projects</a> /</div>
+          <h1>Auto-runner <small>flexsin-claude-plugins</small></h1>
+          <div class="meta"><span>github.com/aloks-flexsin/flexsin-claude-plugins</span><span aria-hidden="true">·</span><span>You are <strong>owner</strong></span><span aria-hidden="true">·</span><span>3 members</span></div>
+        </div>
+        <div class="head-actions">
+          <a class="btn blockers" href="#">Blockers <span class="pill bad">1</span></a>
+          <a class="btn" href="#">Project settings</a>
+          <a class="btn primary" href="#">New task</a>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <nav class="toggle" aria-label="Task view"><a href="project.html" aria-current="page">Board</a><a href="#">List</a></nav>
+        <form class="search push" role="search">
+          <label class="sr-only" for="task-q">Search task titles</label>
+          <input id="task-q" type="search" placeholder="Search titles">
+          <label class="mine"><input type="checkbox"> Mine only</label>
+        </form>
+      </div>
+
+      <div class="board-wrap">
+        <div class="board">
+          <section class="board-col" aria-labelledby="c-open">
+            <h2 id="c-open"><span>Open <span>2</span></span><a class="col-add" href="#" aria-label="New task" title="New task"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></a></h2>
+            <div class="board-card">
+              <span class="task-no">#19</span>
+              <a class="row-title" href="#">Retry failed deliveries with backoff</a>
+              <div class="card-foot"><span class="who"><span class="av sm" aria-hidden="true">NE</span>Neha</span><span>Waiting for a runner</span></div>
+            </div>
+            <div class="board-card">
+              <span class="task-no">#20</span>
+              <a class="row-title" href="#">Show spend per project on the overview</a>
+              <div class="card-foot"><span class="who"><span class="av sm" aria-hidden="true">–</span>Anyone</span><span>2 h ago</span></div>
+            </div>
+          </section>
+          <section class="board-col" aria-labelledby="c-plan">
+            <h2 id="c-plan">Planning <span>1</span></h2>
+            <div class="board-card">
+              <span class="task-no">#17</span>
+              <a class="row-title" href="#">Sidebar layout for My work and projects</a>
+              <span class="chip tone-neutral"><span class="mark ring"></span>Planning</span>
+              <div class="card-foot"><span class="who"><span class="av sm" aria-hidden="true">AS</span>Alok (alok-pers account)</span></div>
+            </div>
+          </section>
+          <section class="board-col attn" aria-labelledby="c-appr">
+            <h2 id="c-appr">Needs approval <span class="pill attention">1</span></h2>
+            <div class="board-card attn">
+              <span class="task-no">#18</span>
+              <a class="row-title" href="#">Weekly email digest of finished tasks</a>
+              <span class="chip tone-attention"><span class="mark"></span>4 items to approve</span>
+              <div class="card-foot"><span class="who"><span class="av sm" aria-hidden="true">BH</span>Bhawish</span><span>18 min ago</span></div>
+            </div>
+          </section>
+          <section class="board-col" aria-labelledby="c-ready">
+            <h2 id="c-ready">Ready <span>1</span></h2>
+            <div class="board-card">
+              <span class="task-no">#21</span>
+              <a class="row-title" href="#">Export runs as CSV</a>
+              <span class="chip tone-ok"><span class="mark"></span>Approved</span>
+              <div class="card-foot"><span class="who"><span class="av sm" aria-hidden="true">NE</span>Neha</span><span>Next free runner</span></div>
+            </div>
+          </section>
+          <section class="board-col" aria-labelledby="c-build">
+            <h2 id="c-build">Building <span>1</span></h2>
+            <div class="board-card">
+              <span class="task-no">#16</span>
+              <a class="row-title" href="#">UI UX: board and task page fixes</a>
+              <span class="chip tone-bad"><span class="mark square"></span>Blocked · 1 question</span>
+              <div><div class="progress-head"><span>3 of 7</span><span>on card spacing</span></div><div class="track"><div class="fill" style="width:43%"></div></div></div>
+              <div class="card-foot"><span class="who"><span class="av sm" aria-hidden="true">AS</span>Alok (bhawish account)</span></div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <p class="done-note">14 tasks are done. They are under History below.</p>
+
+      <div class="lower">
+        <section class="panel" aria-label="Recent activity and history">
+          <div class="panel-head">
+            <div class="toggle" role="group" aria-label="Show">
+              <button type="button" data-left="activity" aria-pressed="true">Recent activity</button>
+              <button type="button" data-left="history" aria-pressed="false">History</button>
+            </div>
+            <span class="when">Newest first</span>
+          </div>
+          <ul class="feed" data-pane="activity">
+            <li><span class="dot info" aria-hidden="true"></span><span class="grow">Alok (bhawish account) finished item 3 of 7 on <a href="#">#16 UI UX</a><span class="sub">Commit “Tighten board card spacing” · tests passed</span></span><span class="when">2 min ago</span></li>
+            <li><span class="dot bad" aria-hidden="true"></span><span class="grow">The runner on <a href="#">#16</a> asked a question<span class="sub">“Should the Board view remember the last filter per browser?”</span></span><span class="when">6 min ago</span></li>
+            <li><span class="dot attn" aria-hidden="true"></span><span class="grow">Bhawish’s plan for <a href="#">#18 Weekly email digest</a> waits for approval<span class="sub">4 items</span></span><span class="when">18 min ago</span></li>
+            <li><span class="dot ok" aria-hidden="true"></span><span class="grow"><a href="#">#15 Ask once per browser to turn on push notifications</a> was merged<span class="sub"><a href="#">PR #42</a> · by Alok</span></span><span class="when">1 h ago</span></li>
+            <li><span class="dot off" aria-hidden="true"></span><span class="grow">Neha added <a href="#">#21 Export runs as CSV</a></span><span class="when">3 h ago</span></li>
+          </ul>
+          <ul class="feed" data-pane="history" hidden>
+            <li><span class="chip tone-ok"><span class="mark"></span>Done</span><span class="grow"><a href="#">#15 Ask once per browser to turn on push notifications</a><span class="sub">Alok · <a href="#">PR #42</a></span></span><span class="when">1 h ago</span></li>
+            <li><span class="chip tone-ok"><span class="mark"></span>Done</span><span class="grow"><a href="#">#13 Stop the run when usage nears the plan limit</a><span class="sub">Bhawish · <a href="#">PR #41</a></span></span><span class="when">Yesterday</span></li>
+            <li><span class="chip tone-ok"><span class="mark"></span>Done</span><span class="grow"><a href="#">#5 Kanban style task view</a><span class="sub">Alok · <a href="#">PR #40</a></span></span><span class="when">Yesterday</span></li>
+            <li><span class="chip tone-ok"><span class="mark"></span>Done</span><span class="grow"><a href="#">#12 Check the Claude account before a run</a><span class="sub">Alok · <a href="#">PR #39</a></span></span><span class="when">3 days ago</span></li>
+          </ul>
+          <div class="panel-foot"><a href="#">See all</a></div>
+        </section>
+
+        <section class="panel" aria-label="Runners and runs">
+          <div class="panel-head">
+            <div class="toggle" role="group" aria-label="Show">
+              <button type="button" data-right="runners" aria-pressed="true">Runners</button>
+              <button type="button" data-right="runs" aria-pressed="false">Runs</button>
+            </div>
+            <span class="chip tone-info"><span class="mark"></span>1 live</span>
+          </div>
+          <ul class="feed" data-pane="runners">
+            <li><span class="dot ok" aria-hidden="true"></span><span class="grow"><b>Alok (bhawish account)</b><span class="sub">Building #16 · waiting for an answer · heartbeat 12 sec ago</span></span><span class="chip tone-ok"><span class="mark"></span>Live</span></li>
+            <li><span class="dot off" aria-hidden="true"></span><span class="grow"><b>Alok (alok-pers account)</b><span class="sub">Planning #17 on desktop · started 4 min ago</span></span><span class="chip tone-info"><span class="mark"></span>Planning</span></li>
+            <li><span class="dot off" aria-hidden="true"></span><span class="grow"><b>Bhawish (bhawish account)</b><span class="sub">Idle · last run #13</span></span><span class="when">2 h ago</span></li>
+            <li><span class="dot off" aria-hidden="true"></span><span class="grow"><b>Neha (neha account)</b><span class="sub">Offline</span></span><span class="when">Yesterday</span></li>
+          </ul>
+          <ul class="feed" data-pane="runs" hidden>
+            <li><span class="chip tone-info"><span class="mark"></span>Running</span><span class="grow"><a href="#">#16 UI UX</a><span class="sub">Alok (bhawish account) · 41 min so far</span></span><span class="when">09:12</span></li>
+            <li><span class="chip tone-ok"><span class="mark"></span>Delivered</span><span class="grow"><a href="#">#15 Push notifications ask</a><span class="sub">Alok (bhawish account) · <a href="#">PR #42</a> · 52 min</span></span><span class="when">07:40</span></li>
+            <li><span class="chip tone-bad"><span class="mark square"></span>Failed</span><span class="grow"><a href="#">#13 Usage stop</a><span class="sub">Bhawish (bhawish account) · tests failed, retried</span></span><span class="when">Yesterday</span></li>
+            <li><span class="chip tone-ok"><span class="mark"></span>Delivered</span><span class="grow"><a href="#">#13 Usage stop</a><span class="sub">Bhawish (bhawish account) · <a href="#">PR #41</a> · 1 h 5 min</span></span><span class="when">Yesterday</span></li>
+          </ul>
+          <div class="panel-foot"><a href="#">All runs</a></div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+(function () {
+  var app = document.getElementById('app');
+  function press(sel, btn) {
+    document.querySelectorAll(sel).forEach(function (b) { b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); });
+  }
+  document.querySelectorAll('[data-theme]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      app.className = 'app ' + b.getAttribute('data-theme');
+      press('[data-theme]', b);
+    });
+  });
+  [['data-left', ['activity', 'history']], ['data-right', ['runners', 'runs']]].forEach(function (pair) {
+    var attr = pair[0], panes = pair[1];
+    document.querySelectorAll('[' + attr + ']').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var want = b.getAttribute(attr);
+        panes.forEach(function (p) { document.querySelector('[data-pane="' + p + '"]').hidden = p !== want; });
+        press('[' + attr + ']', b);
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>
