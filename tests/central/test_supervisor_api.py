@@ -160,6 +160,57 @@ def test_escalate_needs_a_waiting_plan_and_keeps_it_waiting(app, team, conn, sup
     assert tasks.get(conn, team['alpha']['id'], n)['status'] == 'plan_review'
 
 
+# ---------- the supervisor adds tasks (decision record 0010, 6a) ----------
+
+def add_as_supervisor(app, token, project='alpha', **body):
+    body.setdefault('title', 'Runner tests each item with its own tests')
+    body.setdefault('from', "the user's request on 2026-11-26")
+    body.setdefault('assignee', 'dev@example.com')
+    return new_client(app).post('/api/v1/supervisor/tasks?project=%s' % project, json=body,
+                                headers={'Authorization': 'Bearer ' + token})
+
+
+def test_supervisor_adds_an_open_task_that_says_where_it_comes_from(app, team, conn, sup_token):
+    resp = add_as_supervisor(app, sup_token, description='Run only the tests an item can affect.')
+    assert resp.status_code == 201
+    task = resp.get_json()['task']
+    assert task['status'] == 'open' and task['assignee'] == 'dev@example.com'
+    row = tasks.get(conn, team['alpha']['id'], task['number'])
+    assert row['description'].endswith("From: the user's request on 2026-11-26")
+    assert row['claim_id'] is None
+    added = rows(conn, 'supervisor.task.add')
+    assert len(added) == 1 and len(rows(conn, 'task.create')) == 1
+    assert take(app, team)['task']['number'] == task['number']      # the assignee's runner takes and plans it
+
+
+def test_adding_needs_a_source_a_runnable_assignee_and_a_supervisor(app, team, conn, sup_token):
+    before = len(conn.query('SELECT * FROM project_task'))
+    assert add_as_supervisor(app, sup_token, **{'from': '  '}).status_code == 400
+    assert add_as_supervisor(app, sup_token, assignee='viewer@example.com').status_code == 400
+    assert add_as_supervisor(app, sup_token, assignee='nobody@example.com').status_code == 400
+    assert add_as_supervisor(app, sup_token, assignee='sup@example.com').status_code == 400
+    assert add_as_supervisor(app, sup_token, plan='## Intent\nx.').status_code == 400        # a plan needs its items
+    assert add_as_supervisor(app, sup_token, project='nope').status_code == 404
+    assert add_as_supervisor(app, team['token']['dev']).status_code == 403
+    assert len(conn.query('SELECT * FROM project_task')) == before and rows(conn, 'supervisor.task.add') == []
+
+
+def test_a_plan_the_supervisor_added_is_decided_by_a_person(app, team, conn, sup_token, member):
+    resp = add_as_supervisor(app, sup_token, plan='## Intent\nTest less.', items='- [ ] **T1 Do it.** x\n  *Acceptance:* y')
+    assert resp.status_code == 201
+    n = resp.get_json()['task']['number']
+    assert tasks.get(conn, team['alpha']['id'], n)['status'] == 'plan_review'
+    got = send(app, sup_token, n, 'approve', reasons=['passes the policy'])
+    assert got.status_code == 200
+    assert got.get_json()['decision'] == 'escalate' and got.get_json()['converted'] is True
+    again = send(app, sup_token, n, 'changes', reasons=['try again']).get_json()      # decided already: a no-op
+    assert again['already'] is True and again['decision'] == 'escalate'
+    assert tasks.get(conn, team['alpha']['id'], n)['status'] == 'plan_review'
+    assert rows(conn, 'supervisor.plan.approve') == [] and len(rows(conn, 'supervisor.plan.escalate')) == 1
+    assert decide(team, n, 'approve').status_code == 302                    # the assignee, a person, approves it
+    assert tasks.get(conn, team['alpha']['id'], n)['status'] == 'approved'
+
+
 def runner_action(app, token, runner_id, action, project='alpha'):
     return new_client(app).post('/api/v1/supervisor/runners/%s/%s?project=%s' % (runner_id, action, project),
                                 headers={'Authorization': 'Bearer ' + token})
@@ -207,3 +258,12 @@ def test_runner_control_is_for_the_supervisor_only(app, team, conn, sup_token, a
     assert runner_action(app, sup_token, 'nope', 'pause').status_code == 404
     assert runner_action(app, sup_token, rid, 'pause', project='nope').status_code == 404
     assert runners.get(conn, team['alpha']['id'], a_runner['label'])['control'] is None
+
+
+def test_a_supervisor_task_can_carry_priority_and_dependencies(app, team, conn, sup_token):
+    first = add_as_supervisor(app, sup_token, title='First').get_json()['task']['number']
+    resp = add_as_supervisor(app, sup_token, title='Second', priority=1, depends_on=[first])
+    assert resp.status_code == 201
+    row = tasks.get(conn, team['alpha']['id'], resp.get_json()['task']['number'])
+    assert row['priority'] == 1 and tasks.depends_of(row) == [first]
+    assert add_as_supervisor(app, sup_token, title='Bad', depends_on=[999]).status_code == 400

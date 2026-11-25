@@ -167,7 +167,7 @@ may not stick over plain http. The API endpoints do not use the cookie.
   when no plan waits; 404 for an unknown task); it records `task.plan.<decision>` with `"via": "api"`, so the Activity
   line ends "(through the API)", and returns `{task}`.
 - Table `project_task` (init-db creates it).
-- **Supervisor read API** (`supervisor.py`, personal tokens, read-only): `GET /api/v1/supervisor/whoami` returns
+- **Supervisor read API** (`supervisor.py`, personal tokens; these two routes are read-only): `GET /api/v1/supervisor/whoami` returns
   `{role, email}` for any valid token (role is `null` for a project token). `GET /api/v1/supervisor/state?project=<slug>`
   needs the `supervisor` account role (403 for any other role, 401 without a token, 404 only for an unknown project once the
   role is accepted). It returns `{project, tasks, runners, blockers}`: each task has the `/api/v1/tasks/<N>` fields plus
@@ -175,12 +175,22 @@ may not stick over plain http. The API endpoints do not use the cookie.
   on the task's current plan post, or null; a new plan post starts afresh) and `merged_at`; runners use the runner API
   shape plus `id` (what the runner-control route takes) and `paused_by_supervisor` (a pause the supervisor made, so
   the control step resumes only those); blockers are the open ones (`OPEN`, `ESCALATED`). No claim ids appear and nothing is written.
+- **Add a task** `POST /api/v1/supervisor/tasks?project=<slug>` with `{"title", "description", "from", "assignee", "plan",
+  "items", "priority", "depends_on"}` (the last two as on any task) (decision record 0010, 6a: the supervisor adds tasks that trace to work already asked for). Supervisor role
+  only (403 otherwise, 401 without a token, 404 for an unknown project). `from` says what the task comes from and is
+  required (400 without it); it is appended to the description as "From: ...". `assignee` is the email of a member who can
+  run runners (developer or above; 400 otherwise, and never the supervisor itself), and that person's runner takes it.
+  Without a plan the task is `open`; with `plan` and `items` (both or neither) it is `plan_review` with no claim and the
+  usual "plan waiting" notification. Answers 201 with `{task}` and writes `task.create` (via `supervisor`) and
+  `supervisor.task.add` (number, from, assignee, with_plan) audit rows. **A person decides plans on tasks the supervisor
+  added:** on such a task the plan-decision route turns approve and changes into escalate (`"converted": true`), so the
+  supervisor never approves its own work. Tests: `tests/central/test_supervisor_api.py`.
 - **Plan decision** `POST /api/v1/supervisor/tasks/<n>/plan-decision?project=<slug>` with
   `{"decision": "approve" | "changes" | "escalate", "reasons": [...], "policy_sha": "...", "comment": "..."}`. Needs the
   `supervisor` account role (403 otherwise, 401 without a token) and, for approve and changes, membership as manager (it
   calls `tasks.decide`, so the same rules apply: the plan must be waiting, else 409). `changes` without a comment uses the
   reasons as the comment. **Round cap:** the round count is the number of `supervisor.plan.changes` audit rows for the task
-  (no column); a `changes` when it is already 2 becomes `escalate` (`"converted": true`). `escalate` does not call
+  (no column); a `changes` when it is already 2 becomes `escalate` (`"converted": true`). On a task the supervisor added itself, approve and changes also become `escalate`. `escalate` does not call
   `tasks.decide`: the plan stays in review, the managers are notified (the usual "plan waiting" notification) and a person
   decides. Every call writes one `supervisor.plan.<decision>` audit row (detail: number, policy_sha, reasons, round,
   converted). **Re-running is safe:** when the current plan post already has a supervisor decision the call changes

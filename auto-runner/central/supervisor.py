@@ -1,7 +1,8 @@
-"""Supervisor read API (decision record 0010): who the caller is, and one project's state, read-only.
+"""Supervisor API (decision record 0010): who the caller is, one project's state (read-only), adding a task that traces
+to asked-for work (6a), plan decisions and merge records.
 
-Both routes take a personal token. `state` needs an account with the `supervisor` role (any project, no membership
-needed); it never shows a claim id and it writes nothing.
+Every route takes a personal token. All but `whoami` need an account with the `supervisor` role. `state` (any project,
+no membership needed) never shows a claim id and writes nothing.
 """
 import json
 
@@ -106,6 +107,54 @@ def state():
                    blockers=[_blocker(r) for r in blocked])
 
 
+@bp.post("/api/v1/supervisor/tasks")
+def add_task():
+    """The supervisor adds a task (decision record 0010, 6a) with `?project=<slug>` and `{"title", "description", "from",
+    "assignee": email, "plan", "items", "priority", "depends_on"}` (priority and depends_on as on any task). `from` (what the task traces to) is required and is appended to the description
+    as "From: ...". The assignee must be a member who can run runners (developer or above); their runner takes the task.
+    With `plan` and `items` the task waits for plan approval (`plan_review`, no claim) and a person decides it: the
+    supervisor never approves or sends back a plan on a task it added. Otherwise the task is `open` and the assignee's
+    runner plans it. Writes `task.create` and `supervisor.task.add` audit rows."""
+    db = get_db()
+    account = _caller(db)
+    if account is None or account["role"] != accounts.SUPERVISOR:
+        tokens._fail(403, "adding a task this way needs a supervisor account")
+    project = projects.get_by_slug(db, request.args.get("project"))
+    if project is None:
+        return _error("no such project", 404)
+    body = request.get_json(silent=True)
+    body = body if isinstance(body, dict) else {}
+    email = body.get("assignee")
+    assignee = accounts.find_by_email(db, email.strip()) if isinstance(email, str) and email.strip() else None
+    if assignee is None:
+        return _error("assignee must be the email of a member who can run runners", 400)
+    moment = auth.now()
+    plan, items = body.get("plan"), body.get("items")
+    with_plan = bool((isinstance(plan, str) and plan.strip()) or (isinstance(items, str) and items.strip()))
+    try:
+        if with_plan:
+            plan = tasks._text(plan, tasks.MAX_PLAN, "the plan", required=True)
+            items = tasks._text(items, tasks.MAX_PLAN, "the items", required=True)
+        row = tasks.create(db, project, account, assignee, body.get("title"), body.get("description"), moment,
+                           status="plan_review" if with_plan else "open", plan=plan if with_plan else "",
+                           items=items if with_plan else "", source=body.get("from"),
+                           priority=body.get("priority"), depends_on=body.get("depends_on"))
+    except tasks.TaskError as e:
+        db.rollback()
+        return _error(str(e), e.status)
+    audit.record(db, "task.create", sessions.iso(moment), account_id=account["id"], project_id=project["id"],
+                 detail={"number": row["number"], "via": "supervisor", "approval": "page" if with_plan else None})
+    audit.record(db, "supervisor.task.add", sessions.iso(moment), account_id=account["id"], project_id=project["id"],
+                 detail={"number": row["number"], "from": body.get("from").strip(), "assignee": assignee["email"],
+                         "with_plan": with_plan})
+    if with_plan:
+        tasks.notify_plan(db, project, row, moment)
+    db.commit()
+    response = jsonify(task=tasks.public(row, moment, full=True))
+    response.status_code = 201
+    return response
+
+
 def _reasons(value):
     if not isinstance(value, list) or not all(isinstance(r, str) for r in value):
         return []
@@ -124,7 +173,8 @@ def plan_decision(number):
     "policy_sha": "...", "comment": "..."}` with `?project=<slug>`. Approve and changes go through `tasks.decide` (so the
     supervisor must be a manager member). Escalate leaves the plan waiting for a person and tells the managers. Each call
     writes one `supervisor.plan.<decision>` audit row with the policy SHA and the reasons. A `changes` after
-    PLAN_ROUND_CAP earlier ones becomes `escalate`. Repeating the call for a plan post that has a decision is a no-op."""
+    PLAN_ROUND_CAP earlier ones becomes `escalate`, and so does an approve or changes on a task the supervisor added
+    itself (a person decides those). Repeating the call for a plan post that has a decision is a no-op."""
     db = get_db()
     account = _caller(db)
     if account is None or account["role"] != accounts.SUPERVISOR:
@@ -151,6 +201,10 @@ def plan_decision(number):
     if converted:
         decision = "escalate"
         reasons.append("the plan was already sent back %d times: a person decides" % mark["rounds"])
+    if decision != "escalate" and row["created_by"] == account["id"]:
+        converted = True                                     # it never decides on work it added itself
+        decision = "escalate"
+        reasons.append("the supervisor added this task: a person decides its plan")
     sha = body.get("policy_sha") if isinstance(body.get("policy_sha"), str) else None
     try:
         if decision == "escalate":

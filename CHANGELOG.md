@@ -19,6 +19,7 @@ All notable changes to this project are written here (Keep a Changelog).
   warning) until the migration runs, and everything else works.
 
 ### Added
+- Supervisor adds tasks (decision record 0010, 6a): `POST /api/v1/supervisor/tasks` and `autosupervisor.py add`. Each task must say what it comes from (`--from`), goes to a member who can run runners, and may carry a plan; a person decides plans on tasks the supervisor added, since the supervisor's approve or changes there becomes escalate. Unverified against the live service.
 - Runner: `autotasks.py attachments N` downloads task N's screenshots again and prints the "Screenshots" block, without
   claiming the task (the same block as `next`; an unknown task prints `Not done: ...`, exit 1).
 - Runner: the headless planner downloads a task's screenshots and lists them in its prompt (a SCREENSHOTS section,

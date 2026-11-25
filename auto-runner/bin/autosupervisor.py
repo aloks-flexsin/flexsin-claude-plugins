@@ -10,7 +10,13 @@ decision for a plan it already decided, so running a pass twice never duplicates
 `http(method, path, body=None) -> (status, json)` is the only way out: tests inject a fake, a real run wraps urllib with the
 supervisor's personal token (read from the environment, never logged). A failing call is reported in the result and the
 pass goes on with the next task.
+
+`autosupervisor.py add --title T --from TEXT --for EMAIL [--description-file F] [--plan F --items F] [--project SLUG]`
+adds a task that traces to asked-for work (0010, 6a) through `POST /api/v1/supervisor/tasks`. `--from` says what it comes
+from and is required; `--for` is the member whose runner takes it. With a plan and items the task waits for a person to
+approve the plan (the supervisor never decides on a task it added); without them it is open and that runner plans it.
 """
+import argparse
 import importlib.util
 import json
 import os
@@ -286,10 +292,66 @@ def summary(result):
     return lines or ['Nothing to do: no plan waits and no pull request is ready.']
 
 
+ADD = '/api/v1/supervisor/tasks?project=%s'
+ADD_REQUIRED = ('AUTO_SUPERVISOR_URL', 'AUTO_SUPERVISOR_TOKEN')
+
+
+def add_task(http, project, title, source, assignee, description='', plan='', items=''):
+    """POST the new task -> (status, body). `source` is what the task traces to (0010, 6a); the service requires it."""
+    body = {'title': title, 'from': source, 'assignee': assignee, 'description': description}
+    if plan or items:
+        body.update(plan=plan, items=items)
+    return http('POST', ADD % quote(project, safe=''), body)
+
+
+def add_main(argv, env, http=None, out=print):
+    """`add`: one task. Exit 0 = added, 1 = refused by the service (its reason is printed), 2 = missing configuration or
+    an unreadable file, 3 = the token is not a supervisor's or the service did not answer."""
+    ap = argparse.ArgumentParser(prog='autosupervisor.py add')
+    ap.add_argument('--title', required=True)
+    ap.add_argument('--from', dest='source', required=True, help='what the task traces to: a review, a plan, a request')
+    ap.add_argument('--for', dest='assignee', required=True, help='the email of the member whose runner takes it')
+    ap.add_argument('--description-file', default='')
+    ap.add_argument('--plan', default='')
+    ap.add_argument('--items', default='')
+    ap.add_argument('--project', default='')
+    a = ap.parse_args(argv)
+    project = a.project or env.get('AUTO_SUPERVISOR_PROJECT') or ''
+    missing = [k for k in ADD_REQUIRED if not env.get(k)] + ([] if project else ['AUTO_SUPERVISOR_PROJECT (or --project)'])
+    if missing:
+        out('Supervisor: not configured. Set ' + ', '.join(missing) + '.')
+        return EXIT_CONFIG
+    if bool(a.plan) != bool(a.items):
+        out('Supervisor: --plan and --items go together.')
+        return EXIT_CONFIG
+    try:
+        description, plan, items = (Path(p).read_text(encoding='utf-8') if p else ''
+                                    for p in (a.description_file, a.plan, a.items))
+    except OSError as e:
+        out(f'Supervisor: could not read a file: {e}')
+        return EXIT_CONFIG
+    http = http or urllib_http(env['AUTO_SUPERVISOR_URL'], env['AUTO_SUPERVISOR_TOKEN'])
+    status, body = add_task(http, project, a.title, a.source, a.assignee, description, plan, items)
+    task = body.get('task') if isinstance(body, dict) else None
+    if status == 201 and isinstance(task, dict):
+        waits = ' Its plan waits for a person to approve it.' if task.get('status') == 'plan_review' else ''
+        out(f'Task {task.get("number")}: added for {a.assignee} ({task.get("status")}).{waits}')
+        return EXIT_OK
+    if status == 0:
+        out('Supervisor: refused. The central service did not answer.')
+        return EXIT_REFUSED
+    out('Not done: ' + str((body if isinstance(body, dict) else {}).get('error') or f'the service answered {status}'))
+    return EXIT_REFUSED if status in (401, 403) else EXIT_ERRORS
+
+
 def main(argv=None, env=None, http=None, read=None, forge=None, out=print):
     """Run one pass. Exit 0 = ran clean, 1 = ran but a step reported an error, 2 = missing configuration,
-    3 = refused (the token is not a supervisor's, or the service did not answer). Injectable parts are for tests."""
+    3 = refused (the token is not a supervisor's, or the service did not answer). Injectable parts are for tests.
+    `main(['add', ...])` adds a task instead (see `add_main`)."""
     env = os.environ if env is None else env
+    argv = [] if argv is None else list(argv)
+    if argv[:1] == ['add']:
+        return add_main(argv[1:], env, http=http, out=out)
     missing = [k for k in REQUIRED if not env.get(k)]
     if missing:
         out('Supervisor: not configured. Set ' + ', '.join(missing) + '.')
@@ -316,4 +378,4 @@ def main(argv=None, env=None, http=None, read=None, forge=None, out=print):
 
 if __name__ == '__main__':
     _load('autorunner_safe', 'autosafe.py').utf8_console()
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

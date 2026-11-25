@@ -87,3 +87,53 @@ def test_command_file_and_readme_mention_each_other():
     assert 'autosupervisor.py' in (root / 'commands' / 'supervisor.md').read_text()
     readme = (root / 'README.md').read_text()
     assert '/auto-runner:supervisor' in readme and 'AUTO_SUPERVISOR_URL' in readme
+
+
+# ---------- `add`: the supervisor adds a task (decision record 0010, 6a) ----------
+
+def add_http(calls, status=201, body=None):
+    def http(method, path, sent=None):
+        calls.append((method, path, sent))
+        return status, body if body is not None else {'task': {'number': 7, 'status': 'open'}}
+    return http
+
+
+def test_add_posts_the_task_with_its_source_and_assignee():
+    calls, lines = [], []
+    code = sup.main(['add', '--title', 'Test less', '--from', "the user's request", '--for', 'dev@example.com'],
+                    env=ENV, http=add_http(calls), out=lines.append)
+    assert code == 0 and lines == ['Task 7: added for dev@example.com (open).']
+    method, path, sent = calls[0]
+    assert method == 'POST' and path == '/api/v1/supervisor/tasks?project=demo'
+    assert sent == {'title': 'Test less', 'from': "the user's request", 'assignee': 'dev@example.com', 'description': ''}
+    assert len(calls) == 1                                       # no whoami, no pass, no merge
+
+
+def test_add_sends_a_plan_and_says_a_person_approves_it(tmp_path):
+    (tmp_path / 'p.md').write_text('## Intent\nx', encoding='utf-8')
+    (tmp_path / 'i.md').write_text('- [ ] **T1 x.** y', encoding='utf-8')
+    calls, lines = [], []
+    code = sup.main(['add', '--title', 'T', '--from', 'S', '--for', 'dev@example.com', '--project', 'alpha',
+                     '--plan', str(tmp_path / 'p.md'), '--items', str(tmp_path / 'i.md')],
+                    env=ENV, http=add_http(calls, body={'task': {'number': 8, 'status': 'plan_review'}}), out=lines.append)
+    assert code == 0 and 'waits for a person to approve it' in lines[0]
+    assert calls[0][1] == '/api/v1/supervisor/tasks?project=alpha'
+    assert calls[0][2]['plan'] == '## Intent\nx' and calls[0][2]['items'] == '- [ ] **T1 x.** y'
+
+
+def test_add_reports_refusals_and_bad_input(tmp_path):
+    lines = []
+    assert sup.main(['add', '--title', 'T', '--from', 'S', '--for', 'x@y', '--plan', str(tmp_path / 'p.md')],
+                    env=ENV, http=add_http([]), out=lines.append) == 2               # a plan needs its items
+    assert sup.main(['add', '--title', 'T', '--from', 'S', '--for', 'x@y', '--plan', 'missing.md', '--items', 'missing.md'],
+                    env=ENV, http=add_http([]), out=lines.append) == 2               # unreadable file
+    env = {k: v for k, v in ENV.items() if k != 'AUTO_SUPERVISOR_PROJECT'}
+    assert sup.main(['add', '--title', 'T', '--from', 'S', '--for', 'x@y'], env=env, http=add_http([]),
+                    out=lines.append) == 2
+    lines.clear()
+    code = sup.main(['add', '--title', 'T', '--from', 'S', '--for', 'viewer@example.com'], env=ENV,
+                    http=add_http([], 400, {'error': 'viewer@example.com is not a developer or above'}), out=lines.append)
+    assert code == 1 and lines == ['Not done: viewer@example.com is not a developer or above']
+    assert sup.main(['add', '--title', 'T', '--from', 'S', '--for', 'x@y'], env=ENV, http=add_http([], 0, {}),
+                    out=lines.append) == 3
+    assert all('secret-token-123' not in line for line in lines)
