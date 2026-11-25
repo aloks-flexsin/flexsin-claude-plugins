@@ -25,7 +25,7 @@ import datetime
 import json
 import secrets
 
-from flask import Blueprint, abort, g, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, abort, g, jsonify, make_response, redirect, render_template, request, url_for
 
 from . import accounts, audit, auth, identities, notifications, projects, sessions, tokens, ui
 from .access import project_access
@@ -494,6 +494,10 @@ BOARD_COLUMNS = (("open", "Open", ("open",)),
                  ("done", "Done", ("done", "rejected")))
 
 
+DONE_CAP = 20                       # cards shown in the board's Done column
+TASK_VIEW_MAX_AGE = 365 * 24 * 3600
+
+
 def _can_add(db):
     return _can_run(db, g.project, g.account) or g.account["role"] == projects.ADMIN
 
@@ -507,15 +511,20 @@ def _list_page():
     rows = [r for r in rows if (not mine or r["assignee_id"] == g.account["id"]) and (not q or q.lower() in r["title"].lower())]
     tabs = [{"key": k, "label": label, "rows": [r for r in rows if r["status"] in statuses]} for k, label, statuses in STATES]
     state = request.args.get("state")
-    view = request.args.get("view")
+    chosen = request.args.get("view")
+    view = chosen
     if view not in ("board", "list"):
-        view = "list" if state else "board"
+        saved = request.cookies.get("task_view")
+        view = "list" if state else (saved if saved in ("board", "list") else "board")
     columns = None
     if view == "board":
-        shown = rows
         columns = [{"key": k, "label": label,
                     "rows": sorted((r for r in rows if r["status"] in statuses), key=lambda r: r["updated_at"], reverse=True)}
                    for k, label, statuses in BOARD_COLUMNS]
+        for c in columns:
+            c["total"] = len(c["rows"])
+        next(c for c in columns if c["key"] == "done")["rows"] = columns[-1]["rows"][:DONE_CAP]
+        shown = [r for c in columns for r in c["rows"]]
     else:
         if state not in [t["key"] for t in tabs]:
             state = next((t["key"] for t in tabs if t["rows"]), "approval")
@@ -526,8 +535,13 @@ def _list_page():
         task_runs = _runs.summarise(_runs.project_events(db, g.project["id"]), moment)
         for r in building:
             r["progress"] = _runs.task_progress([x for x in task_runs if x["task"] == r["number"]], r["items"])
-    return render_template("tasks.html", project=g.project, tabs=tabs, state=state, tasks=shown, mine=mine, q=q,
-                           view=view, columns=columns, any_tasks=bool(for_project(db, g.project["id"])), can_add=_can_add(db))
+    response = make_response(render_template("tasks.html", project=g.project, tabs=tabs, state=state, tasks=shown,
+                                             mine=mine, q=q, view=view, columns=columns,
+                                             any_tasks=bool(for_project(db, g.project["id"])), can_add=_can_add(db)))
+    if chosen in ("board", "list"):
+        response.set_cookie("task_view", chosen, max_age=TASK_VIEW_MAX_AGE, path="/", secure=True, httponly=True,
+                            samesite="Lax")
+    return response
 
 
 def _new_page(error=None, status=200, form=None):
