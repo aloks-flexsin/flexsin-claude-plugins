@@ -253,6 +253,30 @@ of what to build, and an *Acceptance:* line that a command or test can prove. Ti
   *Slice:* 1 Ask once on any page
   *Kind:* feature
 
+- [x] **R14 Planner downloads the task's screenshots.** In `auto-runner/bin/autoplan.py`, `plan()` calls `autotasks.fetch_attachments(project, number, env, send)` after fetching the task. Failures become `problems` and never stop planning. `build_prompt` takes the paths and problems and adds a `SCREENSHOTS` section before the task text. It tells the planner to open each path with Read and treat what it shows as part of the task, and it names each screenshot that could not be downloaded. The prompt is unchanged for a task with no screenshots. Update `auto-runner/README.md` (the planner downloads task screenshots) in this same item, as the doc-map check requires. Do not change `take_next`, `next` output or the central API.
+  *Acceptance:* new tests in `tests/auto_runner/test_autoplan.py` pass, and `python -m pytest -q` is green including the doc-map check. With a fake central holding one PNG, the prompt contains its local path and the file exists. With a failed download, the prompt names it and `plan()` still posts. With no attachments, the prompt equals the old one.
+  *Slice:* 1 Planner sees the screenshots
+  *Kind:* fix
+
+- [x] **R15 Same step in the prompt contract.** In `docs/planner-prompt.md`, the instruction file for the headless planner, the `Read the project's rules files…` paragraph gets a sentence telling it to read the listed screenshots first. Mirror it in step 1 of `commands/auto.md` only if that wording differs, and then update `auto-runner/README.md` again as the doc-map requires for `commands/`. Add the CHANGELOG entry for R14 and R15 together.
+  *Acceptance:* `python -m pytest -q` is green, including the doc-map check, and a test asserts that `docs/planner-prompt.md` mentions screenshots.
+  *Slice:* 1 Planner sees the screenshots
+  *Kind:* fix
+
+- [x] **R16 `autotasks.py attachments N`.** Add the `attachments` command to `autotasks.py`.
+  - It prints the same `--- Screenshots ---` block as `next`, for task N, without claiming anything.
+  - `next` and `attachments` share one helper that only prints a `(paths, problems)` pair. The helper neither catches nor raises.
+  - `next` keeps its existing `try/except TaskError`. `attachments` lets `TaskError` reach `main`'s existing `Not done: …` handler (exit 1). `attachments` without a number fails with `ap.error`.
+  - Add the command to the module docstring, `auto-runner/README.md` and CHANGELOG. Say in the README that screenshots live in the project's `.auto/run`, not in the plugin.
+  - `next`'s output and behaviour are unchanged.
+  *Acceptance:* tests in `tests/auto_runner/test_central_tasks.py` pass.
+  - `main(['attachments', '1', '--project', ...])` against `fake_central` prints the path, and the file exists.
+  - An unknown task prints `Not done: …` and exits 1.
+  - `attachments` without a number exits through the argparse error.
+  - The existing `next` tests, including the listing-failure case, still pass.
+  *Slice:* 2 Fetch by number
+  *Kind:* feature
+
 Test layout: central tests go in `tests/central/`. Runner and gate tests go in `tests/auto_runner/`. The end-to-end tests drive the pass's logic through the real Flask test client with `FakeForge` and an injected HTTP function, and live in `tests/central/test_supervisor_e2e.py`. Item IDs use the letter S. Verify that S and B1–B13 are unused in the queue file and `.auto/pending/`. If they are used, take the next free letter.
 
 - [x] **B1 Supervisor account role.** Add account role `supervisor` (`accounts.ROLES` becomes `('admin','user','supervisor')`) and a CLI command to create one (verify `accounts.py` and `cli.py`: `python -m central supervisor-create <email>`). It can be added to a project as a **manager** member. `tasks._can_run` and `tasks.create` reject an account with role `supervisor`, so it is never an assignee and never creates tasks. `invites.py` must not offer or accept `supervisor`. `admin.py` shows the role but refuses role changes to or from `supervisor`. Existing roles and routes must not change. Update `auto-runner/central/README.md` in the same commit (the role, the CLI command and the places above).

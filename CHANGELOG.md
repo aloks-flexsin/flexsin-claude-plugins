@@ -15,6 +15,10 @@ All notable changes to this project are written here (Keep a Changelog).
   warning) until the migration runs, and everything else works.
 
 ### Added
+- Runner: `autotasks.py attachments N` downloads task N's screenshots again and prints the "Screenshots" block, without
+  claiming the task (the same block as `next`; an unknown task prints `Not done: ...`, exit 1).
+- Runner: the headless planner downloads a task's screenshots and lists them in its prompt (a SCREENSHOTS section,
+  with any that failed to download named), and `docs/planner-prompt.md` tells it to read them first.
 - Central: runner frictions close the loop (decision record 0011). Rejecting a drafted friction task (rejecting its plan
   or closing it) mutes the signature with "task #N rejected"; a task reported done marks it `fixed`. A fixed signature
   counts only days after the fix, and reaching the threshold again drafts "Runner friction came back: <signature>",

@@ -258,6 +258,31 @@ def test_next_downloads_from_the_real_service(project, central, team, env):
     assert problems == [] and [p.name for p in paths] == [f'{row["id"]}-shot.png'] and paths[0].read_bytes() == PNG
 
 
+def test_attachments_prints_the_screenshots_of_a_task_without_claiming_it(project, monkeypatch, capsys):
+    svc = _fake_cli(project, monkeypatch)
+    svc.add(1, 'Fix the header')
+    svc.attach(1, 'a1', 'header.png', PNG)
+    assert at.main(['attachments', '1', '--project', str(project)]) == 0
+    out = capsys.readouterr().out
+    path = project / '.auto' / 'run' / 'tasks' / '1' / 'attachments' / 'a1-header.png'
+    assert '--- Screenshots ---' in out and str(path.resolve()) in out
+    assert path.read_bytes() == PNG
+    assert not (project / '.auto' / 'run' / 'tasks' / '1.json').exists()     # nothing claimed
+
+
+def test_attachments_of_an_unknown_task_is_not_done(project, monkeypatch, capsys):
+    _fake_cli(project, monkeypatch)
+    assert at.main(['attachments', '99', '--project', str(project)]) == 1
+    assert capsys.readouterr().out.startswith('Not done: ')
+
+
+def test_attachments_without_a_number_is_an_argparse_error(project, monkeypatch):
+    _fake_cli(project, monkeypatch)
+    with pytest.raises(SystemExit) as e:
+        at.main(['attachments', '--project', str(project)])
+    assert e.value.code == 2
+
+
 # ---------- a resumed run keeps its task's newest claim (F1) ----------
 
 def test_a_resumed_run_beats_with_the_newest_claim(project, central, team, env, monkeypatch):
