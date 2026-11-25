@@ -102,6 +102,13 @@ may not stick over plain http. The API endpoints do not use the cookie.
 - `/projects/<slug>/tasks` (any member): the project's tasks under state tabs with counts (`?state=approval|progress|open|done`;
   with none chosen, the first tab that has tasks), "Mine only" (`?mine=1`) and a title search (`?q=`); each row shows the
   person, state, runner, build progress, pull request and when it last changed.
+  The board is the default view (`?view=board`): six columns (Open, Planning, Needs approval, Ready, Building, Done),
+  newest change first, with a Board | List toggle that keeps `mine` and `q`; `?view=list` or a `?state=` gives the list.
+  A `?view=board|list` sets the `task_view` cookie (one year, `path=/`, Secure, HttpOnly, SameSite=Lax); with no `view`
+  or `state` the cookie is used when it is exactly `board` or `list`, else the board (unverified). The Done column shows
+  the 20 most recently updated tasks after the `mine`/`q` filters, its heading count is the filtered total, and a
+  "Show all N in the list" link goes to `?view=list&state=done`.
+  Marked **unverified** until used live.
 - `/projects/<slug>/tasks/new`: people who can run runners (developer and above) add a task for themselves; admins for
   any such member. "How we know it's done" is stored as a `Done when:` section of the description (no column of its own).
 - `/projects/<slug>/tasks/<N>`: a step tracker (Open → Planned → Approval → Building → Done), the decision bar while the

@@ -113,7 +113,9 @@ bar tells you when something waits on you (see Notifications).
 ## Tasks: what each person's runner does next
 - On a project, **New task** (top right) adds a task for yourself (title, what and why, and optionally how we know it's
   done); admins can add one for anyone who can run runners. The **Tasks** tab sorts them into Needs approval, In progress,
-  Open and Done, with "Mine only" and a search. Everyone in the project sees every task and who is working on what.
+  Open and Done, with "Mine only" and a search. The **Board | List** switch at the top changes the view; the page
+  remembers your choice in this browser (unverified). The board's Done column shows the 20 newest; "Show all N in the
+  list" opens the list's Done tab. Everyone in the project sees every task and who is working on what.
 - Run **`/auto-runner:auto`** with no task. Your runner takes your next task: a new one gets a plan (the same planning and
   spec check as always), which then **waits for approval** on the task's page; meanwhile the runner takes your next one.
 - On the task page you, a manager, an owner or an admin **Approve** the plan, **Request changes** (with a comment; the
