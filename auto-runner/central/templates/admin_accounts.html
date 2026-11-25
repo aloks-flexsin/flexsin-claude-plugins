@@ -31,7 +31,7 @@
       <label for="a-email">Email</label>
       <input id="a-email" type="email" name="email" value="{{ form_email }}" required>
       <label for="a-role">Role</label>
-      <select id="a-role" name="role">{% for r in roles %}<option value="{{ r }}"{% if r == "user" %} selected{% endif %}>{{ r }}</option>{% endfor %}</select>
+      <select id="a-role" name="role">{% for r in invite_roles %}<option value="{{ r }}"{% if r == "user" %} selected{% endif %}>{{ r }}</option>{% endfor %}</select>
       <button type="submit" class="btn primary">Add account</button>
       <p class="muted small">You get a one-time link to send them; they set their own password.</p>
     </form>
@@ -45,13 +45,14 @@
     {{ ui.person(a.email, a.name, a.email) }}
     <span class="muted grow-sm">{{ a.projects }} project{{ "s" if a.projects != 1 }} · {% if a.last_active %}active {{ ui.when(a.last_active) }}{% else %}not active recently{% endif %}</span>
     {% if a.disabled %}{{ ui.status("account", "disabled") }}{% elif a.pending %}{{ ui.status("account", "invited") }}{% endif %}
+    {% if a.role == "supervisor" %}<span class="pill">supervisor</span>{% else %}
     <form method="post" action="{{ url_for('admin.account_role', account_id=a.id) }}" class="inline role-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <select name="role" aria-label="Role for {{ a.email }}" data-autosave>
-        {% for r in roles %}<option value="{{ r }}"{% if r == a.role %} selected{% endif %}>{{ r }}</option>{% endfor %}
+        {% for r in invite_roles %}<option value="{{ r }}"{% if r == a.role %} selected{% endif %}>{{ r }}</option>{% endfor %}
       </select>
       <button type="submit" class="btn autosave-btn">Save</button>
-    </form>
+    </form>{% endif %}
     <details class="pop row-menu">
       <summary class="btn" aria-label="More for {{ a.email }}">⋯</summary>
       <div class="pop-body">

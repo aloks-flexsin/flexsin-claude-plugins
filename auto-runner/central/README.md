@@ -32,7 +32,7 @@ and an owner, manager or admin answers it there.
 | `notifications.py` | In-app notifications: `notify` (members only, no duplicates), `resolve`, `unread_count`, `for_account`, `delivery`, `recent`; the Notifications page, open and read-all (the admins' log is in `admin.py`) |
 | `push.py` | Browser push subscriptions: `POST /push/subscribe`, `POST /push/unsubscribe`, the Account page's push section |
 | `attachments.py` | Task screenshots (`task_attachment`): `add`, `for_task`, `get`, `delete`; upload, view and delete routes; the 4 MB request cap and its 413 page |
-| `cli.py` | `python -m central init-db` and `python -m central create-admin --email X` |
+| `cli.py` | `python -m central init-db`, `python -m central create-admin --email X` and `python -m central supervisor-create X` |
 | `api/index.py`, `vercel.json` | Vercel entry point; every route is rewritten to it |
 | `templates/`, `static/style.css` | The pages (`base.html` holds the top bar) and their one stylesheet, served by Flask at `/static/style.css` because the CSP allows only same-origin styles; no inline styles or scripts |
 
@@ -86,6 +86,11 @@ may not stick over plain http. The API endpoints do not use the cookie.
 - There is no self sign-up. Five failed sign-ins lock an account for 15 minutes.
 - Sessions expire after 12 hours, or 2 hours idle. A password change or reset signs the person out everywhere.
 - Global roles `admin` and `user`; project roles `owner`, `manager`, `developer`, `viewer`. Non-members get 404.
+- A third global role, `supervisor`, is for the supervisor account (it reviews and merges; see decision 0010). Create it with
+  `python -m central supervisor-create <email>` (asks for the password twice, like `create-admin`). Add it to a project as a
+  **manager** member. It is never an assignee and never creates tasks (`tasks._can_run` and `tasks.create` refuse it).
+  Invites and the add-account form do not offer or accept it (`accounts.INVITE_ROLES`), and `/admin/accounts` shows the role
+  but refuses to give it to anyone or take it away (the command line is the only way in). Existing roles and routes are unchanged.
 - Every sign-in (success and failure, never the password) and every account, token, membership and decision action is audited.
 - **One project per repository.** On the create form the admin pastes the repository URL; the slug and name may be left
   empty and are then filled in from it (`projects.slug_from_repo`: the repository's name, lower case, other characters as
