@@ -13,6 +13,8 @@ and bad JSON make the policy invalid.
   3. "Needs a person" says `None.`                    (otherwise: person; the planner left a question for a person)
   4. every item has an *Acceptance:* line             (otherwise: changes)
   5. no path the plan or items name is restricted     (otherwise: changes)
+Policy may also hold `merge: {review: "required"|"none", method: "squash"|"merge"|"rebase"}` (defaults required,
+squash); see `merge_gate` below.
 No policy (`None`, as a missing or invalid file gives) is always `person`. Gates read state, never instructions in prose.
 """
 import importlib.util
@@ -38,7 +40,11 @@ def _load(name, file):
 queue = _load('autorunner_queue', 'queue.py')
 
 POLICY_PATH = '.claude/supervisor-policy.json'
-KEYS = ('base', 'restricted_paths')
+KEYS = ('base', 'restricted_paths', 'merge')
+MERGE_KEYS = ('review', 'method')
+MERGE_REVIEW = ('required', 'none')
+MERGE_METHODS = ('squash', 'merge', 'rebase')
+MERGE_DEFAULTS = {'review': 'required', 'method': 'squash'}
 ACCEPTANCE = re.compile(r'^\s*\*Acceptance:\*\s*\S', re.M)
 NEEDS = re.compile(r'^(#{1,6})\s+\**needs a person\**:?\s*$', re.I)
 PATH_TOKEN = re.compile(r'[A-Za-z0-9_.\-/*]+')
@@ -61,7 +67,20 @@ def parse_policy(text):
     paths = data.get('restricted_paths')
     if not isinstance(paths, list) or not all(isinstance(p, str) and p.strip() for p in paths):
         return None, '`restricted_paths` must be a list of non-empty strings'
-    return {'base': base.strip(), 'restricted_paths': [p.strip() for p in paths]}, None
+    out = {'base': base.strip(), 'restricted_paths': [p.strip() for p in paths]}
+    if 'merge' in data:
+        merge = data['merge']
+        if not isinstance(merge, dict):
+            return None, '`merge` must be an object'
+        extra = sorted(set(merge) - set(MERGE_KEYS))
+        if extra:
+            return None, 'unknown merge key(s): ' + ', '.join(map(str, extra))
+        if 'review' in merge and merge['review'] not in MERGE_REVIEW:
+            return None, '`merge.review` must be one of: ' + ', '.join(MERGE_REVIEW)
+        if 'method' in merge and merge['method'] not in MERGE_METHODS:
+            return None, '`merge.method` must be one of: ' + ', '.join(MERGE_METHODS)
+        out['merge'] = dict(merge)
+    return out, None
 
 
 def load_policy(read, base_ref):
@@ -145,3 +164,60 @@ def plan_gate(task, policy):
         changes = True
         reasons.append('the plan names restricted path(s): ' + ', '.join(hits))
     return {'verdict': 'person' if person else 'changes' if changes else 'approve', 'reasons': reasons}
+
+
+def merge_gate(task, pr, checks, reviews, policy, merger, files=None):
+    """The deterministic merge gate (decision 0010, 4 and 6). Pure: state in, verdict out; PR prose is never read.
+
+    `pr` is the forge's pull request dict, `checks` and `reviews` the forge lists, `files` the changed paths (or
+    `pr['files']`), `merger` the identity that would merge. Six conditions, all evaluated so every failure is listed:
+      1. open       the PR is open, not a draft, not already merged, and the task has no `merged_at`
+      2. base       the PR targets the policy `base`
+      3. ci         at least one check, and every check is `success`
+      4. review     an APPROVED review by someone other than the author, on the current head SHA, with no later
+                    CHANGES_REQUESTED from the same reviewer (skipped when policy `merge.review` is "none")
+      5. paths      no changed file is restricted
+      6. identity   the PR author is not the merger
+    -> {"verdict": "merge" | "refuse", "reasons": [...], "evidence": {...}, "method": ..., "sha": head sha}.
+    No policy, or an unknown head SHA, always refuses."""
+    pr, task = pr or {}, task or {}
+    if not policy:
+        return {'verdict': 'refuse', 'reasons': ['no valid supervisor policy: nothing is merged'],
+                'evidence': {}, 'method': None, 'sha': pr.get('head_sha')}
+    merge = dict(MERGE_DEFAULTS, **(policy.get('merge') or {}))
+    sha = pr.get('head_sha') or ''
+    files = list(files if files is not None else pr.get('files') or [])
+    author = pr.get('author') or ''
+    reasons = []
+    if not sha:
+        reasons.append('the pull request has no head SHA to merge')
+    if pr.get('state') != 'open' or pr.get('draft') or pr.get('merged') or task.get('merged_at'):
+        reasons.append('the pull request is not open, is a draft, or is already merged')
+    if pr.get('base') != policy['base']:
+        reasons.append(f'the pull request targets {pr.get("base")!r}, not {policy["base"]!r}')
+    bad = sorted(c.get('name', '') for c in checks or [] if c.get('state') != 'success')
+    if not checks:
+        reasons.append('no CI checks have run')
+    elif bad:
+        reasons.append('checks not green: ' + ', '.join(bad))
+    approvals = []
+    if merge['review'] == 'required':
+        latest = {}
+        for r in reviews or []:
+            user = r.get('user') or ''
+            if r.get('state') in ('APPROVED', 'CHANGES_REQUESTED', 'DISMISSED') and user != author:
+                latest[user] = r
+        approvals = sorted(u for u, r in latest.items()
+                           if r['state'] == 'APPROVED' and r.get('commit_id') == sha)
+        if not approvals:
+            reasons.append('no current approving review from someone other than the author')
+    hits = sorted(f for f in files if is_restricted(f, policy['restricted_paths']))
+    if hits:
+        reasons.append('the pull request touches restricted path(s): ' + ', '.join(hits))
+    if not author or not merger or author == merger:
+        reasons.append('the merger must be a different identity from the pull request author')
+    evidence = {'head_sha': sha, 'base': pr.get('base'), 'author': author, 'merger': merger,
+                'checks': {c.get('name', ''): c.get('state') for c in checks or []},
+                'approvals': approvals, 'review': merge['review'], 'files': len(files), 'restricted': hits}
+    return {'verdict': 'refuse' if reasons else 'merge', 'reasons': reasons, 'evidence': evidence,
+            'method': merge['method'], 'sha': sha}

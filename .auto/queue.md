@@ -280,7 +280,7 @@ Test layout: central tests go in `tests/central/`. Runner and gate tests go in `
   *Slice:* 2 Merge green PRs
   *Kind:* internal
 
-- [ ] **B6 Merge gate.** Add the pure `merge_gate(task, pr, checks, reviews, policy, merger)` to `autogates.py` with the six conditions from decision 6. It returns a verdict plus the evidence and every reason it failed. `base` and `restricted_paths` already exist from B3, so this item adds only the policy keys `merge.review` and `merge.method`. Update `auto-runner/README.md` in the same commit.
+- [x] **B6 Merge gate.** Add the pure `merge_gate(task, pr, checks, reviews, policy, merger)` to `autogates.py` with the six conditions from decision 6. It returns a verdict plus the evidence and every reason it failed. `base` and `restricted_paths` already exist from B3, so this item adds only the policy keys `merge.review` and `merge.method`. Update `auto-runner/README.md` in the same commit.
   *Acceptance:* `tests/auto_runner/test_supervisor_gates.py::test_merge_gate_table` passes with one case per refusal reason, plus an all-clear case.
   *Slice:* 2 Merge green PRs
   *Kind:* feature

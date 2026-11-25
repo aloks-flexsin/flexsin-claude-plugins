@@ -82,3 +82,59 @@ def test_item_without_acceptance():
 def test_no_items_and_wrong_status():
     assert g.plan_gate(task(items=''), POLICY)['verdict'] == 'changes'
     assert g.plan_gate(task(status='building'), POLICY)['verdict'] == 'person'
+
+
+GOOD_PR = dict(number=7, state='open', draft=False, merged=False, head_sha='s1', base='main', author='runner')
+GOOD_CHECKS = [dict(name='tests', state='success')]
+GOOD_REVIEWS = [dict(user='sup', state='APPROVED', commit_id='s1')]
+
+
+def gate(pr=None, checks=None, reviews=None, policy=POLICY, merger='sup', files=('a.py',), t=None):
+    return g.merge_gate(t or {}, dict(GOOD_PR, **(pr or {})), GOOD_CHECKS if checks is None else checks,
+                        GOOD_REVIEWS if reviews is None else reviews, policy, merger, files)
+
+
+def test_merge_gate_table():
+    ok = gate()
+    assert ok['verdict'] == 'merge' and ok['reasons'] == [] and ok['sha'] == 's1' and ok['method'] == 'squash'
+    assert ok['evidence']['approvals'] == ['sup']
+    cases = [
+        (dict(pr=dict(state='closed')), 'not open'),
+        (dict(pr=dict(draft=True)), 'not open'),
+        (dict(pr=dict(merged=True)), 'not open'),
+        (dict(t=dict(merged_at='2026-01-01')), 'not open'),
+        (dict(pr=dict(base='dev')), 'targets'),
+        (dict(checks=[]), 'no CI checks'),
+        (dict(checks=[dict(name='tests', state='pending')]), 'not green'),
+        (dict(checks=GOOD_CHECKS + [dict(name='lint', state='failure')]), 'lint'),
+        (dict(reviews=[]), 'approving review'),
+        (dict(reviews=[dict(user='runner', state='APPROVED', commit_id='s1')]), 'approving review'),
+        (dict(reviews=[dict(user='sup', state='APPROVED', commit_id='old')]), 'approving review'),
+        (dict(reviews=GOOD_REVIEWS + [dict(user='sup', state='CHANGES_REQUESTED', commit_id='s1')]),
+         'approving review'),
+        (dict(files=['ok.py', '.github/workflows/ci.yml']), 'restricted'),
+        (dict(merger='runner'), 'different identity'),
+        (dict(merger=''), 'different identity'),
+        (dict(policy=None), 'no valid supervisor policy'),
+        (dict(pr=dict(head_sha='')), 'no head SHA'),
+    ]
+    for kw, word in cases:
+        out = gate(**kw)
+        assert out['verdict'] == 'refuse', kw
+        assert any(word in r for r in out['reasons']), (kw, out['reasons'])
+
+
+def test_merge_gate_lists_every_reason_and_policy_keys():
+    out = gate(pr=dict(base='dev'), checks=[], reviews=[], merger='runner')
+    assert len(out['reasons']) == 4
+    none = dict(POLICY, merge=dict(review='none', method='rebase'))
+    out = gate(reviews=[], policy=none)
+    assert out['verdict'] == 'merge' and out['method'] == 'rebase'
+    assert out['evidence']['files'] == 1
+
+
+def test_merge_policy_keys_validated():
+    good, err = g.parse_policy(json.dumps(dict(POLICY, merge=dict(review='none'))))
+    assert err is None and good['merge'] == dict(review='none')
+    for bad in (dict(review='maybe'), dict(method='fast'), dict(other=1), 'x'):
+        assert g.parse_policy(json.dumps(dict(POLICY, merge=bad)))[0] is None
