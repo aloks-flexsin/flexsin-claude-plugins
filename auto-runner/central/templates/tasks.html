@@ -65,7 +65,7 @@
   </section>
   <div class="col">
     {{ rn.section(lower.runners, request.full_path if request.query_string else request.path) }}
-    <p class="panel-foot"><a href="{{ url_for('runs.runs_page', slug=project.slug) }}">All runs</a></p>
+    <p class="col-foot"><a href="{{ url_for('runs.runs_page', slug=project.slug) }}">All runs</a></p>
   </div>
 </div>
 {% endif %}

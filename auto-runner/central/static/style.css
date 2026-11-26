@@ -450,3 +450,4 @@ ul.plain{padding-left:18px}
 .block>.list,.block>.feed{border:0;border-radius:0;background:none}
 .block>.list .list-row:first-child,.block>.feed li:first-child{border-top:0}
 .block .cards{margin-top:4px}
+.col-foot{margin:0;font-size:13px;text-align:right}
