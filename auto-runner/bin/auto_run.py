@@ -59,6 +59,7 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -579,6 +580,49 @@ def run_tests(command, cwd):
     """-> (returncode, output) of the independent suite run."""
     r = subprocess.run(command, cwd=str(cwd), shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace', env=child_env())
     return r.returncode, (r.stdout or '') + (r.stderr or '')
+
+
+ACCEPTANCE_PATH = re.compile(r'[\w@.\-]+(?:[/\\][\w@.\-]+)*')
+TEST_FILE = re.compile(r'(?:^|/)(?:test_[^/]*\.py|[^/]*_test\.py|[^/]*\.(?:test|spec)\.[^/]+)$')
+
+
+def _is_test_path(rel):
+    return bool(TEST_FILE.search(rel)) or 'tests' in rel.split('/')[:-1]
+
+
+def item_tests(wt, block, commits):
+    """-> sorted worktree-relative paths of one item's own tests: files named on its `*Acceptance:*` line that exist in the
+    worktree, plus test files changed by `commits` (SHAs). Never a path outside the worktree."""
+    root = Path(wt).resolve()
+    found = set()
+
+    def add(raw):
+        p = (root / raw.strip().replace('\\', '/')).resolve()
+        if p.is_file() and root in p.parents:
+            found.add(p.relative_to(root).as_posix())
+
+    for line in block.splitlines():
+        m = re.search(r'\*Acceptance:\*(.*)', line)
+        if m:
+            for tok in ACCEPTANCE_PATH.findall(m.group(1)):
+                add(tok)
+    for sha in commits:
+        for name in git(wt, 'show', '--name-only', '--format=', sha, check=False).splitlines():
+            name = name.strip().replace('\\', '/')
+            if name and _is_test_path(name):
+                add(name)
+    return sorted(found)
+
+
+def item_test_cmd(cfg, paths):
+    """-> the command that tests `paths` (the `item_test_command` with `{tests}` replaced by the quoted paths, or with them
+    appended), or None when the setting or the paths are empty."""
+    command = (cfg.get('item_test_command') or '').strip()
+    if not command or not paths:
+        return None
+    quote = subprocess.list2cmdline if os.name == 'nt' else shlex.quote
+    tests = ' '.join(quote([p]) if os.name == 'nt' else quote(p) for p in paths)
+    return command.replace('{tests}', tests) if '{tests}' in command else f'{command} {tests}'
 
 
 def parse_cost(output):

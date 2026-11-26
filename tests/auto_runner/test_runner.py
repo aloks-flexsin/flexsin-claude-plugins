@@ -941,3 +941,55 @@ def test_stop_at_percent_is_validated(project):
         with pytest.raises(ar.autocfg.ConfigError):
             ar.autocfg.load(project)
     assert ar.USAGE_LIMIT_DEFAULTS['stop_at_percent'] == 90
+
+
+# ---- T1: an item's own test files and the per-item test command
+
+def _repo_with_commit(tmp_path, files):
+    wt = tmp_path / 'wt'
+    wt.mkdir()
+    for args in (['init', '-q'], ['config', 'user.email', 'a@b.c'], ['config', 'user.name', 'a']):
+        subprocess.run(['git', '-C', str(wt), *args], check=True)
+    for name, text in files.items():
+        f = wt / name
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text, encoding='utf-8')
+    subprocess.run(['git', '-C', str(wt), 'add', '-A'], check=True)
+    subprocess.run(['git', '-C', str(wt), 'commit', '-q', '-m', 'x'], check=True)
+    sha = subprocess.run(['git', '-C', str(wt), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
+    return wt, sha
+
+
+def test_item_tests_names_existing_files_and_commit_test_files(tmp_path):
+    wt, sha = _repo_with_commit(tmp_path, {'tests/test_a.py': '', 'src/mod.py': '', 'web/x.spec.ts': '', 'tests/data.json': '',
+                                           'other/readme.md': ''})
+    (tmp_path / 'outside.py').write_text('', encoding='utf-8')
+    block = ('- [ ] **T9 x.** do it\n  *Acceptance:* `python -m pytest -q tests/test_a.py tests/test_gone.py ../outside.py` '
+             'and src/mod.py passes\n')
+    assert ar.item_tests(wt, block, [sha]) == ['src/mod.py', 'tests/data.json', 'tests/test_a.py', 'web/x.spec.ts']
+    # a named path that does not exist and one outside the worktree are dropped; a commit's non-test file is not added
+    assert ar.item_tests(wt, '- [ ] **T9 x.**\n  *Acceptance:* tests/test_gone.py ../outside.py\n', []) == []
+    assert ar.item_tests(wt, '- [ ] **T9 x.**\n', [sha]) == ['tests/data.json', 'tests/test_a.py', 'web/x.spec.ts']
+
+
+def test_item_test_cmd():
+    assert ar.item_test_cmd({'item_test_command': ''}, ['tests/a.py']) is None
+    assert ar.item_test_cmd({'item_test_command': 'pytest -q {tests}'}, []) is None
+    assert ar.item_test_cmd({}, ['tests/a.py']) is None
+    assert ar.item_test_cmd({'item_test_command': 'pytest -q {tests} -x'}, ['tests/a.py', 'tests/b.py']) == \
+        'pytest -q tests/a.py tests/b.py -x'
+    assert ar.item_test_cmd({'item_test_command': 'pytest -q'}, ['tests/a.py']) == 'pytest -q tests/a.py'
+    import shlex
+    cmd = ar.item_test_cmd({'item_test_command': 'pytest {tests}'}, ['my tests/a.py', 'b.py'])
+    parts = cmd.split(' ', 1)[1]
+    if os.name == 'nt':
+        assert parts == '"my tests/a.py" b.py'
+    else:
+        assert shlex.split(parts) == ['my tests/a.py', 'b.py']
+
+
+def test_config_accepts_item_test_command(tmp_path):
+    (tmp_path / '.claude').mkdir()
+    (tmp_path / '.claude' / 'auto.json').write_text('{"item_test_command": "pytest -q {tests}"}', encoding='utf-8')
+    assert ar.autocfg.load(tmp_path)['item_test_command'] == 'pytest -q {tests}'
+    assert ar.autocfg.load(tmp_path / 'none')['item_test_command'] == ''
