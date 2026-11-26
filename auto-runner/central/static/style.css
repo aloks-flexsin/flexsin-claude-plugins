@@ -278,7 +278,7 @@ details.pop>summary::-webkit-details-marker,details.more>summary::-webkit-detail
 .pop-body label{margin:0}
 .pop-body select{min-width:0;width:100%}
 .small{font-size:12px;margin:0}
-.task-layout{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:20px;align-items:start}
+.task-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px;align-items:start}
 .task-main>.card{padding:16px 20px}
 .task-main>h3{margin-top:26px}
 .task-side{position:sticky;top:16px;display:flex;flex-direction:column;gap:12px}

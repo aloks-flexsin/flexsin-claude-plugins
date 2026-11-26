@@ -553,7 +553,7 @@ harness cannot copy.
 `claude plugin uninstall auto-runner`, then `claude plugin marketplace remove flexsin-claude-plugins`. In a project: `python bin/auto_init.py --remove` previews what init added; add `--apply` to remove it.
 Remove a finished worktree with `git worktree remove <folder>` (unlink any shared folder junction first so the real one is never touched).
 
-## Central sidebar (task 22, first slice)
+## Central sidebar (task 22)
 The central service's pages now sit in a left sidebar (My work with its waiting count, Projects, Admin for admins,
 theme switch and Settings); the top bar keeps the brand, the bell and the account menu. Project pages keep their
-header and tabs. My work is two columns (waiting and done; progress and runners). A project's Tasks board has Recent activity and Runners below it. The Projects list shows those needing you first, with a marker. Every page section is a panel (task, blockers, runs, settings and admin pages share it). Settings (Account, My tokens) and Admin (Accounts, Notification log, Runner frictions) have section tabs. The other pages from `docs/designs` follow in later slices.
+header and tabs. My work is two columns (waiting and done; progress and runners). A project's Tasks board has Recent activity and Runners below it. The Projects list shows those needing you first, with a marker. Every page section is a panel (task, blockers, runs, settings and admin pages share it). Settings (Account, My tokens) and Admin (Accounts, Notification log, Runner frictions) have section tabs. The Task page keeps its main and side columns, project settings keep their Members, Repository and Machine tokens tabs, and the signed-out pages keep their cards. Every page in `docs/designs` is covered.
