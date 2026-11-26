@@ -242,6 +242,13 @@ may not stick over plain http. The API endpoints do not use the cookie.
   400 without `assignee` or for a member below developer) gives the task to someone else. Supervisor role only (403), 404
   for an unknown project or task, 409 for a done or rejected task. Each change writes `task.release` / `task.reassign` and
   `supervisor.task.release` / `supervisor.task.reassign` (from, to, reason). Tests: `tests/central/test_task_pool.py`.
+- **Deploy record** `POST /api/v1/supervisor/deploys?project=<slug>` with `{"phase": "started" | "done" | "failed" |
+  "rolled_back", "sha", "reasons", "output", "task"}` (decision record 0012, Phase 5). Supervisor role only. It deploys
+  nothing itself; the pass runs the project's deploy command between `started` and the result. One
+  `supervisor.deploy.<phase>` audit row per call, `output` cut to its last 2000 characters; `done`, `failed` and
+  `rolled_back` need an earlier `started` for the same SHA (409). `GET /api/v1/supervisor/state` answers `last_deploy`
+  (`{sha, phase, at}` of the latest row, or null), so a pass deploys each base head once. Recent activity says
+  "deployed", "deploy failed" and "rolled back". Tests: `tests/central/test_supervisor_e2e.py`.
 - **Queue order** `PUT /api/v1/supervisor/order?project=<slug>` with `{"orders": [{"number", "rank", "reason"}]}`. Supervisor
   role only (403 otherwise, 401 without a token). Every number must be a task of the project (404) and every rank a whole
   number of 1 or more, with no number twice (400); on any error nothing is written. A rank equal to the stored `rank` is

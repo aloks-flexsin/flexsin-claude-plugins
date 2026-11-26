@@ -42,6 +42,7 @@ def _load(name, file):
 
 gates = _load('autorunner_gates', 'autogates.py')
 autoforge = _load('autoforge', 'autoforge.py')
+autodeploy = _load('autorunner_deploy', 'autodeploy.py')
 
 STATE = '/api/v1/supervisor/state?project=%s'
 DECISION = '/api/v1/supervisor/tasks/%d/plan-decision?project=%s'
@@ -218,11 +219,24 @@ def control_step(project, http, read, base_ref, forge):
     return out
 
 
-def run_pass(project, http, read, base_ref, forge, merger):
-    """One Supervisor pass: the plan step, the merge step, the order step, then the control step.
-    -> {"plans": [...], "merges": [...], "orders": [...], "controls": [...]}."""
-    return {'plans': plan_step(project, http, read, base_ref),
-            'merges': merge_step(project, http, read, base_ref, forge, merger),
+def deploy_step(project, http, read, base_ref, deployer, probe=None):
+    """The deploy step (autodeploy.deploy_step) with a fresh state, in the project's mode: auto only when the repository
+    and the central project both say auto (task_autonomy without a task)."""
+    status, state = http('GET', STATE % quote(project, safe=''))
+    if status != 200 or not isinstance(state, dict):
+        return [{'sha': None, 'outcome': 'error', 'reasons': ['could not read the state'], 'task': None}]
+    mode = task_autonomy(gates.gate_inputs(read, base_ref), state, {})
+    return autodeploy.deploy_step(project, http, read, base_ref, state, mode, deployer,
+                                  **({'probe': probe} if probe else {}))
+
+
+def run_pass(project, http, read, base_ref, forge, merger, deployer=None, probe=None):
+    """One Supervisor pass: the plan step, the merge step, the deploy step (when a `deployer` is given), the order step,
+    then the control step. -> {"plans", "merges", "deploys", "orders", "controls"}, each a list."""
+    plans = plan_step(project, http, read, base_ref)
+    merges = merge_step(project, http, read, base_ref, forge, merger)
+    deploys = deploy_step(project, http, read, base_ref, deployer, probe) if deployer is not None else []
+    return {'plans': plans, 'merges': merges, 'deploys': deploys,
             'orders': order_step(project, http),
             'controls': control_step(project, http, read, base_ref, forge)}
 
@@ -288,6 +302,10 @@ def summary(result):
     for m in result['merges']:
         what = 'task %s %s' % (m['task'], m['outcome']) if m['task'] is not None else m['outcome']
         lines.append('merge: ' + what + (': ' + '; '.join(m['reasons']) if m['reasons'] else ''))
+    for d in result.get('deploys', []):
+        lines.append('deploy: %s %s%s' % ((d['sha'] or '')[:10] or 'base', d['outcome'],
+                                          ': ' + '; '.join(d['reasons']) if d['reasons'] else '')
+                     + (' (fix task %s)' % d['task'] if d.get('task') else ''))
     for o in result.get('orders', []):
         lines.append('order: ' + (o['error'] if o['task'] is None else
                                   'task %s -> rank %s (%s)' % (o['task'], o['rank'], o['reason'])))
@@ -354,7 +372,7 @@ def add_main(argv, env, http=None, out=print):
     return EXIT_REFUSED if status in (401, 403) else EXIT_ERRORS
 
 
-def main(argv=None, env=None, http=None, read=None, forge=None, out=print):
+def main(argv=None, env=None, http=None, read=None, forge=None, out=print, deployer=None, probe=None):
     """Run one pass. Exit 0 = ran clean, 1 = ran but a step reported an error, 2 = missing configuration,
     3 = refused (the token is not a supervisor's, or the service did not answer). Injectable parts are for tests.
     `main(['add', ...])` adds a task instead (see `add_main`)."""
@@ -377,12 +395,14 @@ def main(argv=None, env=None, http=None, read=None, forge=None, out=print):
         return EXIT_REFUSED
     forge = forge or autoforge.GithubForge(env['AUTO_SUPERVISOR_REPO'], token=env.get('AUTO_SUPERVISOR_GITHUB_TOKEN', ''))
     read = read or git_reader(env.get('AUTO_SUPERVISOR_REPO_DIR') or '.')
+    deployer = deployer or autodeploy.ShellDeployer(env.get('AUTO_SUPERVISOR_REPO_DIR') or '.')
     result = run_pass(env['AUTO_SUPERVISOR_PROJECT'], http, read, env.get('AUTO_SUPERVISOR_BASE') or 'origin/main',
-                      forge, env['AUTO_SUPERVISOR_MERGER'])
+                      forge, env['AUTO_SUPERVISOR_MERGER'], deployer, probe)
     for line in summary(result):
         out(line)
     bad = [p for p in result['plans'] if p['error']] + [m for m in result['merges'] if m['outcome'] in ('error', 'failed')] + [
-        o for o in result.get('orders', []) if o['error']] + [c for c in result.get('controls', []) if c['error']]
+        o for o in result.get('orders', []) if o['error']] + [
+        d for d in result.get('deploys', []) if d['outcome'] in ('error', 'failed')] + [c for c in result.get('controls', []) if c['error']]
     return EXIT_ERRORS if bad else EXIT_OK
 
 
