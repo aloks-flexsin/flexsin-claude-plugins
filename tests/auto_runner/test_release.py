@@ -190,3 +190,62 @@ def test_init_appends_tag_rule_only_when_changelog_enabled(repo):
     deny = json.loads((repo / '.claude' / 'settings.json').read_text(encoding='utf-8'))['permissions']['deny']
     assert 'Bash(git tag:*)' in deny and 'Bash(git tag)' in deny
     assert init.make_plan(repo, {'local': True})['rules'] == []
+
+
+# ---- version files and an applied release (decision record 0012, Phase 5) -------------------------------------------
+
+def test_version_files_found_and_read(tmp_path):
+    (tmp_path / 'package.json').write_text('{\n  "name": "x",\n  "version": "1.4.2"\n}\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text('[project]\nname = "x"\nversion = "1.5.0"\n', encoding='utf-8')
+    (tmp_path / 'app').mkdir()
+    (tmp_path / 'app' / 'version.txt').write_text('1.5.1\n', encoding='utf-8')
+    assert ch.version_files(tmp_path, ['app/version.txt', 'missing.json']) == ['package.json', 'pyproject.toml',
+                                                                               'app/version.txt']
+    assert ch.read_version(tmp_path / 'package.json') == (1, 4, 2)
+    assert ch.last_version('', None, [tmp_path / f for f in ('package.json', 'pyproject.toml', 'app/version.txt')]) \
+        == ((1, 5, 1), 'version.txt')
+    assert ch.last_version('## [0.1.0]\n', None, [tmp_path / 'package.json']) == ((0, 1, 0), 'changelog heading')
+
+
+def test_write_version_changes_only_the_version_text(tmp_path):
+    pkg = tmp_path / 'package.json'
+    pkg.write_text('{\n  "name": "x",\n  "version": "1.4.2",\n  "deps": {"version": "9.9.9"}\n}\n', encoding='utf-8')
+    assert ch.write_version(pkg, '1.5.0') is True
+    assert pkg.read_text(encoding='utf-8') == '{\n  "name": "x",\n  "version": "1.5.0",\n  "deps": {"version": "9.9.9"}\n}\n'
+    toml = tmp_path / 'pyproject.toml'
+    toml.write_text('[project]\nversion = "v1.0.0"\n[tool.x]\nversion = "3.0.0"\n', encoding='utf-8')
+    assert ch.write_version(toml, '1.1.0') and toml.read_text(encoding='utf-8').startswith('[project]\nversion = "v1.1.0"\n')
+    assert '"3.0.0"' in toml.read_text(encoding='utf-8')
+    plain = tmp_path / 'notes.json'
+    plain.write_text('{"name": "no version"}', encoding='utf-8')
+    assert ch.write_version(plain, '1.0.0') is False
+
+
+def test_release_apply_moves_unreleased_and_bumps_the_files(repo):
+    (repo / '.claude-plugin').mkdir()
+    (repo / '.claude-plugin' / 'plugin.json').write_text('{"name": "p", "version": "0.23.0"}\n', encoding='utf-8')
+    (repo / 'CHANGELOG.md').write_text(changelog([('feature', 'A1', 'You can now export the portfolio as a spreadsheet.')]),
+                                       encoding='utf-8')
+    res = ch.release(repo, today=DAY, tag_format='release-{version}', apply=True)
+    assert (res['previous'], res['version'], res['tag']) == ('0.23.0', '0.24.0', 'release-0.24.0')
+    assert res['applied'] == ['CHANGELOG.md', '.claude-plugin/plugin.json']
+    text = (repo / 'CHANGELOG.md').read_text(encoding='utf-8')
+    assert '## [Unreleased]\n\n## [0.24.0] - 2026-10-30' in text and text.count('## [Unreleased]') == 1
+    assert ch.unreleased_entries(text) == {}
+    assert json.loads((repo / '.claude-plugin' / 'plugin.json').read_text(encoding='utf-8'))['version'] == '0.24.0'
+    assert 'git tag -a release-0.24.0' in res['path'].read_text(encoding='utf-8')
+    with pytest.raises(ch.ChangelogError, match='already has a section'):
+        ch.apply_release(repo, 'CHANGELOG.md', '0.24.0', '2026-10-31', [])
+
+
+def test_release_cli_apply_reads_the_release_config(repo, capsys):
+    (repo / '.claude').mkdir(exist_ok=True)
+    (repo / '.claude' / 'auto.json').write_text(json.dumps({'release': {'version_files': ['VERSION.txt'],
+                                                                         'tag_format': 'r{version}'}}), encoding='utf-8')
+    (repo / 'VERSION.txt').write_text('2.0.0\n', encoding='utf-8')
+    (repo / 'CHANGELOG.md').write_text(changelog([('fix', 'A1', 'The search box keeps your words after an error.')]),
+                                       encoding='utf-8')
+    assert ch.main(['release', '--project', str(repo), '--apply']) == 0
+    out = capsys.readouterr().out
+    assert 'proposed 2.0.1' in out and 'tag r2.0.1' in out and 'VERSION.txt' in out
+    assert (repo / 'VERSION.txt').read_text(encoding='utf-8') == '2.0.1\n'

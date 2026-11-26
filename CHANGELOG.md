@@ -5,6 +5,10 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Releases (autonomy Phase 5): `autochange.py release --apply` moves the Unreleased entries under the new version and
+  bumps the project's version files (`package.json`, `pyproject.toml`, `.claude-plugin/plugin.json`, `VERSION`, or the
+  `release.version_files`), so a release lands through a pull request; `release.tag_format` (default `v{version}`)
+  names the tag. The proposal now reads the last version from those files too when the changelog has no version heading.
 - Supervisor deploy step (autonomy Phase 5): a `deploy` section in `.claude/auto.json` (`command`, `smoke_url`,
   `rollback_command`, `smoke_tries`, `timeout_s`). In auto mode, after merges, the Supervisor deploys each new base head
   once in a separate worktree, checks the smoke URL, and on failure rolls back and adds a fix task to the pool. Central
