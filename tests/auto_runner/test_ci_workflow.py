@@ -14,10 +14,18 @@ def test_workflow_name_job_and_runner():
     assert 'runs-on: ubuntu-latest' in t
 
 
-def test_triggers_are_pull_request_and_push_to_main():
+def test_triggers_are_pull_requests_to_main_only():
     t = text()
     assert 'pull_request:\n    branches: [main]' in t
-    assert 'push:\n    branches: [main]' in t
+    assert '\n  push:' not in t                       # a merged change already passed on its pull request
+
+
+def test_runs_in_parallel_and_skips_only_plans_and_designs():
+    t = text()
+    assert 'python -m pytest -q -n auto' in t
+    assert "grep -qvE '^docs/(plans|designs)/'" in t
+    assert t.count("if: steps.changes.outputs.code == 'true'") == 3     # setup, install and run all skip together
+    assert 'fetch-depth: 0' in t                                        # the diff against the base needs its history
 
 
 def test_python_version_and_pip_cache():
