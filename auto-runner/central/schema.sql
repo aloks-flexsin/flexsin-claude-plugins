@@ -254,6 +254,7 @@ CREATE TABLE IF NOT EXISTS runner (
     spend_usd DOUBLE PRECISION NOT NULL DEFAULT 0,
     control VARCHAR(16),
     control_by VARCHAR(64) REFERENCES account (id) ON DELETE SET NULL,
+    control_source VARCHAR(16),   -- "supervise" when the Supervise stage set the control (decision 0012, Phase 8)
     control_at VARCHAR(32),
     beat_at VARCHAR(32) NOT NULL,
     created_at VARCHAR(32) NOT NULL,

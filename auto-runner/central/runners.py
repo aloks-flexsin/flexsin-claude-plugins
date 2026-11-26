@@ -229,7 +229,7 @@ def view(row, moment, account, project):
     key, task, text = words(row, moment)
     control = row["control"] if row["control"] in CONTROLS else None
     note = None
-    if control == "pause" and row["control_role"] == "supervisor":
+    if control == "pause" and paused_by_supervisor(row):
         note = "Paused by the Supervisor"
     elif control == "pause":
         note = "Paused by a person" if key == "paused" else "Asked to pause: it waits after the step it is on"
@@ -258,14 +258,20 @@ def views(db, project, account, moment, only_controllable=False):
     return [v for v in out if v["can_control"]] if only_controllable else out
 
 
-def set_control(db, row, action, account, moment):
-    """Pause, resume or stop -> True when `control` changed (the caller audits and commits)."""
+def set_control(db, row, action, account, moment, source=None):
+    """Pause, resume or stop -> True when `control` changed (the caller audits and commits). `source` "supervise" marks
+    a control set by the Supervise stage (decision record 0012, Phase 8), so it may undo it; a person's leaves it null."""
     value = ACTIONS[action]
     if (row["control"] or None) == value:
         return False
-    db.execute("UPDATE runner SET control = ?, control_by = ?, control_at = ? WHERE id = ?",
-               (value, account["id"], _at(moment), row["id"]))
+    db.execute("UPDATE runner SET control = ?, control_by = ?, control_at = ?, control_source = ? WHERE id = ?",
+               (value, account["id"], _at(moment), source, row["id"]))
     return True
+
+
+def paused_by_supervisor(row):
+    """True when the runner's control was set by a supervisor account or by the Supervise stage."""
+    return row.get("control_role") == "supervisor" or row.get("control_source") == "supervise"
 
 
 @bp.post("/projects/<slug>/runners/<runner_id>/hand-over")

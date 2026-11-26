@@ -221,7 +221,7 @@ def test_the_merge_route_is_supervisor_only_and_validates(app, team, conn, sup):
     finish(app, team, n, 51)
     path = '/api/v1/supervisor/tasks/%d/merge' % n
     body = dict(phase='decided', sha='s')
-    assert api(app, 'POST', path, team['token']['dev'], body).status_code == 403
+    assert api(app, 'POST', path, team['token']['viewer'], body).status_code == 403
     assert api(app, 'POST', path, 'nope', body).status_code == 401
     assert api(app, 'POST', path, sup, dict(phase='merged', sha='s')).status_code == 400
     assert api(app, 'POST', path, sup, dict(phase='decided')).status_code == 400
@@ -267,8 +267,8 @@ def test_queue_order_j6(app, team, conn, sup, clock):
 
 def test_the_order_route_is_supervisor_only_and_validates(app, team, conn, sup):
     n = add(team, title='one')
-    dev = api(app, 'PUT', ORDER_URL, team['token']['dev'], dict(orders=[dict(number=n, rank=1)]))
-    assert dev.status_code == 403 and tasks.get(conn, team['alpha']['id'], n)['rank'] is None
+    viewer = api(app, 'PUT', ORDER_URL, team['token']['viewer'], dict(orders=[dict(number=n, rank=1)]))
+    assert viewer.status_code == 403 and tasks.get(conn, team['alpha']['id'], n)['rank'] is None
     head = {'Authorization': 'Bearer ' + sup}
     for bad in (None, 'x', [dict(number=n, rank=0)], [dict(number=n, rank='1')], [dict(number=n, rank=True)],
                 [dict(number=n, rank=1), dict(number=n, rank=2)]):
@@ -505,7 +505,7 @@ def test_a_failed_deploy_adds_a_pool_task_and_a_manual_project_deploys_nothing(a
 def test_the_deploy_route_is_supervisor_only_and_validates(app, team, conn, sup):
     url = '/api/v1/supervisor/deploys?project=alpha'
     send = lambda token, body: new_client(app).post(url, json=body, headers={'Authorization': 'Bearer ' + token})
-    assert send(team['token']['dev'], {'phase': 'started', 'sha': 'x'}).status_code == 403
+    assert send(team['token']['viewer'], {'phase': 'started', 'sha': 'x'}).status_code == 403
     assert send(sup, {'phase': 'later', 'sha': 'x'}).status_code == 400
     assert send(sup, {'phase': 'started'}).status_code == 400
     assert send(sup, {'phase': 'done', 'sha': 'x'}).status_code == 409

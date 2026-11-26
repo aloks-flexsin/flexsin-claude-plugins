@@ -148,7 +148,7 @@ def depends_of(row):
 
 
 def create(db, project, by, assignee, title, description, moment, status="open", plan="", items="", runner=None,
-           priority=None, depends_on=None, source=None):
+           priority=None, depends_on=None, source=None, as_stage=False):
     """Add a task and commit -> its row. People add tasks for themselves; an admin for any member who can run runners.
     `priority` (an integer, lower is more urgent) and `depends_on` (task numbers of this project) are optional.
     A supervisor (decision record 0010, 6a) adds tasks for a member who can run runners, and only with `source`: what
@@ -157,7 +157,7 @@ def create(db, project, by, assignee, title, description, moment, status="open",
     Anyone who may add tasks (a developer or above, an admin, the supervisor) may add one to the pool."""
     title = _text(title, MAX_TITLE, "the title", required=True)
     description = _text(description, MAX_TEXT, "the description")
-    if by["role"] == accounts.SUPERVISOR:
+    if by["role"] == accounts.SUPERVISOR or as_stage:      # the Supervise stage (decision 0012, Phase 8) adds like it
         source = _text(source, MAX_SOURCE, "what the task comes from (source)", required=True)
         description = ((description + "\n\n") if description else "") + "From: " + source
         if len(description) > MAX_TEXT:
@@ -378,17 +378,18 @@ def set_manual(db, row, value):
     return before
 
 
-def can_decide(db, project, row, account):
-    """The assignee, a manager or above; in auto mode (auto_mode) also the supervisor, without a membership."""
-    if account["role"] == accounts.SUPERVISOR and auto_mode(project, row):
+def can_decide(db, project, row, account, as_stage=False):
+    """The assignee, a manager or above; in auto mode (auto_mode) also the supervisor without a membership, and a
+    member acting as the Supervise stage (`as_stage`, decision record 0012 Phase 8)."""
+    if (account["role"] == accounts.SUPERVISOR or as_stage) and auto_mode(project, row):
         return True
     return row["assignee_id"] == account["id"] or projects.allows(projects.effective_role(db, project, account), APPROVER_ROLE)
 
 
-def decide(db, project, row, account, decision, comment, moment):
+def decide(db, project, row, account, decision, comment, moment, as_stage=False):
     if row["status"] != "plan_review":
         raise TaskError("task %d has no plan waiting for approval" % row["number"], 409)
-    if not can_decide(db, project, row, account):
+    if not can_decide(db, project, row, account, as_stage):
         raise TaskError("only the assignee or a manager, owner or admin decides on a plan", 403)
     comment = _text(comment, MAX_TEXT, "the comment")
     if decision == "changes" and not comment:

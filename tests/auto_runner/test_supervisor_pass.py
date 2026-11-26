@@ -33,13 +33,24 @@ def run(env, role='supervisor', status=200):
     return code, calls, lines
 
 
-def test_command_refuses_non_supervisor_token():
-    for role in ('user', 'admin', None):
-        code, calls, lines = run(ENV, role=role)
-        assert code == sup.EXIT_REFUSED != 0
-        assert 'not a supervisor' in lines[0]
-        assert calls == [('GET', sup.WHOAMI)]          # nothing else was called: no state read, no decision
+def test_command_refuses_a_project_token_and_a_member_below_developer():
+    code, calls, lines = run(ENV, role=None)                 # a project token has no account
+    assert code == sup.EXIT_REFUSED and calls == [('GET', sup.WHOAMI)] and 'sign this computer in' in lines[0]
+    for role in ('user', 'admin'):                           # a member acts as the Supervise stage (decision 0012, Phase 8)
+        calls, lines = [], []
+
+        def http(method, path, body=None):
+            calls.append((method, path))
+            return (200, {'role': role}) if path == sup.WHOAMI else (403, {'error': 'no'})
+        code = sup.main(env=ENV, http=http, read=lambda ref, path: None, forge=FakeForge(), out=lines.append)
+        assert code == sup.EXIT_REFUSED and 'developer or above in: demo' in lines[0]
+        assert [p for _m, p in calls] == [sup.WHOAMI, sup.STATE % 'demo']       # no decision was attempted
         assert 'secret-token-123' not in ' '.join(lines)
+
+
+def test_a_member_runs_a_pass_as_the_supervise_stage():
+    code, calls, lines = run(ENV, role='user')
+    assert code == sup.EXIT_OK and lines == ['Nothing to do: no plan waits and no pull request is ready.']
 
 
 def test_service_down_or_token_rejected_refuses():
@@ -47,10 +58,29 @@ def test_service_down_or_token_rejected_refuses():
     assert code == sup.EXIT_REFUSED and 'did not answer' in lines[0] and len(calls) == 1
 
 
-def test_missing_configuration_exits_2_before_any_call():
+def test_missing_configuration_exits_2_before_any_call(tmp_path):
     env = {k: v for k, v in ENV.items() if k != 'AUTO_SUPERVISOR_PROJECT'}
+    env['AUTO_SUPERVISOR_REPO_DIR'] = str(tmp_path)          # no .claude/auto.json there to take the project from
     code, calls, lines = run(env)
-    assert code == sup.EXIT_CONFIG and calls == [] and 'AUTO_SUPERVISOR_PROJECT' in lines[0]
+    assert code == sup.EXIT_CONFIG and calls == [] and 'the project' in lines[0] and '/auto-runner:setup' in lines[0]
+
+
+def test_settings_come_from_the_project_config_and_the_sign_in(tmp_path, monkeypatch):
+    import json
+    (tmp_path / '.claude').mkdir()
+    (tmp_path / '.claude' / 'auto.json').write_text(json.dumps(
+        {'test_command': 'x', 'central': {'enabled': True, 'url': 'https://central.test', 'project': 'acme-web'}}),
+        encoding='utf-8')
+    safe = sup._load('autorunner_safe', 'autosafe.py')
+    monkeypatch.setattr(safe, 'central_token', lambda cfg, env=None: (safe.PERSONAL_TOKEN_PREFIX + 'mine', 'sign-in'))
+    no_gh = lambda *a, **k: (_ for _ in ()).throw(OSError('no gh'))     # noqa: E731
+    s, missing = sup.resolve_settings({'AUTO_SUPERVISOR_REPO_DIR': str(tmp_path)}, origin=lambda d: 'acme/web',
+                                      run=no_gh)
+    assert missing == [] and (s['url'], s['project'], s['repo']) == ('https://central.test', 'acme-web', 'acme/web')
+    assert s['token'].endswith('mine') and s['github_token'] == '' and s['merger'] == ''
+    s, _ = sup.resolve_settings({'AUTO_SUPERVISOR_REPO_DIR': str(tmp_path), 'AUTO_SUPERVISOR_PROJECT': 'other',
+                                 'GH_TOKEN': 'g'}, origin=lambda d: 'acme/web', run=no_gh)
+    assert s['project'] == 'other' and s['github_token'] == 'g'          # an override wins
 
 
 def test_supervisor_runs_a_quiet_pass_and_exits_0():

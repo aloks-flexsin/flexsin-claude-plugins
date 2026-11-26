@@ -183,6 +183,15 @@ may not stick over plain http. The API endpoints do not use the cookie.
   SQLite rebuilds the table from its own CREATE statement and copies every row). Until it runs, adding a pool task fails;
   everything else works. **Rollback:** deploy the previous code after giving every pool task an assignee (the previous
   code's joins skip tasks without one).
+- **The Supervise stage** (decision record 0012, Phase 8): every `/api/v1/supervisor/*` route below that says
+  "supervisor role only" also accepts the personal token of a **developer or above** in the project, acting as the
+  Supervise stage under their own sign-in; a `supervisor` account still works (back-compat). Anyone else gets 403, both
+  for a project they are below developer in and for an unknown slug (only a supervisor account gets 404 for an unknown
+  project, so a slug's existence is not revealed). Plan decisions by the stage follow the same auto/manual rules as the
+  supervisor's (`tasks.can_decide(..., as_stage=True)`), and a task it adds needs `from` like the supervisor's. Every
+  `supervisor.*` audit row written by a member carries `"as": "supervise stage"`. A runner pause or resume by the stage
+  sets `runner.control_source = 'supervise'`, so the stage can undo its own pause but never a person's
+  (`runners.paused_by_supervisor`); `init-db` adds that column. Tests: `tests/central/test_autonomy.py`.
 - **Supervisor read API** (`supervisor.py`, personal tokens; these two routes are read-only): `GET /api/v1/supervisor/whoami` returns
   `{role, email}` for any valid token (role is `null` for a project token). `GET /api/v1/supervisor/state?project=<slug>`
   needs the `supervisor` account role (403 for any other role, 401 without a token, 404 only for an unknown project once the

@@ -57,6 +57,10 @@ class Forge:
         """Merge pull request `pr` only if its head is still `sha`. -> {merged: bool, sha}. Raises ForgeError if refused."""
         raise NotImplementedError
 
+    def login(self):
+        """-> the login the forge token acts as (the identity that merges), or None when unknown. Read-only."""
+        return None
+
 
 def _check_state(run):
     if run.get('status') != 'completed':
@@ -125,6 +129,14 @@ class GithubForge(Forge):
 
     def changed_files(self, number):
         return [f['filename'] for f in self._pages(f'/repos/{self.repo}/pulls/{int(number)}/files')]
+
+    def login(self):
+        if not self._token:
+            return None
+        try:
+            return (self._call('GET', '/user') or {}).get('login') or None
+        except ForgeError:
+            return None
 
     def checks(self, number):
         sha = self.pr(number)['head_sha']

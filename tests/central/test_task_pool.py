@@ -255,7 +255,7 @@ def sup_call(app, token, n, action, body):
 def test_supervisor_releases_a_claim(app, pool, conn, sup):
     n = add(pool)
     claim = build(app, pool, conn, n)
-    assert sup_call(app, pool['token']['dev'], n, 'release', {}).status_code == 403
+    assert sup_call(app, pool['token']['viewer'], n, 'release', {}).status_code == 403
     resp = sup_call(app, sup, n, 'release', {'reason': 'stalled'})
     assert resp.status_code == 200 and resp.get_json()['changed'] is True
     t = row(conn, pool, n)
