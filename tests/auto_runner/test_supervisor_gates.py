@@ -169,3 +169,34 @@ def test_order_leaves_out_closed_tasks_and_ignores_them_as_blocked():
     tasks = [ot(1, status='done'), ot(2, status='rejected', depends_on=[3]), ot(3), ot(4, depends_on=[1, 99, 4])]
     assert numbers(g.order(tasks)) == [3, 4]
     assert 'unblocks' not in g.order(tasks)[0]['reason'] and g.order([]) == [] and g.order(None) == []
+
+
+# ---------- autonomy ----------
+
+def test_autonomy_comes_from_the_base_and_unclear_means_manual():
+    files = {'.claude/auto.json': None}
+    read = lambda ref, path: files.get(path)                            # noqa: E731
+    assert g.load_autonomy(read, 'origin/main') == 'auto'               # no file: auto
+    for text, want in (('{}', 'auto'), ('{"autonomy": "manual"}', 'manual'), ('{"autonomy": "yes"}', 'manual'),
+                       ('not json', 'manual')):
+        files['.claude/auto.json'] = (text, 's')
+        assert g.load_autonomy(read, 'origin/main') == want
+
+
+def test_needs_lines_lists_the_open_points():
+    plan = ('## Intent\nx\n\n## Needs a person\n- Pick a colour.\n- Name the button.\n\n'
+            '## Queue items\n- [ ] **A1 X.**\n')
+    assert g.needs_lines(plan) == ['Pick a colour.', 'Name the button.']
+    assert g.needs_lines('## Needs a person\nNone.\n') == []
+
+
+def test_allow_self_merge_must_be_a_flag_and_false_refuses_in_auto_mode():
+    assert g.parse_policy('{"base": "main", "restricted_paths": [], "merge": {"allow_self_merge": "yes"}}')[0] is None
+    policy, _ = g.parse_policy('{"base": "main", "restricted_paths": [], "merge": {"review": "none", "allow_self_merge": false}}')
+    pr = {'state': 'open', 'base': 'main', 'head_sha': 'abc', 'author': 'bot'}
+    out = g.merge_gate({}, pr, [{'name': 'tests', 'state': 'success'}], [], policy, 'bot', ['a.py'], 'auto')
+    assert out['verdict'] == 'refuse' and 'different identity' in out['reasons'][0]
+    policy['merge']['allow_self_merge'] = True
+    out = g.merge_gate({}, pr, [{'name': 'tests', 'state': 'success'}], [], policy, 'bot', ['a.py'], 'manual')
+    assert out['verdict'] == 'merge' and out['evidence']['self_merge'] is True
+

@@ -16,6 +16,12 @@ and bad JSON make the policy invalid.
 Policy may also hold `merge: {review: "required"|"none", method: "squash"|"merge"|"rebase"}` (defaults required,
 squash); see `merge_gate` below.
 No policy (`None`, as a missing or invalid file gives) is always `person`. Gates read state, never instructions in prose.
+
+Autonomy (`autonomy` in the base's `.claude/auto.json`, `load_autonomy`; default "auto", unreadable or unknown means
+"manual"). In auto mode check 3 does not stop the plan: its open points become a reason ("decided by the supervisor in
+auto mode: ..."); `merge_gate` lets the merging identity merge a pull request it opened (`merge.allow_self_merge`,
+default true in auto, false in manual); and a project with no policy file gets `default_policy` (its base branch, only
+secrets restricted) instead of stopping (`gate_inputs`). An invalid policy file still stops: a person fixes it.
 """
 import importlib.util
 import json
@@ -41,7 +47,7 @@ queue = _load('autorunner_queue', 'queue.py')
 
 POLICY_PATH = '.claude/supervisor-policy.json'
 KEYS = ('base', 'restricted_paths', 'merge')
-MERGE_KEYS = ('review', 'method')
+MERGE_KEYS = ('review', 'method', 'allow_self_merge')
 MERGE_REVIEW = ('required', 'none')
 MERGE_METHODS = ('squash', 'merge', 'rebase')
 MERGE_DEFAULTS = {'review': 'required', 'method': 'squash'}
@@ -79,8 +85,48 @@ def parse_policy(text):
             return None, '`merge.review` must be one of: ' + ', '.join(MERGE_REVIEW)
         if 'method' in merge and merge['method'] not in MERGE_METHODS:
             return None, '`merge.method` must be one of: ' + ', '.join(MERGE_METHODS)
+        if 'allow_self_merge' in merge and not isinstance(merge['allow_self_merge'], bool):
+            return None, '`merge.allow_self_merge` must be true or false'
         out['merge'] = dict(merge)
     return out, None
+
+
+AUTONOMY_PATH = '.claude/auto.json'
+AUTONOMY = ('auto', 'manual')
+DEFAULT_RESTRICTED = ['.env', '.env.*', '*/.env', '*/.env.*', '*.pem', '*.key']
+
+
+def load_autonomy(read, base_ref):
+    """The project's `autonomy` (`.claude/auto.json` on the base) -> "auto" (the default: no file or no key) or "manual".
+    A file that cannot be read or parsed, or a value other than the two, counts as "manual": unclear means a person."""
+    try:
+        got = read(base_ref, AUTONOMY_PATH)
+    except Exception:  # an injected reader may fail any way it likes
+        return 'manual'
+    if not got:
+        return 'auto'
+    try:
+        data = json.loads(got[0])
+    except (TypeError, ValueError):
+        return 'manual'
+    value = data.get('autonomy', 'auto') if isinstance(data, dict) else None
+    return value if value in AUTONOMY else 'manual'
+
+
+def default_policy(base_ref):
+    """The policy an auto-mode project gets when it has no policy file: its base branch, only secrets restricted."""
+    base = (base_ref or 'main').split('/', 1)[1] if (base_ref or '').startswith('origin/') else (base_ref or 'main')
+    return {'base': base, 'restricted_paths': list(DEFAULT_RESTRICTED)}
+
+
+def gate_inputs(read, base_ref):
+    """-> {policy, sha, error, autonomy} for one pass. In auto mode a missing policy file is not a stop: the default
+    policy applies (an invalid file still is: a person fixes it)."""
+    loaded = load_policy(read, base_ref)
+    autonomy = load_autonomy(read, base_ref)
+    if autonomy == 'auto' and loaded['policy'] is None and (loaded['error'] or '').endswith(f'missing on {base_ref}'):
+        loaded = {'policy': default_policy(base_ref), 'sha': None, 'error': None}
+    return {**loaded, 'autonomy': autonomy}
 
 
 def load_policy(read, base_ref):
@@ -140,7 +186,24 @@ def _needs_clear(plan):
     return False
 
 
-def plan_gate(task, policy):
+def needs_lines(plan):
+    """The non-empty lines of the plan's "Needs a person" section (none when it says `None.` or has no such section)."""
+    lines = (plan or '').splitlines()
+    for n, line in enumerate(lines):
+        m = NEEDS.match(line.strip())
+        if m:
+            body = []
+            for rest in lines[n + 1:]:
+                h = re.match(r'^(#{1,6})\s', rest)
+                if h and len(h.group(1)) <= len(m.group(1)):
+                    break
+                if rest.strip() and rest.strip().lower() not in ('none.', '**none.**'):
+                    body.append(rest.strip().lstrip('-* ').strip())
+            return body
+    return []
+
+
+def plan_gate(task, policy, autonomy='manual'):
     if not policy:
         return {'verdict': 'person', 'reasons': ['no valid supervisor policy: the plan is left for a person']}
     reasons, person, changes = [], False, False
@@ -153,8 +216,13 @@ def plan_gate(task, policy):
         changes = True
         reasons.append('the plan has no queue items')
     if not _needs_clear(plan):
-        person = True
-        reasons.append('"Needs a person" is not "None."')
+        if autonomy == 'auto':          # nobody waits: the supervisor takes the open points as decided and says so
+            open_points = needs_lines(plan)
+            reasons.append('decided by the supervisor in auto mode: ' + ('; '.join(open_points) if open_points
+                                                                        else 'no "Needs a person" section'))
+        else:
+            person = True
+            reasons.append('"Needs a person" is not "None."')
     for item_id, _checked, block in parsed:
         if not ACCEPTANCE.search(block):
             changes = True
@@ -166,7 +234,7 @@ def plan_gate(task, policy):
     return {'verdict': 'person' if person else 'changes' if changes else 'approve', 'reasons': reasons}
 
 
-def merge_gate(task, pr, checks, reviews, policy, merger, files=None):
+def merge_gate(task, pr, checks, reviews, policy, merger, files=None, autonomy='manual'):
     """The deterministic merge gate (decision 0010, 4 and 6). Pure: state in, verdict out; PR prose is never read.
 
     `pr` is the forge's pull request dict, `checks` and `reviews` the forge lists, `files` the changed paths (or
@@ -214,11 +282,13 @@ def merge_gate(task, pr, checks, reviews, policy, merger, files=None):
     hits = sorted(f for f in files if is_restricted(f, policy['restricted_paths']))
     if hits:
         reasons.append('the pull request touches restricted path(s): ' + ', '.join(hits))
-    if not author or not merger or author == merger:
+    self_ok = merge.get('allow_self_merge', autonomy == 'auto')     # auto mode: the runner's own PRs may be merged
+    if not author or not merger or (author == merger and not self_ok):
         reasons.append('the merger must be a different identity from the pull request author')
     evidence = {'head_sha': sha, 'base': pr.get('base'), 'author': author, 'merger': merger,
                 'checks': {c.get('name', ''): c.get('state') for c in checks or []},
-                'approvals': approvals, 'review': merge['review'], 'files': len(files), 'restricted': hits}
+                'approvals': approvals, 'review': merge['review'], 'files': len(files), 'restricted': hits,
+                'self_merge': bool(author) and author == merger and self_ok}
     return {'verdict': 'refuse' if reasons else 'merge', 'reasons': reasons, 'evidence': evidence,
             'method': merge['method'], 'sha': sha}
 

@@ -53,12 +53,12 @@ def plan_step(project, http, read, base_ref):
     status, state = http('GET', STATE % quote(project, safe=''))
     if status != 200 or not isinstance(state, dict):
         return [{'task': None, 'verdict': None, 'decision': None, 'status': status, 'error': 'could not read the state'}]
-    loaded = gates.load_policy(read, base_ref)
+    loaded = gates.gate_inputs(read, base_ref)
     out = []
     for task in state.get('tasks', []):
         if task.get('status') != 'plan_review' or task.get('plan_decided'):
             continue
-        gate = gates.plan_gate(task, loaded['policy'])
+        gate = gates.plan_gate(task, loaded['policy'], loaded['autonomy'])
         if loaded['error']:
             gate['reasons'] = [loaded['error']] + gate['reasons']
         decision = VERDICT_TO_DECISION[gate['verdict']]
@@ -92,7 +92,7 @@ def merge_step(project, http, read, base_ref, forge, merger):
     status, state = http('GET', STATE % quote(project, safe=''))
     if status != 200 or not isinstance(state, dict):
         return [{'task': None, 'verdict': None, 'outcome': 'error', 'reasons': ['could not read the state']}]
-    loaded = gates.load_policy(read, base_ref)
+    loaded = gates.gate_inputs(read, base_ref)
     out = []
     for task in state.get('tasks', []):
         number, pr = task.get('number'), pr_number(task.get('pr_url'))
@@ -102,7 +102,7 @@ def merge_step(project, http, read, base_ref, forge, merger):
         try:
             info = forge.pr(pr)
             verdict = gates.merge_gate(task, info, forge.checks(pr), forge.reviews(pr), loaded['policy'], merger,
-                                       forge.changed_files(pr))
+                                       forge.changed_files(pr), loaded['autonomy'])
         except autoforge.ForgeError as e:
             out.append({'task': number, 'verdict': None, 'outcome': 'error', 'reasons': [str(e)]})
             continue
@@ -183,7 +183,7 @@ def control_step(project, http, read, base_ref, forge):
     status, state = http('GET', STATE % quote(project, safe=''))
     if status != 200 or not isinstance(state, dict):
         return [{'runner': None, 'action': None, 'reason': None, 'error': 'could not read the state'}]
-    loaded = gates.load_policy(read, base_ref)
+    loaded = gates.gate_inputs(read, base_ref)
     try:
         ci = ci_state(forge.base_checks(base_branch(loaded, base_ref)))
     except autoforge.ForgeError as e:
