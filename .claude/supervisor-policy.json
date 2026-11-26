@@ -15,6 +15,7 @@
   ],
   "merge": {
     "review": "none",
-    "method": "merge"
+    "method": "merge",
+    "allow_self_merge": true
   }
 }

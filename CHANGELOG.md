@@ -26,6 +26,13 @@ All notable changes to this project are written here (Keep a Changelog).
   keeps the old escalations. The Supervisor pass decides each task in auto mode only when the repository, the central
   project and the task all say auto. Needs `python -m central init-db` (two columns). Unverified against the live service.
 
+### Changed
+- Rules (autonomy Phase 6, decision record 0012): autonomy is the default. CLAUDE.md now lets the Supervisor or the
+  opening session merge a pull request once its `tests` check is green, deploys run only through the Supervisor's
+  deploy step, and a session takes its identity from the environment and asks only when a part is missing. Decision
+  records 0009 and 0010 are amended; `.claude/supervisor-policy.json` allows self-merge explicitly and keeps its
+  restricted paths.
+
 ### Fixed
 - Runner: a run on a central task works only that task's items. The shared queue can hold another task's open items
   (still being built on another branch); the runner used to take the first ready one, so one account's run started
