@@ -22,6 +22,25 @@ claude plugin install auto-runner@flexsin-claude-plugins
 Or load it for one session without installing, from a clone: `claude --plugin-dir ./auto-runner`.
 Check the manifest with `claude plugin validate ./auto-runner` (needs the `claude` CLI on PATH).
 
+## Commands (decision record 0012)
+With autonomy the default, most steps run by themselves. The commands a person uses:
+
+| Command | Does |
+|---|---|
+| `/auto-runner:setup` | One guided setup: sign-in and the central service, this project's config (and a CI workflow when there is none), identity, capabilities, sandbox and deploy settings, each previewed first. `setup check` only reads; `setup <slug>` clones a project first. |
+| `/auto-runner:start` | Start working on the pool hands-free (the watcher); `start supervisor` starts the supervisor loop (`autosupervisor.py watch`). Also offers `/loop 15m /auto-runner:tick`. |
+| `/auto-runner:stop` | Writes `.auto/STOP`, which the runner, the watcher and the supervisor loop obey between steps. |
+| `/auto-runner:add <what>` | Adds an open task for you or, with `--pool`, the pool (`autotasks.py add`); in auto mode it is planned, approved and built without anyone waiting. |
+| `/auto-runner:status` | The queue, the last runs and the central tasks (`auto_report.py status` and `log -n 3`, `autotasks.py list`). |
+| `/auto-runner:manual on\|off [task N]` | Manual mode for one task (`autotasks.py manual N on\|off`, `POST /api/v1/tasks/<n>/manual`) or the project (`autonomy` in `.claude/auto.json` and the central switch); `manual edits` is the old `allow-edits` (the hook accepts both). |
+| `/auto-runner:tick` | One idempotent step for `/loop`: `autowatch.py --once` (take or continue a task, plan it or build its next items), then one supervisor pass when the supervisor is configured. |
+| `/auto-runner:update` | Unchanged. |
+
+The old names `init`, `central`, `join`, `doctor`, `log` and `allow-edits` keep working for one release; their
+descriptions name the new command. `/auto-runner:setup` reads their instructions, so they stay the single source.
+`/auto-runner:auto <task>` still plans and builds a task in the session, and `spec`, `resume` and `supervisor` are the
+steps the others use. The capability steps that were `/auto-runner:setup` live in `docs/steps/capabilities.md`.
+
 ## Use
 1. `/auto-runner:init` shows a preview of what the project needs and asks before writing anything (it runs `bin/auto_init.py`; `--apply` writes).
    It connects the project to the central service unless you choose `--local` (see "Central-first setup").

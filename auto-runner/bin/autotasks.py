@@ -234,6 +234,21 @@ def propose(project, title, plan_text, items_text, env=None, send=None):
     return task['number']
 
 
+def add(project, title, description='', pool=False, env=None, send=None):
+    """An open task for this person, or for the project's pool (`pool`), to be planned by a runner later
+    (/auto-runner:add; decision record 0012). -> its number."""
+    if not title.strip():
+        raise TaskError('add needs a title (--title)')
+    reply = _call(transport(project, env, send), 'POST', '/api/v1/tasks',
+                  {'title': title, 'description': description, 'approval': 'open', 'pool': bool(pool)})
+    return reply['task']['number']
+
+
+def set_manual(project, number, on, env=None, send=None):
+    """Mark task `number` manual (a person decides its plan) or back to the project's mode. -> the task."""
+    return _call(transport(project, env, send), 'POST', f'/api/v1/tasks/{int(number)}/manual', {'manual': bool(on)})['task']
+
+
 def listing(project, env=None, send=None):
     return _call(transport(project, env, send), 'GET', '/api/v1/tasks')['tasks']
 
@@ -394,9 +409,12 @@ def print_screenshots(paths, problems):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('cmd', choices=('next', 'attachments', 'plan', 'start', 'record', 'propose', 'list', 'decide'))
+    ap.add_argument('cmd', choices=('next', 'attachments', 'plan', 'start', 'record', 'propose', 'list', 'decide', 'add',
+                                    'manual'))
     ap.add_argument('number', nargs='?', type=int)
-    ap.add_argument('decision', nargs='?', choices=tuple(DECISIONS))
+    ap.add_argument('decision', nargs='?', choices=(*DECISIONS, 'on', 'off'))
+    ap.add_argument('--description-file', default='')
+    ap.add_argument('--pool', action='store_true', help='add: put the task in the pool instead of taking it yourself')
     ap.add_argument('--comment', default='')
     ap.add_argument('--project', default=os.environ.get('CLAUDE_PROJECT_DIR') or '.')
     ap.add_argument('--plan', default='')
@@ -406,6 +424,10 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if a.cmd == 'decide' and (a.number is None or a.decision is None):
         ap.error('decide needs the task number and approve, changes or reject')
+    if a.cmd == 'decide' and a.decision not in DECISIONS:
+        ap.error('decide takes approve, changes or reject')
+    if a.cmd == 'manual' and (a.number is None or a.decision not in ('on', 'off')):
+        ap.error('manual needs the task number and on or off')
     if a.cmd == 'attachments' and a.number is None:
         ap.error('attachments needs the task number')
     read = lambda p: Path(p).read_text(encoding='utf-8') if p else ''   # noqa: E731
@@ -438,6 +460,14 @@ def main(argv=None):
             n = propose(a.project, a.title, read(a.plan), read(a.items))
             print(f'Task {n}: the plan waits for approval on the central page (Tasks); once approved, '
                   f'"autotasks.py next" hands it back to build.')
+        elif a.cmd == 'add':
+            n = add(a.project, a.title, read(a.description_file), a.pool)
+            print(f'Task {n}: added {"to the pool" if a.pool else "for you"}; a runner plans it next'
+                  ' (in auto mode the plan is approved and built without waiting for a person).')
+        elif a.cmd == 'manual':
+            task = set_manual(a.project, a.number, a.decision == 'on')
+            print(f'Task {task["number"]}: ' + ('manual: a person decides its plan.' if task.get('manual')
+                                               else 'decided like the rest of the project.'))
         elif a.cmd == 'decide':
             task = decide(a.project, a.number, a.decision, a.comment)
             print(f'Task {task["number"]}: {DECISIONS[a.decision]}')

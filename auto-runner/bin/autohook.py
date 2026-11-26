@@ -33,6 +33,7 @@ REMINDER = ('auto-runner: this project is connected to the central service. Do n
             'checkout: plan it with /auto-runner:auto, then send the plan for approval with autotasks.py propose.')
 
 ALLOW_COMMAND = '/auto-runner:allow-edits'
+MANUAL_COMMAND = '/auto-runner:manual'       # `/auto-runner:manual edits` is the new name of allow-edits (Phase 7)
 ALLOW_HOURS = 12
 ALLOW_DIR = Path('.auto') / 'run'
 BLOCKED = ('auto-runner: this checkout is guarded ("enforce_runner": true in .claude/auto.json), so {path} is not '
@@ -168,7 +169,8 @@ def guard(hook_input, env=None, now=None):
 
 def is_allow_prompt(hook_input):
     text = hook_input.get('prompt') if isinstance(hook_input, dict) else None
-    return isinstance(text, str) and text.strip().split(maxsplit=1)[:1] == [ALLOW_COMMAND]
+    words = text.strip().split() if isinstance(text, str) else []
+    return words[:1] == [ALLOW_COMMAND] or words[:2] == [MANUAL_COMMAND, 'edits']
 
 
 def _read_input(stream):

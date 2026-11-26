@@ -479,3 +479,10 @@ def test_a_stop_seen_in_the_idle_wait_ends_the_loop(watched, central, env):
     runners, clock = presence(central), Clock(on_sleep=lambda: setattr(runners, 'control', 'stop'))
     assert watch_via(watched, runners, env, clock) == 0
     assert claims(runners) == 1 and watch_file(watched)['state'] == 'stopped' and sum(clock.slept) == aw.IDLE_BEAT
+
+
+def test_once_runs_a_single_step(monkeypatch):
+    seen = []
+    monkeypatch.setattr(aw, 'watch', lambda project, max_steps=None: seen.append(max_steps) or 0)
+    assert aw.main(['--once', '--project', '.']) == 0 and aw.main(['--project', '.']) == 0
+    assert seen == [1, None]

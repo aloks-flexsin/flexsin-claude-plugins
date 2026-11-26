@@ -1,5 +1,5 @@
 ---
-description: Check what browser acceptance, the changelog and the doc checks need, and what is missing (read-only)
+description: (Old name, kept one release: use /auto-runner:setup check) Check what browser acceptance, the changelog and the doc checks need, and what is missing (read-only)
 ---
 
 Check this project's capabilities for the auto-runner. This command writes nothing.

@@ -5,6 +5,11 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Fewer, clearer commands (autonomy Phase 7): `/auto-runner:setup` (one guided setup; `setup check` reads only),
+  `start` (the watcher, or `start supervisor`), `stop`, `add <what>` (an open task for you or the pool), `status`,
+  `manual on|off [task N]` (and `manual edits`, the old allow-edits) and `tick`, one lifecycle step for
+  `/loop 15m /auto-runner:tick`. The old names keep working for one release. New: `autotasks.py add` and `manual`,
+  `autowatch.py --once`, and on central `"approval": "open"` and `POST /api/v1/tasks/<n>/manual`.
 - Releases (autonomy Phase 5): `autochange.py release --apply` moves the Unreleased entries under the new version and
   bumps the project's version files (`package.json`, `pyproject.toml`, `.claude-plugin/plugin.json`, `VERSION`, or the
   `release.version_files`), so a release lands through a pull request; `release.tag_format` (default `v{version}`)

@@ -136,3 +136,13 @@ def test_a_caller_whose_repository_is_manual_keeps_the_old_escalation(app, conn,
         assert send(app, sup_token, n, 'changes', reasons=['x'], autonomy='manual').get_json()['decision'] == 'changes'
     assert plan(app, team, n, take(app, team)['claim']).status_code == 200
     assert send(app, sup_token, n, 'changes', reasons=['x'], autonomy='manual').get_json()['decision'] == 'escalate'
+
+
+def test_the_api_marks_a_task_manual_for_its_assignee_only(app, conn, team):
+    from .test_tasks import api
+    n = add(team)
+    resp = api(app, 'POST', '/api/v1/tasks/%d/manual' % n, team['token']['dev'], {'manual': True})
+    assert resp.status_code == 200 and resp.get_json()['task']['manual'] is True
+    assert api(app, 'POST', '/api/v1/tasks/%d/manual' % n, team['token']['dev'], {'manual': 'yes'}).status_code == 400
+    [row] = conn.query("SELECT * FROM audit WHERE action = 'task.manual'")
+    assert json.loads(row['detail'])['via'] == 'api'

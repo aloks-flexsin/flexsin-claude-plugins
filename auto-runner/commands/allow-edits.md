@@ -1,5 +1,5 @@
 ---
-description: Let this session edit the main checkout for 12 hours when "enforce_runner" is on
+description: (Old name, kept one release: use /auto-runner:manual edits) Let this session edit the main checkout for 12 hours when "enforce_runner" is on
 ---
 
 The auto-runner's UserPromptSubmit hook has already handled this command: when the project's `.claude/auto.json` has

@@ -146,7 +146,8 @@ COMMANDS = sorted((PLUGIN / 'commands').glob('*.md'))
 
 
 def test_expected_commands_exist():
-    assert {c.name for c in COMMANDS} == {'auto.md', 'init.md', 'status.md', 'log.md', 'resume.md', 'setup.md', 'doctor.md', 'join.md', 'update.md', 'spec.md', 'central.md', 'allow-edits.md', 'supervisor.md'}
+    assert {c.name for c in COMMANDS} == {'auto.md', 'init.md', 'status.md', 'log.md', 'resume.md', 'setup.md', 'doctor.md', 'join.md', 'update.md', 'spec.md', 'central.md', 'allow-edits.md', 'supervisor.md',
+                                       'start.md', 'stop.md', 'add.md', 'manual.md', 'tick.md'}
 
 
 @pytest.mark.parametrize('cmd', COMMANDS, ids=lambda c: c.name)
@@ -183,3 +184,17 @@ def test_status_prints_plan_usage_in_local_time(tmp_path):
 def test_status_says_plan_usage_not_reported(tmp_path):
     assert 'Plan usage: not reported' in rep.status(make_project(tmp_path, runs=RUNS))
     assert 'Plan usage: not reported' in rep.status(make_project(tmp_path / 'p', runs=[dict(RUNS[0], plan_usage={})]))
+
+
+@pytest.mark.parametrize('cmd', COMMANDS, ids=lambda c: c.name)
+def test_commands_read_only_files_that_exist(cmd):
+    """The new commands (decision 0012, Phase 7) read steps from other files; every such path must exist."""
+    text = cmd.read_text(encoding='utf-8')
+    for rel in re.findall(r'\$\{CLAUDE_PLUGIN_ROOT\}/((?:commands|docs)/[A-Za-z0-9_/.-]+\.md)', text):
+        assert (PLUGIN / rel).is_file(), rel
+
+
+def test_old_command_names_point_to_the_new_ones():
+    for old, new in (('init', 'setup'), ('central', 'setup'), ('join', 'setup <slug>'), ('doctor', 'setup check'),
+                     ('log', 'status'), ('allow-edits', 'manual edits')):
+        assert '(Old name, kept one release: use /auto-runner:%s)' % new in (PLUGIN / 'commands' / (old + '.md')).read_text()

@@ -1,5 +1,5 @@
 ---
-description: Show the last auto-runner iterations (item, result, commit, cost) with the end of each log
+description: (Old name, kept one release: use /auto-runner:status) Show the last auto-runner iterations (item, result, commit, cost) with the end of each log
 argument-hint: [-n 5] [--full N]
 ---
 
