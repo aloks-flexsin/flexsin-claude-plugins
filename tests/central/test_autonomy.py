@@ -176,3 +176,11 @@ def test_a_stage_pause_can_be_resumed_by_the_stage_but_not_a_persons(app, conn, 
     runners.set_control(conn, row, 'pause', team['accounts']['manager'], START)      # a person's pause
     conn.commit()
     assert runner_action(app, dev, rid, 'resume').status_code == 403
+def test_the_api_marks_a_task_manual_for_its_assignee_only(app, conn, team):
+    from .test_tasks import api
+    n = add(team)
+    resp = api(app, 'POST', '/api/v1/tasks/%d/manual' % n, team['token']['dev'], {'manual': True})
+    assert resp.status_code == 200 and resp.get_json()['task']['manual'] is True
+    assert api(app, 'POST', '/api/v1/tasks/%d/manual' % n, team['token']['dev'], {'manual': 'yes'}).status_code == 400
+    [row] = conn.query("SELECT * FROM audit WHERE action = 'task.manual'")
+    assert json.loads(row['detail'])['via'] == 'api'

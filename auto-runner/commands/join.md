@@ -1,5 +1,5 @@
 ---
-description: Clone a project registered on the central service and set it up (preview first, you confirm the folder)
+description: (Old name, kept one release: use /auto-runner:setup <slug>) Clone a project registered on the central service and set it up (preview first, you confirm the folder)
 argument-hint: <slug> [--central-url URL] [--dest FOLDER] [--token-env NAME]
 ---
 

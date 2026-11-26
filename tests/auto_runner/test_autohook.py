@@ -214,3 +214,10 @@ def test_hooks_json_registers_the_guard():
     cmds = [h['command'] for h in groups[0]['hooks']]
     assert cmds == ['python "${CLAUDE_PLUGIN_ROOT}/bin/autohook.py" guard']
     assert (PLUGIN / 'commands' / 'allow-edits.md').is_file()
+
+
+def test_manual_edits_is_the_new_name_of_allow_edits():
+    assert ah.is_allow_prompt({'prompt': '/auto-runner:manual edits'})
+    assert ah.is_allow_prompt({'prompt': '/auto-runner:allow-edits'})
+    assert not ah.is_allow_prompt({'prompt': '/auto-runner:manual on'})
+    assert not ah.is_allow_prompt({'prompt': '/auto-runner:manual'})

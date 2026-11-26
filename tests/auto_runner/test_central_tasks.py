@@ -499,3 +499,44 @@ def test_decide_against_the_real_service(project, central, team, env):
     assert task['status'] == 'approved' and server_task(central, n)['status'] == 'approved'
     with pytest.raises(at.TaskError, match='no plan waiting'):
         at.decide(project, n, 'approve', '', env, central.send)
+
+
+# ---------- /auto-runner:add and /auto-runner:manual (decision record 0012, Phase 7) ----------
+
+def test_add_makes_an_open_task_for_me_or_the_pool(project, central, team, env):
+    connect(project)
+    mine = at.add(project, 'CSV export', 'Export the table.', env=env, send=central.send)
+    row = server_task(central, mine)
+    assert (row['status'], row['assignee_id'], row['claim_id']) == ('open', team['dev']['id'], None)
+    pooled = at.add(project, 'PDF export', pool=True, env=env, send=central.send)
+    assert server_task(central, pooled)['assignee_id'] is None
+    assert at.take_next(project, env, central.send)['task']['number'] == mine          # the runner takes it and plans it
+    with pytest.raises(at.TaskError, match='title'):
+        at.add(project, '  ', env=env, send=central.send)
+
+
+def test_manual_marks_and_unmarks_a_task(project, central, team, env):
+    connect(project)
+    n = add_task(central, team)['number']
+    assert at.set_manual(project, n, True, env=env, send=central.send)['manual'] is True
+    assert server_task(central, n)['manual'] == 1
+    assert at.set_manual(project, n, False, env=env, send=central.send)['manual'] is False
+    with pytest.raises(at.TaskError):
+        at.set_manual(project, 999, True, env=env, send=central.send)
+
+
+def test_the_cli_adds_and_marks(project, central, team, env, monkeypatch, capsys):
+    connect(project)
+    real = at.transport
+    monkeypatch.setattr(at, 'transport', lambda p, e=None, s=None: real(p, env, central.send))
+    assert at.main(['add', '--title', 'CSV export', '--pool', '--project', str(project)]) == 0
+    assert 'added to the pool' in capsys.readouterr().out
+    pooled = central.conn.query_one("SELECT MAX(number) AS n FROM project_task")['n']
+    assert at.main(['manual', str(pooled), 'on', '--project', str(project)]) == 1      # a developer manages own tasks only
+    assert at.main(['add', '--title', 'PDF export', '--project', str(project)]) == 0
+    n = central.conn.query_one("SELECT MAX(number) AS n FROM project_task")['n']
+    capsys.readouterr()
+    assert at.main(['manual', str(n), 'on', '--project', str(project)]) == 0
+    assert 'manual: a person decides its plan' in capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        at.main(['manual', str(n), 'approve', '--project', str(project)])
