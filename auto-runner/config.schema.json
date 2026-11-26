@@ -189,6 +189,14 @@
         "versioning": {"type": "string", "enum": ["semver"]}
       }
     },
+    "release": {
+      "type": "object", "additionalProperties": false,
+      "description": "Releases (decision record 0012, Phase 5). version_files: files that hold the project's version besides the ones found by themselves (package.json, pyproject.toml, .claude-plugin/plugin.json, VERSION); a .json file's top-level \"version\", a .toml file's version = \"...\", any other file's whole text. tag_format: the tag for a release, {version} replaced (default v{version}).",
+      "properties": {
+        "version_files": {"$ref": "#/$defs/texts"},
+        "tag_format": {"$ref": "#/$defs/text"}
+      }
+    },
     "deploy": {
       "type": "object", "additionalProperties": false,
       "description": "Deploy after a merge (decision record 0012, Phase 5): in auto mode the Supervisor runs command in a detached worktree of the base head whenever that head was not deployed yet, then checks smoke_url (any 2xx, up to smoke_tries tries, default 3). A failed command or smoke check runs rollback_command (if set) and adds a fix task to the pool. timeout_s caps each command (default 600). No command: nothing is deployed. Secrets the command needs come from the environment, never from this file.",

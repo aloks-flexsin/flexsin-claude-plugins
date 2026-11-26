@@ -311,7 +311,8 @@ def make_plan(project, central=None, env=None, send=None, allow_env_read=False):
     if allow_env_read and auto_json_exists and not autosafe.env_read_allowed(cfg):
         notes.append('--allow-env-read only applies to a new .claude/auto.json: add "safety": {"allow_env_read": true} '
                      'to the existing one yourself.')
-    rules = [r for r in autosafe.required_rules(base, autosafe.changelog_enabled(cfg), env_read) if r not in have]
+    changelog_on = autosafe.changelog_enabled(cfg) or not auto_json_exists     # a new auto.json turns it on
+    rules = [r for r in autosafe.required_rules(base, changelog_on, env_read) if r not in have]
     settings_exists = (project / autosafe.SETTINGS_PATH).exists()
 
     cmd, why = detect_test_command(project)
@@ -326,6 +327,7 @@ def make_plan(project, central=None, env=None, send=None, allow_env_read=False):
             notes.append(f'{why}: auto.json will say check_only (results are "{autosafe.NO_TESTS}") until you set test_command.')
         if (project / 'CLAUDE.md').exists():
             new_cfg['rules_files'] = ['CLAUDE.md']
+        new_cfg['changelog'] = {'enabled': True}   # decision 0012: every project gets a changelog and SemVer releases
         if env_read:
             new_cfg['safety'] = {'allow_env_read': True}
             notes.append('--allow-env-read: the agent may read .env files, so their values can reach its transcript.')
