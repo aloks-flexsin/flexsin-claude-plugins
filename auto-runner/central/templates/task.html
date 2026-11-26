@@ -196,9 +196,17 @@
       {% if task.branch %}<dt>Branch</dt><dd><code>{{ task.branch }}</code></dd>{% endif %}
       {% if task.merged_at %}<dt>Merged</dt><dd>Merged {{ task.merged_at | when_abs }}</dd>{% endif %}
       {% if task.pr_url %}<dt>Pull request</dt><dd><a href="{{ task.pr_url }}" rel="noopener noreferrer">{{ task.pr_url | pr_label }}</a></dd>{% endif %}
+      <dt>Decided by</dt><dd>{% if task.manual %}A person (this task is manual){% elif project_auto %}The supervisor (auto mode){% else %}A person (the project is in manual mode){% endif %}</dd>
       <dt>Added</dt><dd>{{ ui.when(task.created_at) }}</dd>
       <dt>Updated</dt><dd>{{ ui.when(task.updated_at) }}</dd>
     </dl>
+    {% if can_set_manual %}
+    <form method="post" action="{{ url_for('tasks.task_manual', slug=project.slug, number=task.number) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="manual" value="{% if task.manual %}0{% else %}1{% endif %}">
+      <button type="submit" class="btn">{% if task.manual %}Let the supervisor decide{% else %}Mark manual: a person decides{% endif %}</button>
+    </form>
+    {% endif %}
     {% if can_take %}
     <form method="post" action="{{ url_for('tasks.task_take', slug=project.slug, number=task.number) }}"
           data-confirm="Take task #{{ task.number }}?" data-confirm-detail="It becomes yours and your runner takes it at its next look for work. Its branch and pull request are kept." data-confirm-action="Take it">

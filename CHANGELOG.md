@@ -4,6 +4,13 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+### Added
+- Central: autonomy switch per project (Settings › Repository, owners and admins, audited; default auto) and a per-task
+  "manual" flag on the task page. In auto mode the supervisor decides plans without a manager membership, also on tasks
+  it added, and approves the latest plan after two rounds of changes instead of escalating; a manual task or project
+  keeps the old escalations. The Supervisor pass decides each task in auto mode only when the repository, the central
+  project and the task all say auto. Needs `python -m central init-db` (two columns). Unverified against the live service.
+
 ### Fixed
 - Runner: a run on a central task works only that task's items. The shared queue can hold another task's open items
   (still being built on another branch); the runner used to take the first ready one, so one account's run started

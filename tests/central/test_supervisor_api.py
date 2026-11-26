@@ -28,6 +28,12 @@ def member(conn, team, sup_token):
     projects.add_member(conn, team['alpha']['id'], 'sup@example.com', 'manager', START)
 
 
+def manual_project(conn, team, slug='alpha'):
+    """Manual mode (decision record 0012): the behaviour from before autonomy, pinned by the tests that use it."""
+    projects.set_autonomy(conn, team[slug]['id'], 'manual')
+    conn.commit()
+
+
 def waiting(app, team, runner='alok/bhawish-claude-auto-runner'):
     n = add(team)
     assert plan(app, team, n, take(app, team, runner=runner)['claim']).status_code == 200
@@ -102,7 +108,8 @@ def test_changes_sends_the_reasons_back_as_the_comment(app, team, conn, sup_toke
     assert send(app, sup_token, waiting(app, team, 'alok/second-claude-auto-runner'), 'changes').status_code == 400
 
 
-def test_third_failing_plan_escalates(app, team, conn, sup_token, member):
+def test_third_failing_plan_escalates_in_manual_mode(app, team, conn, sup_token, member):
+    manual_project(conn, team)
     n = add(team)
     for _ in (1, 2):
         assert plan(app, team, n, take(app, team)['claim']).status_code == 200
@@ -147,7 +154,8 @@ def test_plan_decision_is_for_the_supervisor_only(app, team, conn, sup_token, me
     assert tasks.get(conn, team['alpha']['id'], n)['status'] == 'plan_review' and rows(conn, 'supervisor.plan.approve') == []
 
 
-def test_a_supervisor_who_is_not_a_member_cannot_decide(app, team, conn, sup_token):
+def test_a_supervisor_who_is_not_a_member_cannot_decide_in_manual_mode(app, team, conn, sup_token):
+    manual_project(conn, team)
     n = waiting(app, team)
     assert send(app, sup_token, n, 'approve').status_code == 403
     assert rows(conn, 'supervisor.plan.approve') == []
@@ -195,7 +203,8 @@ def test_adding_needs_a_source_a_runnable_assignee_and_a_supervisor(app, team, c
     assert len(conn.query('SELECT * FROM project_task')) == before and rows(conn, 'supervisor.task.add') == []
 
 
-def test_a_plan_the_supervisor_added_is_decided_by_a_person(app, team, conn, sup_token, member):
+def test_a_plan_the_supervisor_added_is_decided_by_a_person_in_manual_mode(app, team, conn, sup_token, member):
+    manual_project(conn, team)
     resp = add_as_supervisor(app, sup_token, plan='## Intent\nTest less.', items='- [ ] **T1 Do it.** x\n  *Acceptance:* y')
     assert resp.status_code == 201
     n = resp.get_json()['task']['number']

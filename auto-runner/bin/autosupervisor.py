@@ -48,6 +48,14 @@ DECISION = '/api/v1/supervisor/tasks/%d/plan-decision?project=%s'
 VERDICT_TO_DECISION = {'approve': 'approve', 'changes': 'changes', 'person': 'escalate'}
 
 
+def task_autonomy(loaded, state, task):
+    """The mode one task is decided in: "auto" only when the repository (`.claude/auto.json` on the base), the central
+    project (`state["autonomy"]`, missing = auto) and the task (`manual` unticked) all say auto; else "manual"."""
+    if loaded.get('autonomy') == 'manual' or state.get('autonomy') == 'manual' or task.get('manual'):
+        return 'manual'
+    return 'auto'
+
+
 def plan_step(project, http, read, base_ref):
     """-> list of {"task", "verdict", "decision", "status", "error"} for the tasks it acted on (none for a quiet pass)."""
     status, state = http('GET', STATE % quote(project, safe=''))
@@ -58,12 +66,14 @@ def plan_step(project, http, read, base_ref):
     for task in state.get('tasks', []):
         if task.get('status') != 'plan_review' or task.get('plan_decided'):
             continue
-        gate = gates.plan_gate(task, loaded['policy'], loaded['autonomy'])
+        mode = task_autonomy(loaded, state, task)
+        gate = gates.plan_gate(task, loaded['policy'], mode)
         if loaded['error']:
             gate['reasons'] = [loaded['error']] + gate['reasons']
         decision = VERDICT_TO_DECISION[gate['verdict']]
         code, body = http('POST', DECISION % (task['number'], quote(project, safe='')),
-                          {'decision': decision, 'reasons': gate['reasons'], 'policy_sha': loaded['sha']})
+                          {'decision': decision, 'reasons': gate['reasons'], 'policy_sha': loaded['sha'],
+                           'autonomy': mode})
         ok = code == 200 and isinstance(body, dict)
         out.append({'task': task['number'], 'verdict': gate['verdict'],
                     'decision': body.get('decision') if ok else None, 'status': code,
@@ -102,7 +112,7 @@ def merge_step(project, http, read, base_ref, forge, merger):
         try:
             info = forge.pr(pr)
             verdict = gates.merge_gate(task, info, forge.checks(pr), forge.reviews(pr), loaded['policy'], merger,
-                                       forge.changed_files(pr), loaded['autonomy'])
+                                       forge.changed_files(pr), task_autonomy(loaded, state, task))
         except autoforge.ForgeError as e:
             out.append({'task': number, 'verdict': None, 'outcome': 'error', 'reasons': [str(e)]})
             continue

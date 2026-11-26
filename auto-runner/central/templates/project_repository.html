@@ -21,6 +21,18 @@
   {% endif %}
 </section>
 <section class="card">
+  <h2>Autonomy</h2>
+  <p>{% if autonomy == "auto" %}Auto: the supervisor decides plans and merges green pull requests; nobody waits for a person.{% else %}Manual: a person decides every plan and merge.{% endif %}</p>
+  <p class="muted">A single task can still be marked manual on its page. Auto is the default.</p>
+  {% if can_manage %}
+  <form method="post" action="{{ url_for('projects.autonomy_set', slug=project.slug) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="autonomy" value="{% if autonomy == "auto" %}manual{% else %}auto{% endif %}">
+    <button type="submit" class="btn">{% if autonomy == "auto" %}Switch to manual{% else %}Switch to auto{% endif %}</button>
+  </form>
+  {% endif %}
+</section>
+<section class="card">
   <h2>Share runner frictions with the auto-runner project</h2>
   <p>{% if shares_frictions %}On{% else %}Off{% endif %}</p>
   <p class="muted">Runs send short signatures of what got in their way (a refused command name, a stopped gate, a retry),

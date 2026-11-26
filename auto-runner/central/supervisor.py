@@ -99,7 +99,7 @@ def state():
     blocked = db.query("SELECT * FROM blocker WHERE project_id = ? AND status IN (%s) ORDER BY created_at, id" % marks,
                        (project["id"],) + tuple(ANSWERABLE))
     marks = plan_marks(db, project["id"])
-    return jsonify(project=project["slug"],
+    return jsonify(project=project["slug"], autonomy=projects.autonomy(project),
                    tasks=[_task(marks, r, moment) for r in tasks.for_project(db, project["id"])],
                    runners=[dict(runners.public(r, moment), id=r["id"], paused_by_supervisor=(
                        r["control"] == "pause" and r["control_role"] == accounts.SUPERVISOR))
@@ -173,11 +173,17 @@ def _error(message, status):
 @bp.post("/api/v1/supervisor/tasks/<int:number>/plan-decision")
 def plan_decision(number):
     """The supervisor decides on a waiting plan: `{"decision": "approve" | "changes" | "escalate", "reasons": [...],
-    "policy_sha": "...", "comment": "..."}` with `?project=<slug>`. Approve and changes go through `tasks.decide` (so the
-    supervisor must be a manager member). Escalate leaves the plan waiting for a person and tells the managers. Each call
-    writes one `supervisor.plan.<decision>` audit row with the policy SHA and the reasons. A `changes` after
-    PLAN_ROUND_CAP earlier ones becomes `escalate`, and so does an approve or changes on a task the supervisor added
-    itself (a person decides those). Repeating the call for a plan post that has a decision is a no-op."""
+    "policy_sha": "...", "comment": "..."}` with `?project=<slug>`. Approve and changes go through `tasks.decide`.
+    Escalate leaves the plan waiting for a person and tells the managers. Each call writes one
+    `supervisor.plan.<decision>` audit row with the policy SHA and the reasons. Repeating the call for a plan post that
+    has a decision is a no-op.
+
+    Auto mode (the project's `autonomy` is "auto", the task is not marked manual and the body's optional `autonomy`
+    (the caller's repository setting) is not "manual"; decision record 0012): the
+    supervisor decides without a manager membership, also on tasks it added itself, and a `changes` after
+    PLAN_ROUND_CAP earlier ones becomes `approve` of the latest plan, with the reasons. A task marked manual in an auto
+    project: approve and changes become `escalate`. Manual project: as before, a `changes` after PLAN_ROUND_CAP and an
+    approve or changes on a task the supervisor added become `escalate`, and approve/changes need a manager membership."""
     db = get_db()
     account = _caller(db)
     if account is None or account["role"] != accounts.SUPERVISOR:
@@ -200,12 +206,24 @@ def plan_decision(number):
     reasons = _reasons(body.get("reasons"))
     comment = body.get("comment")
     comment = comment if isinstance(comment, str) and comment.strip() else "; ".join(reasons)
+    # auto only when the project is (central's switch), the task is not marked manual, and the caller's repository is
+    # not in manual mode (the client sends its `.claude/auto.json` autonomy; none sent counts as auto)
+    auto = tasks.auto_mode(project, row) and body.get("autonomy") != "manual"
     converted = decision == "changes" and mark["rounds"] >= PLAN_ROUND_CAP
-    if converted:
+    if converted and auto:
+        decision = "approve"
+        reasons.append("the plan was already sent back %d times: the supervisor approves the latest plan (auto mode)"
+                       % mark["rounds"])
+        comment = "; ".join(reasons)
+    elif converted:
         decision = "escalate"
         reasons.append("the plan was already sent back %d times: a person decides" % mark["rounds"])
-    if decision != "escalate" and row["created_by"] == account["id"]:
-        converted = True                                     # it never decides on work it added itself
+    if decision != "escalate" and tasks.manual(row) and projects.autonomy(project) == "auto":
+        converted = True                                     # a person marked this task manual
+        decision = "escalate"
+        reasons.append("this task is marked manual: a person decides its plan")
+    elif decision != "escalate" and not auto and row["created_by"] == account["id"]:
+        converted = True                                     # manual mode: it never decides on work it added itself
         decision = "escalate"
         reasons.append("the supervisor added this task: a person decides its plan")
     sha = body.get("policy_sha") if isinstance(body.get("policy_sha"), str) else None
