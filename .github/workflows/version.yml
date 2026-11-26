@@ -1,0 +1,32 @@
+name: version
+
+# Every pull request into main keeps the plugin's version in order (.github/scripts/version_check.py): one version in
+# plugin.json, marketplace.json and CHANGELOG.md, a changelog entry for every plugin change, and no step back.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: version-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check the version and the changelog
+        env:
+          NO_CHANGELOG: ${{ contains(github.event.pull_request.labels.*.name, 'no-changelog') }}
+        run: |
+          if [ "$NO_CHANGELOG" = "true" ]; then flag=--no-changelog; else flag=; fi
+          python .github/scripts/version_check.py --base "origin/${{ github.base_ref }}" $flag

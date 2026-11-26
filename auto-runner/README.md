@@ -516,6 +516,16 @@ changelog step, the runner runs this gate on the item's commits; a failure stops
 This repository's own `docs/doc-map.json` is the working example: it maps the plugin's code to this README.
 
 ## Continuous integration (unverified until a pull request shows the check)
+Version control (`.github/workflows/version.yml`, check `version`, script `.github/scripts/version_check.py`): on every pull
+request into `main`, `auto-runner/.claude-plugin/plugin.json`, the auto-runner entry of `.claude-plugin/marketplace.json` and
+the newest `## [x.y.z]` heading of `CHANGELOG.md` must say the same version; a change under `auto-runner/` (other than its
+README and docs) must add a line to `CHANGELOG.md` (label `no-changelog` skips this); and the version never goes back.
+Releases: `python auto-runner/bin/autochange.py release --apply` (with this repository's `release.version_files` and
+`release.tag_format: auto-runner-v{version}`) moves the Unreleased entries under the next version and bumps both version
+files, in a pull request; when it merges, `.github/workflows/release.yml` tags `auto-runner-v<version>` and publishes a
+GitHub release with that section (it only tags; it never pushes a commit). `tests/auto_runner/test_version_control.py`
+checks the script and both workflows.
+
 `.github/workflows/tests.yml` (workflow `tests`, job `tests`) runs `python -m pytest -q -n auto --durations=15` (in parallel, one
 worker per CPU, with `pytest-xdist`; the 15 slowest tests are listed) on Ubuntu with Python 3.12 for every pull request to `main`;
 not again on the push of the merge, since the pull request's run already passed. A pull request that changes only files under

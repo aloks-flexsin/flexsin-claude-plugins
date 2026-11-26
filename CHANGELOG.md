@@ -4,6 +4,8 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-11-26
+
 ### Added
 - Pull requests the runner opens follow the team's description template (central task #25): a header, sections 1 to
   10 and an AI self-assessment (`auto-runner/docs/pr-template.md`), filled only from the run's facts by

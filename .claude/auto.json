@@ -7,5 +7,15 @@
     "enabled": true,
     "url": "https://auto-runner-central.vercel.app",
     "project": "flexsin-claude-plugins"
+  },
+  "changelog": {
+    "enabled": true
+  },
+  "release": {
+    "version_files": [
+      "auto-runner/.claude-plugin/plugin.json",
+      ".claude-plugin/marketplace.json"
+    ],
+    "tag_format": "auto-runner-v{version}"
   }
 }
