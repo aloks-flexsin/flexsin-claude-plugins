@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS project (
     repo_url VARCHAR(500),
     repo_key VARCHAR(500),
     created_at VARCHAR(32) NOT NULL,
-    share_frictions INTEGER NOT NULL DEFAULT 1
+    share_frictions INTEGER NOT NULL DEFAULT 1,
+    autonomy VARCHAR(8) NOT NULL DEFAULT 'auto'   -- 'auto' (the supervisor decides) or 'manual' (a person decides)
 );
 
 CREATE TABLE IF NOT EXISTS member (
@@ -221,6 +222,7 @@ CREATE TABLE IF NOT EXISTS project_task (
     priority INTEGER,          -- lower is more urgent; NULL sorts last
     depends_on TEXT,           -- JSON list of task numbers of the same project
     rank INTEGER,              -- queue order within a priority (written by the supervisor)
+    manual INTEGER NOT NULL DEFAULT 0,  -- 1: a person decides this task's plan; the supervisor leaves it alone
     created_at VARCHAR(32) NOT NULL,
     updated_at VARCHAR(32) NOT NULL,
     UNIQUE (project_id, number)
