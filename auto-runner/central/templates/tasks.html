@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_ui.html" as ui %}
+{% import "_runners.html" as rn %}
 {% from "_project.html" import header with context %}
 {% block title %}{{ project.name }} tasks{% endblock %}
 {% block main_class %}{% if view == 'board' %}wide{% endif %}{% endblock %}
@@ -50,6 +51,24 @@
   </section>
   {% endfor %}
 </div>
+{% if lower %}
+<div class="two-col lower">
+  <section class="block" aria-label="Recent activity">
+    <div class="block-head"><h2>Recent activity</h2><span class="muted">Newest first</span></div>
+    {% if lower.activity %}
+    <ul class="feed">
+      {% for e in lower.activity %}
+      <li><span>{% if e.link %}<a href="{{ url_for(e.link[0], **e.link[1]) }}">{{ e.text }}</a>{% else %}{{ e.text }}{% endif %}</span>{{ ui.when(e.at) }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}{{ ui.empty("No activity recorded yet.") }}{% endif %}
+  </section>
+  <div class="col">
+    {{ rn.section(lower.runners, request.full_path if request.query_string else request.path) }}
+    <p class="panel-foot"><a href="{{ url_for('runs.runs_page', slug=project.slug) }}">All runs</a></p>
+  </div>
+</div>
+{% endif %}
 {% elif view == 'list' and tasks %}
 <div class="list">
   {% for t in tasks %}

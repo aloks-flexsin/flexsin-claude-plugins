@@ -128,3 +128,12 @@ def test_empty_project_and_empty_filter(team):
     add(team, title='Dark sidebar')
     page = team['clients']['dev'].get(URL + '?q=zzz').get_data(as_text=True)
     assert page.count('Nothing here.') == 6 and page.count('class="board-col"') == 6
+
+
+def test_board_has_recent_activity_and_runners_below_it_but_the_list_does_not(team, conn):
+    spread(conn, team)
+    page = team['clients']['viewer'].get(URL).get_data(as_text=True)
+    assert 'aria-label="Recent activity"' in page and 'id="runners"' in page and 'All runs' in page
+    assert page.index('id="col-done"') < page.index('aria-label="Recent activity"')
+    listing = team['clients']['viewer'].get(URL + '?view=list').get_data(as_text=True)
+    assert 'aria-label="Recent activity"' not in listing
