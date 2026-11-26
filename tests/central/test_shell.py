@@ -103,3 +103,10 @@ def test_projects_list_puts_the_ones_needing_you_first(world, conn):
     page = world['clients']['owner'].get('/projects').get_data(as_text=True)
     first = page.index('class="project-card"')
     assert 'aria-label="Waits for you"' in page[first:first + 700]
+
+
+def test_settings_and_admin_pages_have_their_section_tabs(world):
+    owner = world['clients']['owner'].get('/account').get_data(as_text=True)
+    assert 'aria-label="Settings section"' in owner and 'aria-label="Admin section"' not in owner
+    admin = world['clients']['admin'].get('/admin/accounts').get_data(as_text=True)
+    assert 'aria-label="Admin section"' in admin and '>Notification log</a>' in admin

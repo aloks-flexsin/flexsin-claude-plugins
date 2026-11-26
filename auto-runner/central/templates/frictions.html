@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% import "_ui.html" as ui %}
+{% from "_tabs.html" import settings_tabs, admin_tabs %}
 {% block title %}Runner frictions{% endblock %}
 {% block content %}
+{{ admin_tabs('frictions') }}
 <div class="page-head">
   <div><h1>Runner frictions</h1><p class="lead">Where unattended runs got stuck, across the projects that share their
     frictions. Mute a signature to stop a task being drafted for it.
