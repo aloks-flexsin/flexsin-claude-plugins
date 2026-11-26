@@ -3,8 +3,9 @@
   "restricted_paths": [
     ".claude/supervisor-policy.json",
     ".claude/settings.json",
-    ".github/",
+    ".github/workflows/",
     "vercel.json",
+    "*/vercel.json",
     ".env",
     ".env.*",
     "*/.env",
