@@ -444,3 +444,9 @@ ul.plain{padding-left:18px}
 .lower{margin-top:24px}
 .mk-attn{color:var(--attn-mark,#c27a00)}.mk-run{color:var(--info,#2f5bea)}.mk-bad{color:var(--bad-mark,#c8382a)}
 .project-card-name .mk{vertical-align:-1px}
+
+/* Sidebar redesign: every page section is a panel (surface, border, radius); lists inside it lose their own frame. */
+.block{background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:18px 20px}
+.block>.list,.block>.feed{border:0;border-radius:0;background:none}
+.block>.list .list-row:first-child,.block>.feed li:first-child{border-top:0}
+.block .cards{margin-top:4px}
