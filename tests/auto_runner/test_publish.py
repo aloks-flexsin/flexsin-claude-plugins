@@ -119,13 +119,110 @@ def test_a_failed_pull_request_is_reported_not_fatal(project, tmp_path):
     assert detail['pushed'] is True and 'exit 127' in detail['pr_error'] and len(remote_branches(remote)) == 1
 
 
-def test_a_red_run_publishes_nothing(project, tmp_path):
+def test_a_red_run_pushes_its_work_as_a_draft(project, tmp_path):
     remote = bare_origin(project, tmp_path)
     configure(project, publish={'push': True, 'pull_request': True}, test_command='python -c "import sys; sys.exit(3)"',
               review={'max_fix_rounds': 0})
     gh = FakeGh()
     assert ar.run(project, max_iterations=3, claude=picking_agent(), pr_runner=gh) == 1
-    assert remote_branches(remote) == set() and gh.calls == [] and events_of(project, 'publish') == []
+    [branch] = remote_branches(remote)                              # the work is never only on this computer
+    [argv] = gh.calls
+    assert '--draft' in argv and argv[argv.index('--head') + 1] == branch     # a draft: nothing merges half-done work
+    [event] = events_of(project, 'publish')
+    assert event['detail']['draft'] is True and event['detail']['pushed'] is True
+
+
+# ---------- pushing as it goes, and continuing another run's branch ----------
+
+def test_each_done_item_is_pushed_before_the_next_one_starts(project, tmp_path):
+    remote = bare_origin(project, tmp_path)
+    configure(project, publish={'push': True, 'pull_request': False})
+    seen = []
+
+    def agent(cmd, cwd):
+        seen.append(set(remote_branches(remote)))                      # what the remote holds when each item starts
+        return picking_agent()(cmd, cwd)
+    assert ar.run(project, max_iterations=3, claude=agent) == 0
+    assert seen[0] == set() and len(seen[1]) == 1                      # A1 was on the remote before A2 started
+
+
+def test_a_run_that_stops_with_items_open_opens_a_draft(project, tmp_path):
+    bare_origin(project, tmp_path)
+    configure(project, publish={'push': True, 'pull_request': True})
+    gh = FakeGh()
+    assert ar.run(project, max_iterations=1, claude=picking_agent(), pr_runner=gh) == 0       # A2 is still open
+    [argv] = gh.calls
+    assert '--draft' in argv and 'continues on this branch' in argv[argv.index('--body') + 1]
+
+
+def test_an_existing_pull_request_is_reused_and_marked_ready(project, tmp_path):
+    bare_origin(project, tmp_path)
+    configure(project, publish={'push': True, 'pull_request': True})
+    calls = []
+
+    def gh(argv, cwd):
+        calls.append(argv)
+        if argv[:3] == ['gh', 'pr', 'create']:
+            return 1, 'a pull request for branch "x" into branch "main" already exists:\nhttps://github.com/example/proj/pull/9\n'
+        return 0, ''
+    assert ar.run(project, max_iterations=3, claude=picking_agent(), pr_runner=gh) == 0
+    assert calls[-1] == ['gh', 'pr', 'ready', 'https://github.com/example/proj/pull/9']
+    detail = events_of(project, 'publish')[0]['detail']
+    assert detail['pr_url'] == 'https://github.com/example/proj/pull/9' and detail['pr_existing'] is True
+
+
+def test_a_done_item_is_marked_on_its_commit(project, tmp_path):
+    bare_origin(project, tmp_path)
+    configure(project, publish={'push': True, 'pull_request': False})
+    assert ar.run(project, max_iterations=3, claude=picking_agent()) == 0
+    wt = ar.worktree_path(project, ar.autocfg.load(project))
+    assert ar.items_done_on_branch(wt, 'origin/main') == {'A1', 'A2'}
+
+
+def test_publish_accepts_the_branch_handed_over_by_the_task(project):
+    cfg = {**ar.autocfg.load(project), 'publish': {'push': True}}
+    other = 'other/acct2-claude-auto-runner/feat/x'
+    assert ar.publish(project, project, cfg, 'main', other, FakeGh())['error'].startswith('refused')
+    out = ar.publish(project, project, cfg, 'main', other, FakeGh(), handed=other)
+    assert not out.get('error', '').startswith('refused')              # it gets as far as comparing with the base
+
+
+TASK_ITEMS = ('- [ ] **K1 First part.** Build the first part in a small file, with enough words to pass any length rule.\n'
+              '  *Acceptance:* the file exists.\n  *Slice:* 1 The parts\n\n'
+              '- [ ] **K2 Second part.** Build the second part in a small file, with enough words to pass any length rule.\n'
+              '  *Acceptance:* the file exists.\n  *Slice:* 1 The parts\n')
+
+
+def task_request(p, **task):
+    """A central task's request folder, as autotasks.start writes it (items.md and task.json)."""
+    (p / '.auto').mkdir(exist_ok=True)
+    (p / '.auto' / 'queue.md').write_text('# Queue\n', encoding='utf-8')
+    req = p / '.auto' / 'pending' / 'task-5-parts'
+    req.mkdir(parents=True)
+    (req / 'items.md').write_text(TASK_ITEMS, encoding='utf-8')
+    (req / 'task.json').write_text(json.dumps({'number': 5, 'claim': 'c', **task}), encoding='utf-8')
+
+
+def test_a_second_runner_continues_the_first_ones_branch(project, tmp_path, monkeypatch):
+    remote = bare_origin(project, tmp_path)
+    configure(project, publish={'push': True, 'pull_request': False})
+    task_request(project)
+    assert ar.run(project, max_iterations=1, claude=picking_agent(), enqueue='task-5-parts', allow_dirty=True) == 0
+    [branch] = remote_branches(remote)                                 # K1 done and pushed, K2 still open
+    # another computer: a fresh clone with no worktree, another runner, the task's request naming the branch
+    other = tmp_path / 'other'
+    subprocess.run(['git', 'clone', '-q', '-b', 'main', str(remote), str(other)], check=True, capture_output=True)
+    sh(other, 'config', 'user.email', 'o@example.com')
+    sh(other, 'config', 'user.name', 'O')
+    task_request(other, branch=branch)
+    monkeypatch.setenv('AUTO_RUNNER_USER', 'other')
+    monkeypatch.setenv('AUTO_RUNNER_ACCOUNT', 'acct2')
+    calls = []
+    assert ar.run(other, max_iterations=3, claude=picking_agent(calls), enqueue='task-5-parts', allow_dirty=True) == 0
+    assert calls == ['K2']                                             # K1 is done on the branch: not built again
+    assert remote_branches(remote) == {branch}                         # pushed to the same branch, no new one
+    log = subprocess.run(['git', '-C', str(remote), 'log', '--format=%s', branch], capture_output=True, text=True).stdout
+    assert log.splitlines()[:2] == ['K2', 'K1']
 
 
 def test_a_rejected_push_is_reported(project, tmp_path):

@@ -229,6 +229,8 @@ def usage_limit(output, now=None, soft=False):
 
 
 HANDOVER = 'auto-runner: {item} unfinished'
+WIP = 'wip({item}): unfinished'                # a pushed handover commit: any runner on the branch continues from it
+DONE_TRAILER = 'Auto-Runner-Done'              # trailer on an item's last commit: the branch itself says the item is done
 
 
 def budget_stop(output):
@@ -284,12 +286,24 @@ def account_ok_since(moment):
     return ok > moment
 
 
-def set_aside(wt, cfg, item, stamp, why='at a usage limit'):
-    """Stash the iteration's uncommitted work (tracked and new files, never the queue, .auto/ or shared folders, which are
-    the runner's) so the worktree is clean -> the stash's label, or None when there was nothing to keep. Commits the agent
-    already made stay on the branch; the item stays open. The next attempt on the item gets it back (restore_handover)."""
+def set_aside(wt, cfg, item, stamp, why='at a usage limit', creds=None):
+    """Keep the iteration's uncommitted work (tracked and new files, never the queue, .auto/ or shared folders, which are
+    the runner's) so the worktree is clean -> its label, or None when there was nothing to keep. The work becomes one
+    `wip(<item>): unfinished ...` commit on the branch, so it is pushed with the branch and whichever runner works the
+    item next (here or on another computer) continues from it (restore_handover). When that content holds a generated
+    test credential (`creds`, see autobrowser.scan_diff) it is never committed: it goes to a local git stash instead.
+    Commits the agent already made stay on the branch; the item stays open."""
     if not leftovers(wt, cfg):
         return None
+    ex = [f':(exclude){k}' for k in _runner_paths(cfg)]
+    git(wt, 'add', '-A', '--', '.', *ex)
+    staged = git(wt, 'diff', '--cached', check=False)
+    if staged.strip() and not (creds and autobrowser.scan_diff(staged, creds)):
+        label = f'{WIP.format(item=item)} {why} ({stamp})'
+        msg = label + (f'\n\n{cfg["commit_trailer"]}' if cfg.get('commit_trailer') else '')
+        git(wt, 'commit', '-q', '--no-verify', '-m', msg)
+        return label
+    git(wt, 'reset', '-q', check=False)
     label = f'{HANDOVER.format(item=item)} {why} ({stamp})'
     git(wt, 'stash', 'push', '--include-untracked', '-m', label, '--', '.', *[f':(exclude){k}' for k in _runner_paths(cfg)])
     return label
@@ -307,6 +321,11 @@ def restore_handover(wt, cfg, item):
     one by one; the stash is dropped only when both worked. Otherwise the tree is put back and the stash kept."""
     if leftovers(wt, cfg):
         return None
+    subject = git(wt, 'log', '-1', '--format=%s', check=False)
+    if subject.startswith(WIP.format(item=item) + ' '):     # a pushed handover (set_aside): undo the commit, keep its work
+        git(wt, 'reset', '-q', '--soft', 'HEAD~1')
+        git(wt, 'reset', '-q', check=False)
+        return subject
     prefix = HANDOVER.format(item=item) + ' '
     ref = subject = None
     for line in git(wt, 'stash', 'list', '--format=%gd%x09%s', check=False).splitlines():
@@ -423,6 +442,69 @@ def branch_taken(project, remote):
                                   capture_output=True).returncode == 0
                    for ref in (f'refs/heads/{branch}', f'refs/remotes/{remote}/{branch}'))
     return taken
+
+
+def take_over_branch(project, wt, cfg, request_dir, base):
+    """A central task that an earlier run (this computer's or another runner's) already worked on carries its pushed
+    branch in the request's task.json. Fetch it and put the worktree on it, so this run continues that work instead of
+    starting over -> the branch name, or None (no branch recorded, not on the remote, or the worktree holds other work
+    that must not be thrown away)."""
+    try:
+        data = json.loads((Path(request_dir) / 'task.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    branch = data.get('branch') if isinstance(data, dict) else None
+    if not isinstance(branch, str) or not branch.strip() or branch == base or autosafe.protected_branch(branch, cfg):
+        return None
+    remote = autosafe.publish_settings(cfg)['remote']
+    if not autosafe.has_remote(project, remote):
+        return None
+    env = {**child_env(), 'GIT_TERMINAL_PROMPT': '0'}
+    tip = f'{remote}/{branch}'
+    r = subprocess.run(['git', '-C', str(project), 'fetch', '--quiet', remote, base,
+                        f'refs/heads/{branch}:refs/remotes/{tip}'],
+                       capture_output=True, text=True, encoding='utf-8', errors='replace', env=env)
+    if r.returncode != 0:
+        say(f'the task\'s branch {branch} is not on {remote}: starting a new branch')
+        return None
+    if wt.exists():
+        if leftovers(wt, cfg):
+            say(f'not taking over {branch}: {wt} has uncommitted changes')
+            return None
+        current = git(wt, 'branch', '--show-current', check=False)
+        if current == branch:
+            git(wt, 'merge', '-q', '--ff-only', tip, check=False)
+            return branch
+        own = int(git(wt, 'rev-list', '--count', f'{remote}/{base}..HEAD', check=False) or 0)
+        if own:
+            say(f'not taking over {branch}: {wt} is on {current} with {own} commit(s) of its own')
+            return None
+        git(wt, 'switch', '-q', '-C', branch, tip)
+    else:
+        git(project, 'worktree', 'add', '-q', '-B', branch, str(wt), tip)
+    say(f'taking over the task\'s branch {branch} from {remote}: continuing its work')
+    return branch
+
+
+def mark_item_done(wt, item, since):
+    """Record on the branch that `item` is done: a `Auto-Runner-Done: <item>` trailer on its last commit (amended before
+    it is pushed). The queue may be untracked, so this is how a runner that takes the branch over knows which items
+    are finished -> the new HEAD, or None when the item made no commit."""
+    if git(wt, 'rev-parse', 'HEAD') == since:
+        return None
+    msg = subprocess.run(['git', '-C', str(wt), 'log', '-1', '--format=%B'], capture_output=True, text=True,
+                         encoding='utf-8', errors='replace').stdout
+    new = subprocess.run(['git', '-C', str(wt), 'interpret-trailers', '--trailer', f'{DONE_TRAILER}: {item}'],
+                         input=msg, capture_output=True, text=True, encoding='utf-8', errors='replace').stdout
+    r = subprocess.run(['git', '-C', str(wt), 'commit', '-q', '--amend', '--no-verify', '-F', '-'], input=new,
+                       capture_output=True, text=True, encoding='utf-8', errors='replace')
+    return git(wt, 'rev-parse', 'HEAD') if r.returncode == 0 else None
+
+
+def items_done_on_branch(wt, start):
+    """The item IDs the branch's commits since `start` mark as done (mark_item_done)."""
+    out = git(wt, 'log', f'{start}..HEAD', f'--format=%(trailers:key={DONE_TRAILER},valueonly)', check=False)
+    return {line.strip() for line in out.splitlines() if line.strip()}
 
 
 def update_base(project, remote, base, dry_run=False):
@@ -807,13 +889,12 @@ def run_pr(argv, cwd):
     return r.returncode, (r.stdout or '') + (r.stderr or '')
 
 
-def publish(project, wt, cfg, base, branch, pr_runner=None, start=None, name=None):
-    """After a clean run: push the run branch to `publish.remote` and, unless `publish.pull_request` is false, open a pull
-    request into `base`. -> None when publishing is off (or left at its default with no remote), else a dict for the
-    `publish` event. Only this runner's own branch (`<user>/<account>-claude-auto-runner/...`), never the base branch or a
-    `lanes.protected` branch, never with force. A failure is reported, never raised: the work stays on the branch.
-    `start` is what the branch is compared with (default `base`)."""
-    pr_runner = pr_runner or run_pr
+def push_branch(project, wt, cfg, base, branch, start=None, name=None, handed=None):
+    """Push the run branch to `publish.remote` -> None when publishing is off (or left at its default with no remote), else
+    {'remote', 'branch', 'pushed', 'commits'?, 'error'?}. Only this runner's own branch
+    (`<user>/<account>-claude-auto-runner/...`) or `handed`, the branch of the central task this run took over from
+    another runner; never the base branch or a `lanes.protected` branch, never with force. A failure is reported, never
+    raised: the work stays on the branch. `start` is what the branch is compared with (default `base`)."""
     start = start or base
     name = autosafe.runner_name() if name is None else name
     s = autosafe.publish_settings(cfg)
@@ -821,7 +902,8 @@ def publish(project, wt, cfg, base, branch, pr_runner=None, start=None, name=Non
         return None
     out = {'remote': s['remote'], 'branch': branch, 'pushed': False}
     prefix = autosafe.runner_prefix(name or '<user>/<account>-claude-auto-runner')
-    if branch == base or not name or not branch.startswith(prefix) or autosafe.protected_branch(branch, cfg):
+    own = bool(name) and branch.startswith(prefix)
+    if branch == base or not (own or (handed and branch == handed)) or autosafe.protected_branch(branch, cfg):
         out['error'] = f'refused: {branch} is not this runner\'s branch; rename it to {prefix}<type>/<brief> or publish it by hand'
         return out
     ahead = int(git(wt, 'rev-list', '--count', f'{start}..{branch}', check=False) or 0)
@@ -836,19 +918,46 @@ def publish(project, wt, cfg, base, branch, pr_runner=None, start=None, name=Non
         out['error'] = 'git push failed: ' + ((r.stderr or r.stdout).strip().splitlines() or ['no output'])[-1][:300]
         return out
     out['pushed'] = True
-    if s['pull_request']:
+    return out
+
+
+def publish(project, wt, cfg, base, branch, pr_runner=None, start=None, name=None, handed=None, draft=False):
+    """Push the run branch (push_branch) and, unless `publish.pull_request` is false, open a pull request into `base`.
+    `draft` (a run that stopped with the task's items still open) opens it as a draft, so nothing merges half-done
+    work; a pull request that already exists for the branch (an earlier, stopped run of the task) is reused and, when
+    this run finished the work, marked ready for review. -> None when publishing is off, else a dict for the
+    `publish` event."""
+    pr_runner = pr_runner or run_pr
+    start = start or base
+    name = autosafe.runner_name() if name is None else name
+    out = push_branch(project, wt, cfg, base, branch, start, name, handed)
+    if out is None or not out['pushed']:
+        return out
+    if draft:
+        out['draft'] = True
+    if autosafe.publish_settings(cfg)['pull_request']:
+        ahead = out['commits']
         log = git(wt, 'log', '--oneline', '--no-decorate', f'{start}..{branch}', check=False)
-        body = ('Opened by auto-runner after its own test run passed on every commit. Read the diff before merging.\n\n'
-                + '\n'.join(f'- {line}' for line in log.splitlines()))
+        body = (('Opened by auto-runner as a draft: the run stopped with items still open, and any runner that takes '
+                 'the task continues on this branch.' if draft else
+                 'Opened by auto-runner after its own test run passed on every commit. Read the diff before merging.')
+                + '\n\n' + '\n'.join(f'- {line}' for line in log.splitlines()))
         title = pr_title(branch, name, ahead)
-        code, text = pr_runner(['gh', 'pr', 'create', '--head', branch, '--base', base, '--title', title, '--body', body], wt)
-        url = _pr_url(code, text)
-        if url:
+        code, text = pr_runner(['gh', 'pr', 'create', '--head', branch, '--base', base, '--title', title, '--body', body,
+                                *(['--draft'] if draft else [])], wt)
+        url = _pr_url(code, text) or _existing_pr_url(code, text)
+        if url and code != 0:                              # it was already open: reuse it
+            out['pr_url'], out['pr_existing'] = url, True
+            if not draft:
+                rcode, rtext = pr_runner(['gh', 'pr', 'ready', url], wt)
+                if rcode != 0 and 'not a draft' not in (rtext or '').lower():
+                    out['pr_error'] = _pr_error('gh pr ready', rcode, rtext)
+        elif url:
             out['pr_url'] = url
         else:
             out['pr_error'] = _pr_error('gh pr create', code, text)
             if 'graphql' in (text or '').lower():       # GraphQL blocked (e.g. by a proxy in cloud sessions): try REST
-                url, error = rest_pull_request(wt, s['remote'], base, branch, title, body, pr_runner)
+                url, error = rest_pull_request(wt, out['remote'], base, branch, title, body, pr_runner)
                 if url:
                     out['pr_url'] = url
                     del out['pr_error']
@@ -860,6 +969,14 @@ def publish(project, wt, cfg, base, branch, pr_runner=None, start=None, name=Non
 def _pr_url(code, text):
     urls = [w for w in (text or '').split() if w.startswith('https://')]
     return urls[-1] if code == 0 and urls else None
+
+
+def _existing_pr_url(code, text):
+    """`gh pr create` refuses a second pull request for the same branch and names the open one -> its URL, or None."""
+    if code == 0 or 'already exists' not in (text or '').lower():
+        return None
+    urls = [w.rstrip('.') for w in (text or '').split() if w.startswith('https://') and '/pull/' in w]
+    return urls[-1] if urls else None
 
 
 def _pr_error(what, code, text):
@@ -973,7 +1090,8 @@ def apply_pending(project, wt, cfg, queue_rel, limit=None):
             if cfg['commit_trailer']:
                 msg += f'\n\n{cfg["commit_trailer"]}'
             git(wt, 'add', '--', *files)
-            git(wt, 'commit', '-q', '-m', msg)
+            if git(wt, 'diff', '--cached', '--name-only', check=False):   # a taken-over branch may hold them already
+                git(wt, 'commit', '-q', '-m', msg)
         autotasks.adopt(project / AUTO_DIR, d, request_ids(itext))   # a request made from a central task: the run now works on it
         dest = project / AUTO_DIR / 'applied' / f'{d.name}-{stamp}'
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -1191,10 +1309,13 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
     if check_only:
         say(f'{autosafe.NO_TESTS} (check_only is set); results cannot be proven by a suite')
 
+    handed = None                       # the central task's branch this run took over from an earlier run (take_over_branch)
     if enqueue:
         req = auto / 'pending' / enqueue / 'items.md'
         if not req.exists():
             raise RunnerError(f'No request at {req} (expected items.md).')
+        if not dry_run and not lock.held():
+            handed = take_over_branch(project, wt, cfg, req.parent, base)
         qsrc = wt / queue_rel if (wt / queue_rel).exists() else pq
         waiting = (f"a run is in progress. Request '{enqueue}' is checked and waiting; it starts on a new branch in a "
                    "later run (one request per branch).")
@@ -1308,13 +1429,19 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
     if autosafe.account_check_line(account_check):
         say(autosafe.account_check_line(account_check))
     # the central task this run builds (decision record 0007): the task page shows the run's progress live
-    task_number = autotasks.run_task(auto, auto / 'pending' / request if request else None, new_branch)
+    if handed is None:                  # a later run of a taken-over task: its branch is in the current task
+        recorded = (autotasks.current(auto) or {}).get('branch')
+        handed = recorded if isinstance(recorded, str) and recorded == branch else None
+    took_over = handed is not None and branch == handed and request is not None
+    task_number = autotasks.run_task(auto, auto / 'pending' / request if request else None, new_branch or took_over)
     ledger.emit('run_start', detail={'branch': branch, 'base': base, 'max_iterations': max_iterations,
                                      'user': user, 'account': account, 'account_check': account_check,
                                      **({'task': task_number} if task_number is not None else {})})
     exit_code, reason = None, 'error'
     usage_stop = None                       # {window, utilization, resets_at} when the run stops at the plan-usage threshold
     published = None
+    pushed_at = [None]                      # the commit the last checkpoint push sent
+    final_publish = False                   # the end-of-run publish ran (else the finally block publishes a draft)
     task_items = None                       # the item IDs of the run's central task (run_scope), or None: every item
     last_suite = ''
     statuses = {}
@@ -1412,8 +1539,18 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             shutil.copy(pq, wq)
         share(project, wt, cfg['share_dirs'])
         copy_env_files(project, wt, cfg['env_files'])
-        if new_branch:
+        if new_branch or took_over:
             apply_pending(project, wt, cfg, queue_rel, limit=1)
+            if took_over:
+                finished = items_done_on_branch(wt, start)
+                qtext = wq.read_text(encoding='utf-8')
+                for it, ticked, _ in queue.parse_items(qtext):
+                    if not ticked and it in finished:
+                        qtext = qtext.replace(f'- [ ] **{it} ', f'- [x] **{it} ', 1)
+                        set_state(it, 'done', 'done on the branch by an earlier run')
+                wq.write_text(qtext, encoding='utf-8')
+                if finished:
+                    say(f'already done on {branch}: ' + ', '.join(sorted(finished)))
             if pusher is not None and task_number is not None:
                 # the request was taken on a new branch: its task stops being Queued and becomes Building
                 if autotasks.beat(pusher, auto, 'building', on_error=central_error) == 'lost':
@@ -1555,6 +1692,18 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             sync_back(wq, pq, statuses)
             return not stop_now
 
+        def checkpoint():
+            """Push the branch whenever it has new commits (done items and wip handovers), so a run that stops, crashes
+            or loses its claim leaves its work where any runner taking the task over can continue it."""
+            now = git(wt, 'rev-parse', 'HEAD', check=False)
+            if not now or now == pushed_at[0]:
+                return
+            out = push_branch(project, wt, cfg, base, branch, start, name, handed)
+            if out is not None and out['pushed']:
+                pushed_at[0] = now
+            elif out is not None and out.get('error', '').startswith('git push failed'):
+                say(f'checkpoint push of {branch} failed: {out["error"]}')
+
         stuck = 0
         limits = {**USAGE_LIMIT_DEFAULTS, **autocfg.section(cfg, 'usage_limit')}
         waited = 0.0
@@ -1571,6 +1720,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 reason = 'stop_file'
                 break
             if i > 1:
+                checkpoint()
                 deliver()
             if pusher is not None and autotasks.beat(pusher, auto, on_error=central_error) == 'lost':
                 say('the central task this run works on was released, reassigned or its claim expired: stopping. '
@@ -1641,10 +1791,10 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 friction(item, 'usage_stop', 'budget')
                 handovers[item] = handovers.get(item, 0) + 1
                 if handovers[item] <= MAX_BUDGET_HANDOVERS:
-                    kept = set_aside(wt, cfg, item, stamp, 'at a budget stop')
+                    kept = set_aside(wt, cfg, item, stamp, 'at a budget stop', generated())
                     entry.update(result='budget', duration_s=round(time.time() - t0, 1),
                                  commit=(lambda h: h[:10] if h != head else None)(git(wt, 'rev-parse', 'HEAD')))
-                    log_text += '\n--- budget stop ---\n' + (f'unfinished work stashed as "{kept}"\n' if kept else '')
+                    log_text += '\n--- budget stop ---\n' + (f'unfinished work kept as "{kept}"\n' if kept else '')
                     log.write_text(autobrowser.redact(log_text, generated()), encoding='utf-8')
                     record(project, entry)
                     set_state(item, 'queued', f'its ${max_budget_usd} budget ran out; continues from its handover')
@@ -1657,17 +1807,17 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 mark_account()                                     # this attempt got through: lanes waiting may retry
             if hit is not None:
                 friction(item, 'usage_stop', 'limit')
-                kept = set_aside(wt, cfg, item, stamp)
+                kept = set_aside(wt, cfg, item, stamp, creds=generated())
                 entry.update(result='usage_limit', duration_s=round(time.time() - t0, 1),
                              commit=(lambda h: h[:10] if h != head else None)(git(wt, 'rev-parse', 'HEAD')))
-                log_text += f'\n--- usage limit ---\n{hit["message"]}\n' + (f'unfinished work stashed as "{kept}"\n' if kept else '')
+                log_text += f'\n--- usage limit ---\n{hit["message"]}\n' + (f'unfinished work kept as "{kept}"\n' if kept else '')
                 log.write_text(autobrowser.redact(log_text, generated()), encoding='utf-8')
                 record(project, entry)
                 when = hit['reset'].strftime('%H:%M %Z').strip() if hit['reset'] else 'an unknown time'
                 set_state(item, 'queued', f'interrupted by a usage limit (resets {when}); runs again')
                 sync_back(wq, pq, statuses)
                 say(f'usage limit reached during {item} (resets {when}).'
-                    + (f' Its unfinished changes are stashed: git -C "{wt}" stash list' if kept else ''))
+                    + (f' Its unfinished changes are kept as "{kept}"' if kept else ''))
                 pause = min((hit['reset'] - datetime.now().astimezone()).total_seconds() + 60 if hit['reset']
                             else LIMIT_POLL_MINUTES * 60, LIMIT_POLL_MINUTES * 60)
                 hit_at = datetime.now().astimezone()
@@ -1786,6 +1936,12 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                     log_text += '\n--- changelog ---\nrefused: ' + '; '.join(change['errors']) + '\n'
                 log.write_text(autobrowser.redact(log_text, creds), encoding='utf-8')
             if entry['result'] == 'done':
+                tip = git(wt, 'rev-parse', 'HEAD')[:10]
+                moved = mark_item_done(wt, item, head)
+                if moved:                                  # the amended commit (the agent's, or the changelog's) moved
+                    for key in ('commit', 'changelog'):
+                        if entry.get(key) == tip:
+                            entry[key] = moved[:10]
                 set_state(item, 'done', (entry['commit'] or '') + suffix)
             elif entry['result'] == 'red' and stage is not None and stage['status'] != 'pass':
                 set_state(item, 'blocked', f'browser acceptance {stage_summary(stage)}; see the log')
@@ -1818,7 +1974,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 return 1
             if red:
                 reopen(wt, queue_rel, item, cfg, 'suite red')
-                kept = set_aside(wt, cfg, item, stamp, 'after a red suite') if left else None
+                kept = set_aside(wt, cfg, item, stamp, 'after a red suite', generated()) if left else None
                 rounds_now = fix_rounds.get(item, 0) + 1
                 tail = autobrowser.redact('\n'.join(tout.splitlines()[-60:]), generated())
                 if rounds_now <= max_fix:
@@ -1904,7 +2060,10 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             reason = 'max_iterations'
         exit_code = 0
         report_waiting()
-        published = publish(project, wt, cfg, base, branch, pr_runner, start, name)
+        wq_now = wt / queue_rel
+        still_open = wq_now.exists() and open_in(wq_now.read_text(encoding='utf-8'), task_items) > 0
+        final_publish = True
+        published = publish(project, wt, cfg, base, branch, pr_runner, start, name, handed, draft=still_open)
         if published is not None:
             published = autobrowser.redact_obj(published, generated())
             ledger.emit('publish', detail=published)
@@ -1915,6 +2074,20 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             else:
                 say(f"pushed {branch} to {published['remote']}" + (f" ({published['pr_error']})" if published.get('pr_error') else ''))
     finally:
+        if not final_publish:
+            # stopped on a problem, a lost claim, a limit or a crash: the work so far goes up as a draft pull request,
+            # so it is never only on this computer and any runner that takes the task continues it
+            try:
+                published = publish(project, wt, cfg, base, branch, pr_runner, start, name, handed, draft=True)
+                if published is not None and published['pushed']:
+                    published = autobrowser.redact_obj(published, generated())
+                    ledger.emit('publish', detail=published)
+                    say(f"pushed {branch} to {published['remote']} as work in progress"
+                        + (f"; draft pull request: {published['pr_url']}" if published.get('pr_url') else ''))
+                elif published is not None and published.get('error', '').startswith('git push failed'):
+                    say(f"work in progress not pushed: {published['error']}")
+            except Exception as e:                       # never let the safety push hide the real reason the run ended
+                say(f'work in progress not pushed: {type(e).__name__}: {e}')
         ledger.emit('run_end', detail={'exit': exit_code, 'reason': reason,
                                        **({'usage': usage_stop} if usage_stop else {}),
                                        **({'task': task_number} if task_number is not None else {})})

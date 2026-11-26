@@ -632,7 +632,8 @@ def test_changelog_on_adds_one_runner_commit_after_the_agents(project):
     assert ar.run(project, max_iterations=1, claude=claude) == 0
     wt = worktree(project)
     msgs = subprocess.run(['git', '-C', str(wt), 'log', '--format=%B%x00', '-n', '2'], capture_output=True, text=True).stdout
-    assert msgs.split('\x00')[0].strip() == 'Changelog: A1 First thing\n\nCo-Authored-By: Runner'
+    # the runner's trailer, then the done marker a runner taking the branch over reads (mark_item_done)
+    assert msgs.split('\x00')[0].strip() == 'Changelog: A1 First thing\n\nCo-Authored-By: Runner\nAuto-Runner-Done: A1'
     assert '### Fixed' in (wt / 'docs' / 'CHANGES.md').read_text(encoding='utf-8')
     assert runs(project)[0]['result'] == 'done'
 

@@ -225,16 +225,22 @@ permissively licensed open-source packages; building it yourself needs a reason 
 ## Publishing a run (tested with a local bare remote and a fake `gh`; never against GitHub)
 The agent can never push: the runner starts every agent with `--disallowedTools Bash(git push:*) PowerShell(git push:*)`,
 whatever the project's settings say. Publishing is **on by default** (since 0.14.0): the runner itself, a plain Python step with
-your own git credentials, pushes after a run that ends cleanly (exit 0, every commit passed the runner's own test run).
+your own git credentials, pushes the run branch **as it goes**: before each new item starts, whenever the branch has new
+commits (`push_branch`, no pull request yet), and at the end of every run, clean or not, so the work is never only on one
+computer.
 `"publish": {"push": false}` turns it off; `"pull_request": false` pushes without opening a pull request. Left at the default,
 a repository with no remote simply is not published; `"push": true` written out with no remote is refused.
 
 - `git push --porcelain <remote> refs/heads/<run branch>:refs/heads/<run branch>`: only the run's own branch (it must start
-  with `<AUTO_RUNNER_USER>/<AUTO_RUNNER_ACCOUNT>-claude-auto-runner/` and not match `lanes.protected`), never the base branch, never with force, with `GIT_TERMINAL_PROMPT=0`
-  so it fails rather than waits for a password. A run with no commits pushes nothing.
+  with `<AUTO_RUNNER_USER>/<AUTO_RUNNER_ACCOUNT>-claude-auto-runner/` and not match `lanes.protected`) or the branch of the
+  central task it took over (below), never the base branch, never with force, with `GIT_TERMINAL_PROMPT=0`
+  so it fails rather than waits for a password. A run with no commits pushes nothing. A failed in-run push is reported in
+  the run's output and retried before the next item.
 - Then `gh pr create --head <branch> --base <base>` with the title `<type>: <brief> (<user> via <account>-claude-auto-runner)` and the commit
-  list as the body. A second clean run on the same unmerged branch pushes again; `gh` then reports that the pull request
-  exists, which is recorded as `pr_error` and is harmless.
+  list as the body. When the task's items are still open at the end (stopped by `max_iterations`, STOP, a problem, a lost
+  claim, a limit or a crash) it is opened with `--draft` (`draft: true` in the event), so no one merges half-done work.
+  When `gh` reports that a pull request for the branch already exists (an earlier, stopped run of the same task), its URL
+  is reused (`pr_existing: true`) and, once the work is finished, `gh pr ready <url>` marks it ready for review.
 - When `gh pr create` fails and its output mentions GraphQL (blocked by a proxy, as in some cloud sessions), the runner opens
   the pull request with the REST API instead: `gh api repos/<owner>/<repo>/pulls -X POST -f title=... -f head=... -f base=...
   -f body=... --jq .html_url` through the same `pr_runner`, with owner and repository from `autocentral.repo_key` on
@@ -243,7 +249,15 @@ a repository with no remote simply is not published; `"push": true` written out 
   other `gh pr create` failure makes no REST call.
 - The outcome is a `publish` event (`pushed`, `commits`, `pr_url` or `pr_error`, or `error`) in `.auto/events.jsonl` and,
   with central on, on the central service. A failed push or pull request is reported and never fails the run.
-- A red run, or one stopped on a problem, publishes nothing. Merging, tagging and deploying stay with a person.
+- A red run, or one stopped on a problem, still pushes what it committed and opens (or keeps) a draft pull request, from
+  the run's `finally` step; a failure there is reported and never hides why the run ended.
+- **Done items are marked on the branch:** when an item is done the runner adds a `Auto-Runner-Done: <ITEM>` trailer to its
+  last commit (amended before it is pushed; `mark_item_done`), because the queue is often untracked.
+- **Taking over a task's branch:** `autotasks.start` writes the task's recorded `branch` (and `pr_url`) into the request's
+  `task.json`. When the run takes that request it fetches the branch and puts the worktree on it (`take_over_branch`;
+  a worktree with uncommitted changes or other unmerged work is left alone and a new branch starts instead), adds the
+  task's items, ticks those the branch's trailers mark done (`items_done_on_branch`), and continues with the rest. Any
+  runner can do this, on any computer: a run that stopped part-way loses nothing.
 
 ## Safety preflight
 The runner refuses to start unless:
@@ -271,7 +285,7 @@ Each iteration's log (`.auto/logs/<run>-iter<N>.log`) holds the agent's full `st
 result, redacted like the rest of the log, followed by the runner's test and stage output.
 Claude's usage limit is recognised from the agent's final result (or, when the CLI left none, its last lines), never from the
 work's own output; a result that is not marked as an error but carries a limit message (a soft cut-off) counts too when the
-attempt committed nothing. The item's uncommitted changes are stashed (`git stash list` in the worktree; the queue and `.auto/` are
+attempt committed nothing. The item's uncommitted changes become a handover commit (below; the queue and `.auto/` are
 left alone), the item goes back to queued, no suite runs, and the run stops with exit code 75 and reason `usage_limit`
 instead of being reported as red, leftovers or no progress. With `"usage_limit": {"wait": true}` it waits and tries again:
 at the stated reset or after 25 minutes, whichever comes first (a stated reset can be later than the real one), and at once
@@ -291,7 +305,7 @@ away than the waiting left under `max_wait_minutes` (the 7-day window can be day
 `"stop_at_percent": 100` turns it off. Output without usage data never stops the run (a log note says so), and an item that
 finishes the queue ends the run normally whatever the usage. It is checked only between items, never inside one.
 An attempt that ends because its `--max-budget-usd` ran out is a handover, not a failure: its
-uncommitted changes are stashed and the same item runs again from them (at most twice; then the usual stop), and every
+uncommitted changes become a handover commit and the same item runs again from them (at most twice; then the usual stop), and every
 prompt tells the agent its budget and to commit before about nine tenths of it. A lock whose process is no longer running
 (a run that crashed or was killed) is cleared with a message; a live run's lock, or one that cannot be read, still refuses.
 A reused worktree whose branch is already merged into the base branch is fast-forwarded to it at the start, so new work
@@ -304,8 +318,11 @@ the gate. A red suite reopens the item (its box is unticked, with a queue commit
 is never left marked done), keeps any uncommitted changes as a handover, and gives it up to `review.max_fix_rounds` (default
 2) fix rounds: the next iteration works the same item with the end of the failing output in its prompt, and does not use up
 an iteration. After the last round the runner raises a blocker with that output (it shows on the central service when that
-is on) and stops with reason `red`. A handover (a stash labelled `auto-runner: <ITEM> unfinished ...`, from a usage limit, a
-red suite or a person) is restored by the runner itself before the item's next attempt, and the prompt tells the agent to
+is on) and stops with reason `red`. A handover is a commit `wip(<ITEM>): unfinished <why> (<stamp>)` on the run branch
+(`set_aside`), pushed with it, so whichever runner works the item next, here or on another computer, continues from it.
+Content that holds a generated test credential is never committed: it goes to a local stash labelled
+`auto-runner: <ITEM> unfinished ...` instead. Before the item's next attempt the runner undoes a `wip(<ITEM>)` commit at
+the branch's tip (`git reset --soft`), or restores such a stash (also one a person made), and the prompt tells the agent to
 continue from it; only the agent's files come back (never the queue, `.auto/` or shared folders), tracked changes as one
 patch and new files one by one, and a stash that does not apply cleanly is kept for a person.
 When the agent stops because a tool call was refused for lack of permission (read from the result's `permission_denials`,
@@ -359,7 +376,7 @@ such as `₹` never breaks a run on Windows.
 
 | File | What it does |
 |---|---|
-| `bin/auto_run.py` | The runner (worktree, one ready item per iteration, independent test run, lock, STOP, events, blockers, delivery, `publish` of its own branch). |
+| `bin/auto_run.py` | The runner (worktree, one ready item per iteration, independent test run, lock, STOP, events, blockers, delivery, `push_branch` before each item and `publish` of its own branch or a taken-over task branch at the end, draft when items stay open; `set_aside`/`restore_handover` wip commits; `mark_item_done`/`items_done_on_branch` trailers; `take_over_branch`). |
 | `bin/queue.py`, `bin/autocfg.py`, `bin/autosafe.py` | Queue grammar and readiness (`*Depends on:*`, `*Slice:*`), config loader (v1 keys + v2 sections, `principles()`), safety preflight; `autosafe.utf8_console()` makes stdout/stderr write UTF-8 (undecodable characters replaced, streams without `reconfigure` skipped, never raises). Every command in `bin/` calls it first in its `__main__` block (`queue.py` does the same inline, as it must not import from its own folder), so every command writes UTF-8 to its console. |
 | `bin/autoevents.py` | Append-only `.auto/events.jsonl`, schema `event.v1` (`RUN_TYPES` such as `publish` carry no item; `friction` may or may not; `friction_detail`, `friction_subject`, `signature`). |
 | `bin/autoblock.py` | `blocker.v1` / `decision.v1`, lifecycle state machine, local store; `list [--state S]`, `answer ID --option/--text`, `view`. |
@@ -367,7 +384,7 @@ such as `₹` never breaks a run on Windows.
 | `bin/autostale.py` | Artifact front-matter (`version`, `hash`, `built_from`, `status`), `scan`, `status`, `revalidate`; stale artifacts refuse a resume. |
 | `bin/autoeval.py` | Evaluation harness: `run --benchmark ID --runner fake`, `validate`, `validate-results FILE`. |
 | `bin/auto_init.py`, `bin/auto_report.py` | Init (preview/apply/remove, the `central` section and its repository check) and the status/log reports. |
-| `bin/autotasks.py` | Central tasks: `attachments N` (the same "Screenshots" block as `next` for task N, without claiming it; the screenshots live in the project's `.auto/run/tasks/<N>/attachments/`, not in the plugin; an unknown task prints `Not done: ...`, exit 1), `next` (claim my next task; plan or build; then its screenshots, listed by `GET /api/v1/tasks/<N>`, are downloaded with `GET /api/v1/tasks/<N>/attachments/<id>` (`HttpTransport.fetch`) to `.auto/run/tasks/<N>/attachments/<id>-<basename>`, the basename with anything outside letters, digits, `.`, `-` and `_` replaced by `_` so a name never leaves the folder or collides; a file already there is not fetched again; the paths are printed under "Screenshots" and `commands/auto.md` has the session open them; a failed download is printed as "Not downloaded" and never stops `next`; watch mode does not fetch them; unverified against the live service), `plan N` (post its plan), `start N` (an approved task → a request folder with `task.json`), `record` (a terminal task), `propose` (a terminal plan sent for approval on the page: `"approval": "page"`, stored as `plan_review`, claim kept in `.auto/run/tasks/<N>.json`), `list` (`plan_review` shown as "waiting for approval"), `decide N approve|changes|reject [--comment TEXT]` (`POST /api/v1/tasks/<N>/decide` as the signed-in person; prints "Task N: approved" / "changes requested" / "rejected", or "Not done: <the service's reason>" such as a missing comment or no plan waiting; another decision word is refused by the argument parser; unverified against the live service); and for the runner `adopt`, `current` (a resumed run keeps the task's newest claim: when `next` has re-claimed it, the claim in `.auto/run/tasks/<N>.json` wins and is written back to `current-task.json`; no `current-task.json` means no current task), `beat` (`lost` on 409), `finish` (report done/stopped); and for the watcher `check_claim(project, N, claim)` (heartbeat with state `queued`, never `building`, so the task stays Queued: `ok`, `lost` on 409, `TaskError` on any other refusal, `TransportUnavailable` when unreachable). Personal tokens only. Its console output is UTF-8 (`autosafe.utf8_console()` first in `__main__`), so a title or plan with `→` prints on a Windows cp1252 console; nothing sent to the service changes. |
+| `bin/autotasks.py` | Central tasks: `attachments N` (the same "Screenshots" block as `next` for task N, without claiming it; the screenshots live in the project's `.auto/run/tasks/<N>/attachments/`, not in the plugin; an unknown task prints `Not done: ...`, exit 1), `next` (claim my next task; plan or build; then its screenshots, listed by `GET /api/v1/tasks/<N>`, are downloaded with `GET /api/v1/tasks/<N>/attachments/<id>` (`HttpTransport.fetch`) to `.auto/run/tasks/<N>/attachments/<id>-<basename>`, the basename with anything outside letters, digits, `.`, `-` and `_` replaced by `_` so a name never leaves the folder or collides; a file already there is not fetched again; the paths are printed under "Screenshots" and `commands/auto.md` has the session open them; a failed download is printed as "Not downloaded" and never stops `next`; watch mode does not fetch them; unverified against the live service), `plan N` (post its plan), `start N` (an approved task → a request folder with `task.json`, which also carries the task's recorded `branch` and `pr_url` so the run continues that branch), `record` (a terminal task), `propose` (a terminal plan sent for approval on the page: `"approval": "page"`, stored as `plan_review`, claim kept in `.auto/run/tasks/<N>.json`), `list` (`plan_review` shown as "waiting for approval"), `decide N approve|changes|reject [--comment TEXT]` (`POST /api/v1/tasks/<N>/decide` as the signed-in person; prints "Task N: approved" / "changes requested" / "rejected", or "Not done: <the service's reason>" such as a missing comment or no plan waiting; another decision word is refused by the argument parser; unverified against the live service); and for the runner `adopt`, `current` (a resumed run keeps the task's newest claim: when `next` has re-claimed it, the claim in `.auto/run/tasks/<N>.json` wins and is written back to `current-task.json`; no `current-task.json` means no current task), `beat` (`lost` on 409), `finish` (report done/stopped); and for the watcher `check_claim(project, N, claim)` (heartbeat with state `queued`, never `building`, so the task stays Queued: `ok`, `lost` on 409, `TaskError` on any other refusal, `TransportUnavailable` when unreachable). Personal tokens only. Its console output is UTF-8 (`autosafe.utf8_console()` first in `__main__`), so a title or plan with `→` prints on a Windows cp1252 console; nothing sent to the service changes. |
 | `bin/autocentral.py` | What init and join share: `default_token_env`, `repo_key` / `clean_url`, `remote_url`, `lookup` (`GET /api/v1/project`), `check`, `token_steps`; `status` (`python autocentral.py status`, `/auto-runner:central`): the read-only connection check with next steps, exit 0 when connected; and **sign in from Claude** (0.18.0, decision record 0008): `login start` asks the service for a code (sending `client_name`, `repo` and, when `AUTO_RUNNER_USER` and `AUTO_RUNNER_ACCOUNT` are both set and valid, `user` and `claude_account`; an unset identity sends neither) and shows it with the address, keeping the device code in a private file; `login wait` polls until the person approves or denies in the browser (10 minutes at most) and stores the personal token without printing it, on Windows in the user variable `AUTO_RUNNER_TOKEN` (set by PowerShell from the child's environment, never on a command line), elsewhere in `~/.config/auto-runner/credentials` (mode 600). **One-command setup** (0.20.0): `projects` lists the signed-in person's projects (`GET /api/v1/projects`), `sync` fetches origin and fast-forwards the base branch only when it is checked out, clean and has no commits of its own (anything else is reported, never changed), and `status` in a folder that is not a checkout says how to sign in, list and clone. The page links it prints point to My work and the project's Overview (0.22: the project page opens on its Overview; members, repository and machine tokens are under Settings). Tested against the real central app through its test client. |
 | `bin/auto_join.py` | Join: repository URL from the central service, `git clone` into a folder you confirm, then init's preview. |
 | `bin/autojourney.py` | Journey check: parses journeys, starts and stops the app, runs the click-through agent, validates `journey.v1`, writes fix items. |
