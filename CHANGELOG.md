@@ -9,6 +9,12 @@ All notable changes to this project are written here (Keep a Changelog).
   bumps the project's version files (`package.json`, `pyproject.toml`, `.claude-plugin/plugin.json`, `VERSION`, or the
   `release.version_files`), so a release lands through a pull request; `release.tag_format` (default `v{version}`)
   names the tag. The proposal now reads the last version from those files too when the changelog has no version heading.
+  Init turns the changelog on in every new `.claude/auto.json`.
+- Supervisor `watch` (autonomy Phase 5): `autosupervisor.py watch [--every SECONDS]` runs a pass every 15 minutes
+  for every project in `AUTO_SUPERVISOR_PROJECTS` (`slug=clone dir,...`), each with its own clone's policy and
+  settings and its own GitHub repository, until `.auto/STOP`. One project's error does not stop the others.
+- Init adds `.github/workflows/tests.yml` (runs the detected test command on every pull request) when a project has no
+  CI workflow, so the Supervisor has a check to wait for.
 - Supervisor deploy step (autonomy Phase 5): a `deploy` section in `.claude/auto.json` (`command`, `smoke_url`,
   `rollback_command`, `smoke_tries`, `timeout_s`). In auto mode, after merges, the Supervisor deploys each new base head
   once in a separate worktree, checks the smoke URL, and on failure rolls back and adds a fix task to the pool. Central

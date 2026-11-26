@@ -179,9 +179,11 @@ def test_preflight_demands_tag_rule_only_when_changelog_enabled(repo):
 
 
 def test_init_appends_tag_rule_only_when_changelog_enabled(repo):
-    plan = init.make_plan(repo, {'local': True})
-    assert not any('git tag' in r for r in plan['rules'])
+    plan = init.make_plan(repo, {'local': True})            # a new auto.json turns the changelog on (decision 0012)
+    assert plan['new_cfg']['changelog'] == {'enabled': True} and plan['rules'][-2:] == ['Bash(git tag:*)', 'Bash(git tag)']
     (repo / '.claude').mkdir()
+    (repo / '.claude' / 'auto.json').write_text(json.dumps({'test_command': 'x'}), encoding='utf-8')
+    assert not any('git tag' in r for r in init.make_plan(repo, {'local': True})['rules'])   # existing, changelog off
     (repo / '.claude' / 'auto.json').write_text(json.dumps({'test_command': 'x', 'changelog': {'enabled': True}}),
                                                 encoding='utf-8')
     plan = init.make_plan(repo, {'local': True})

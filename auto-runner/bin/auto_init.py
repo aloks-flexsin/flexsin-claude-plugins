@@ -116,6 +116,35 @@ def routing_plan(project, central_enabled):
     return 'AUTO_RULES.md', 'with-rules'
 
 
+CI_PATH = Path('.github') / 'workflows' / 'tests.yml'
+CI_SETUP = {
+    'npm test': ('      - uses: actions/setup-node@v4\n        with:\n          node-version: 20\n'
+                 '      - run: npm ci\n'),
+    'python -m pytest -q': ('      - uses: actions/setup-python@v5\n        with:\n          python-version: \'3.12\'\n'
+                            '      - run: |\n          python -m pip install --upgrade pip pytest\n'
+                            '          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi\n'),
+    'dotnet test': '      - uses: actions/setup-dotnet@v4\n        with:\n          dotnet-version: 8.0.x\n',
+    'go test ./...': '      - uses: actions/setup-go@v5\n        with:\n          go-version: stable\n',
+    'cargo test': '',
+}
+
+
+def has_ci(project):
+    """True when the project already has a GitHub Actions workflow (any .yml or .yaml in .github/workflows)."""
+    wf = Path(project) / '.github' / 'workflows'
+    return wf.is_dir() and (any(wf.glob('*.yml')) or any(wf.glob('*.yaml')))
+
+
+def ci_workflow(cmd):
+    """A minimal GitHub Actions workflow that runs `cmd` on every pull request (the check the Supervisor's merge gate
+    waits for), or None for a command it has no setup for."""
+    if cmd not in CI_SETUP:
+        return None
+    return ('name: tests\n\n# Added by /auto-runner:init: the Supervisor merges a pull request only when its checks pass.\n'
+            'on:\n  pull_request:\n\npermissions:\n  contents: read\n\njobs:\n  tests:\n    runs-on: ubuntu-latest\n'
+            '    steps:\n      - uses: actions/checkout@v4\n' + CI_SETUP[cmd] + f'      - run: {cmd}\n')
+
+
 def detect_test_command(project):
     """-> (command, reason) or ('', reason). A proposal: the person confirms it by applying and may edit .claude/auto.json."""
     p = Path(project)
@@ -282,7 +311,8 @@ def make_plan(project, central=None, env=None, send=None, allow_env_read=False):
     if allow_env_read and auto_json_exists and not autosafe.env_read_allowed(cfg):
         notes.append('--allow-env-read only applies to a new .claude/auto.json: add "safety": {"allow_env_read": true} '
                      'to the existing one yourself.')
-    rules = [r for r in autosafe.required_rules(base, autosafe.changelog_enabled(cfg), env_read) if r not in have]
+    changelog_on = autosafe.changelog_enabled(cfg) or not auto_json_exists     # a new auto.json turns it on
+    rules = [r for r in autosafe.required_rules(base, changelog_on, env_read) if r not in have]
     settings_exists = (project / autosafe.SETTINGS_PATH).exists()
 
     cmd, why = detect_test_command(project)
@@ -297,6 +327,7 @@ def make_plan(project, central=None, env=None, send=None, allow_env_read=False):
             notes.append(f'{why}: auto.json will say check_only (results are "{autosafe.NO_TESTS}") until you set test_command.')
         if (project / 'CLAUDE.md').exists():
             new_cfg['rules_files'] = ['CLAUDE.md']
+        new_cfg['changelog'] = {'enabled': True}   # decision 0012: every project gets a changelog and SemVer releases
         if env_read:
             new_cfg['safety'] = {'allow_env_read': True}
             notes.append('--allow-env-read: the agent may read .env files, so their values can reach its transcript.')
@@ -338,6 +369,10 @@ def make_plan(project, central=None, env=None, send=None, allow_env_read=False):
         notes.append(routing_how)
         routing_how = None
 
+    ci_text = ci_workflow(cmd) if cmd and not has_ci(project) else None
+    if cmd and not has_ci(project) and ci_text is None:
+        notes.append(f'No CI workflow and none is known for `{cmd}`: add one so the Supervisor can merge (it waits for '
+                     'green checks).')
     found = []
     if (project / '.claude' / 'commands' / 'auto.md').exists():
         found.append('.claude/commands/auto.md (project `auto` command)')
@@ -348,7 +383,8 @@ def make_plan(project, central=None, env=None, send=None, allow_env_read=False):
             'gitignore_add': gi_add, 'existing': found, 'notes': notes, 'problems': problems,
             'central_add': central_add if new_cfg is None else None, 'central_notes': central_notes,
             'central_problems': central_problems, 'central_steps': central_steps,
-            'routing_file': routing_file, 'routing_how': routing_how}
+            'routing_file': routing_file, 'routing_how': routing_how,
+            'ci_path': project / CI_PATH if ci_text else None, 'ci_text': ci_text}
 
 
 def describe(plan):
@@ -378,6 +414,9 @@ def describe(plan):
     elif plan.get('routing_how') == 'with-rules':
         lines.append('AUTO_RULES.md: with --with-rules, includes the section "Work goes through the auto-runner" (names '
                      '`autotasks.py propose`); without it no routing rule is written (there is no CLAUDE.md)')
+    if plan.get('ci_path'):
+        lines.append(f'{CI_PATH.as_posix()}: create (runs `{plan["test_cmd"]}` on every pull request; the Supervisor '
+                     'merges only when checks pass)')
     for f in plan['existing']:
         lines.append(f'Found, left untouched: {f}')
     lines += plan['notes'] + plan['central_notes']
@@ -448,6 +487,8 @@ def apply(plan, with_rules=False):
             changed.append('.claude/auto.json: added "central"')
     if plan['queue_path']:
         create(plan['queue_path'], QUEUE_TEMPLATE)
+    if plan.get('ci_path') and not plan['ci_path'].exists():
+        create(plan['ci_path'], plan['ci_text'])
     if plan['gitignore_add']:
         gi = project / '.gitignore'
         text = gi.read_text(encoding='utf-8') if gi.exists() else ''
