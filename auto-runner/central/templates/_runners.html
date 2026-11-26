@@ -13,6 +13,12 @@
 {% macro section(runners, next_url, title="Runners", show_project=False, empty_text="No runner has checked in with this project.") -%}
 <section class="block" id="runners">
   <div class="block-head"><h2>{{ title }}</h2><span class="muted">Watching runners say where they are each step</span></div>
+  {{ rows(runners, next_url, show_project, empty_text) }}
+</section>
+{%- endmacro %}
+
+{#- The runner rows alone, for a panel that has its own head (the board's Runners | Runs panel). -#}
+{% macro rows(runners, next_url, show_project=False, empty_text="No runner has checked in with this project.") -%}
   {% if runners %}
   <div class="list">
     {% for r in runners %}
@@ -54,5 +60,4 @@
   {% else %}
   {{ ui.empty(empty_text) }}
   {% endif %}
-</section>
 {%- endmacro %}

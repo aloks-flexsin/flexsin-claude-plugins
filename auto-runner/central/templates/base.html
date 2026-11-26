@@ -9,9 +9,23 @@
 </head>
 <body{% block body_attrs %}{% endblock %}>
 {%- set ep = nav_endpoint or "" %}
+{%- macro theme_switch(cls) %}
+<form method="post" class="theme-form {{ cls }}" action="{{ url_for('auth.theme_post') }}" aria-label="Theme">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+  <button type="submit" name="theme" value="light" aria-pressed="{{ 'false' if theme == 'dark' else 'true' }}">Light</button>
+  <button type="submit" name="theme" value="dark" aria-pressed="{{ 'true' if theme == 'dark' else 'false' }}">Dark</button>
+</form>
+{%- endmacro %}
+{%- macro marker(m) %}
+{%- if m == "blocked" %}<svg class="mk mk-bad" viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Blocked"><path d="M6 1l5.5 10H.5z" fill="currentColor"/></svg>
+{%- elif m == "waits" %}<svg class="mk mk-attn" viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Waits for you"><circle cx="6" cy="6" r="5" fill="currentColor"/></svg>
+{%- elif m == "running" %}<svg class="mk mk-run" viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Running"><rect x="1" y="1" width="10" height="10" rx="1.5" fill="currentColor"/></svg>{% endif %}
+{%- endmacro %}
 <header class="topbar"><div class="topbar-in">
   <a class="brand" href="{{ url_for('auth.home') }}">auto-runner <span>central</span></a>
   {% if g.account %}
+  <span class="updated"><span class="live-dot" aria-hidden="true"></span><span data-updated>Updated just now</span></span>
   <div class="top-right">
   <a class="bell" href="{{ url_for('notifications.notifications_page') }}"{% if ep.startswith("notifications.") %} aria-current="page"{% endif %} aria-label="Notifications{% if notif_count %}, {{ notif_count }} waiting{% endif %}" title="Notifications"><svg class="bell-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12 3a6 6 0 0 0-6 6v4l-2 3h16l-2-3V9a6 6 0 0 0-6-6zm-2 15a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>{% if notif_count %}<span class="pill attention bell-count">{{ notif_count }}</span>{% endif %}</a>
   <details class="account-menu">
@@ -27,22 +41,23 @@
   </details>
   </div>
   {% else %}
-  <div class="top-right">
-{%- set other_theme = "light" if theme == "dark" else "dark" %}
-<form method="post" class="theme-form" action="{{ url_for('auth.theme_post') }}">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="theme" value="{{ other_theme }}">
-  <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
-  <button type="submit" class="theme-toggle{% if g.account %} side-btn{% endif %}">{{ "Light mode" if theme == "dark" else "Dark mode" }}</button>
-</form>
-  </div>
+  <div class="top-right">{{ theme_switch("mini-seg") }}</div>
   {% endif %}
 </div></header>
 <div class="shell">
+{% block side %}
 {% if g.account %}
+{%- set my_only = only if ep == "mywork.my_page" else None %}
 <nav class="side" aria-label="Main">
   <div>
-    <a class="side-item head" href="{{ url_for('mywork.my_page') }}"{% if ep == "mywork.my_page" %} aria-current="page"{% endif %}>My work{% if nav_badge %} <span class="pill attention" title="decisions waiting for you">{{ nav_badge }}</span>{% endif %}</a>
+    <a class="side-item head" href="{{ url_for('mywork.my_page') }}"{% if ep == "mywork.my_page" and not side.mine %} aria-current="page"{% endif %}><span class="grow">My work</span>{% if nav_badge %}<span class="pill attention" title="decisions waiting for you">{{ nav_badge }}</span>{% endif %}</a>
+    {% if side.mine %}
+    <a class="side-item sub" href="{{ url_for('mywork.my_page') }}"{% if ep == "mywork.my_page" and not my_only %} aria-current="page"{% endif %}>All</a>
+    {% for p in side.mine %}
+    <a class="side-item sub" href="{{ url_for('mywork.my_page', project=p.slug) }}"{% if my_only == p.slug %} aria-current="page"{% endif %}><span class="grow ellip">{{ p.name }}</span>{{ marker(p.marker) }}</a>
+    {% endfor %}
+    {% if side.markers %}<div class="legend" aria-hidden="true"><span>{{ marker("waits") }} waits for you</span><span>{{ marker("running") }} running</span><span>{{ marker("blocked") }} blocked</span></div>{% endif %}
+    {% endif %}
   </div>
   <div>
     <div class="side-label">Projects</div>
@@ -56,20 +71,19 @@
     <div class="side-label">Admin</div>
     <a class="side-item" href="{{ url_for('admin.accounts_page') }}"{% if ep == "admin.accounts_page" %} aria-current="page"{% endif %}>Accounts</a>
     <a class="side-item" href="{{ url_for('admin.notifications_log') }}"{% if ep == "admin.notifications_log" %} aria-current="page"{% endif %}>Notification log</a>
+    <a class="side-item" href="{{ url_for('frictions.frictions_page') }}"{% if ep == "frictions.frictions_page" %} aria-current="page"{% endif %}>Runner frictions</a>
   </div>
   {% endif %}
   <div class="side-foot">
-{%- set other_theme = "light" if theme == "dark" else "dark" %}
-<form method="post" class="theme-form" action="{{ url_for('auth.theme_post') }}">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="theme" value="{{ other_theme }}">
-  <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
-  <button type="submit" class="theme-toggle{% if g.account %} side-btn{% endif %}">{{ "Light mode" if theme == "dark" else "Dark mode" }}</button>
-</form>
-    <a class="side-item" href="{{ url_for('admin.account_page') }}"{% if ep == "admin.account_page" %} aria-current="page"{% endif %}>Settings</a>
+    {{ theme_switch("seg") }}
+    <a class="side-item" href="{{ url_for('admin.account_page') }}"{% if ep in ("admin.account_page", "personal.tokens_page", "admin.own_password") %} aria-current="page"{% endif %}>Settings</a>
+    <form method="post" action="{{ url_for('auth.signout') }}" class="side-out">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="side-btn">Log out</button>
+    </form>
   </div>
 </nav>
 {% endif %}
+{% endblock %}
 <div class="content">
 {% if g.account and push_ask_key %}
 {# Queue item A1: hidden until static/app.js finds push support, no subscription and no earlier answer here. #}

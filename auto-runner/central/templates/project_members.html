@@ -3,7 +3,7 @@
 {% from "_project.html" import header, settings_nav with context %}
 {% block title %}{{ project.name }} members{% endblock %}
 {% block content %}
-{{ header(project, "settings") }}
+{{ header(project, "settings", title="Project settings") }}
 {{ settings_nav(project, "members") }}
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 {% if invite %}
@@ -14,6 +14,8 @@
 </div>
 {% endif %}
 
+<div class="main-aside">
+<div class="stack">
 <section class="block">
   <div class="block-head">
     <h2>People <span class="muted">{{ members | length }}</span></h2>
@@ -32,7 +34,6 @@
     </details>
     {% endif %}
   </div>
-  <p class="muted small roles-legend"><strong>viewer</strong> sees everything · <strong>developer</strong> also runs runners · <strong>manager</strong> also approves plans, answers blockers and makes machine tokens · <strong>owner</strong> also manages people and the repository</p>
   {% for u in team.clashes %}
   <p class="alert" role="alert">Warning: the username <code>{{ u }}</code> is reported by more than one member. Check that each person uses their own username.</p>
   {% endfor %}
@@ -90,4 +91,15 @@
   </div>
 </section>
 {% endif %}
+</div>
+<aside class="card side-card roles-legend">
+  <h3>Roles</h3>
+  <dl class="role-list">
+    <dt>viewer</dt><dd>sees everything</dd>
+    <dt>developer</dt><dd>also runs runners</dd>
+    <dt>manager</dt><dd>also approves plans, answers blockers, makes machine tokens</dd>
+    <dt>owner</dt><dd>also manages people and the repository</dd>
+  </dl>
+</aside>
+</div>
 {% endblock %}

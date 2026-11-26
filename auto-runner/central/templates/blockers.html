@@ -4,24 +4,27 @@
 {% block title %}{{ project.name }} blockers{% endblock %}
 {% block body_attrs %} data-refresh="30"{% endblock %}
 {% block content %}
-{{ header(project, "blockers") }}
+{{ header(project, "blockers", title="Blockers") }}
+<p class="lead">Questions a runner could not answer by itself. It waits, or works on other items, until someone answers.</p>
 {% if blockers %}
+<div class="two-col">
 {% set waiting = blockers | selectattr("waiting") | list %}
 {% set rest = blockers | rejectattr("waiting") | list %}
 {% for group, title, empty in ((waiting, "Waiting for an answer", "Nothing is waiting for an answer."), (rest, "Answered", None)) %}
 {% if group or empty %}
 <section class="block">
-  <div class="block-head"><h2>{{ title }}{% if group and loop.first %} <span class="pill attention">{{ group | length }}</span>{% endif %}</h2></div>
+  <div class="block-head"><h2>{{ title }}{% if group and loop.first %} <span class="pill attention">{{ group | length }}</span>{% elif group %} <span class="pill off">{{ group | length }}</span>{% endif %}</h2>{% if loop.first and group %}<span class="muted">Oldest first</span>{% endif %}</div>
   {% if group %}
   <div class="list">
     {% for b in group %}
-    <div class="list-row">
+    <div class="list-row{% if b.waiting %} blocker-waiting{% endif %}">
       <div class="grow">
         <a class="row-title" href="{{ url_for('blockers.blocker_page', slug=project.slug, blocker_id=b.blocker_id) }}">{{ b.question or "(no question sent)" }}</a>
         <div class="row-sub muted"><span>{{ b.blocker_id }}</span>{% if b.task %}<span>· item {{ b.task }}</span>{% endif %}<span>· {{ b.describe }}</span><span>· raised {{ ui.when(b.created_at) }}</span></div>
       </div>
       {{ ui.status("blocker", b.status) }}
-      {% if b.waiting %}<span class="muted nowrap">waiting {{ ui_duration(b.created_at, now) }}</span>{% endif %}
+      {% if b.waiting %}<span class="muted nowrap">waiting {{ ui_duration(b.created_at, now) }}</span>
+      <a class="btn primary" href="{{ url_for('blockers.blocker_page', slug=project.slug, blocker_id=b.blocker_id) }}">Answer</a>{% endif %}
     </div>
     {% endfor %}
   </div>
@@ -31,6 +34,7 @@
 </section>
 {% endif %}
 {% endfor %}
+</div>
 {% else %}
 {{ ui.empty("No blockers yet. They appear here when a runner raises one and sends its events to this service.") }}
 {% endif %}

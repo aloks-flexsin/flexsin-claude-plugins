@@ -342,13 +342,13 @@ may not stick over plain http. The API endpoints do not use the cookie.
   pause was made by the supervisor (`control_by`); a person's pause or stop gets 403, nothing to resume 409. **`wake`** is a
   new `control` value: the next beat returns `"wake"` ("look for work now") and clears it, so it is said once; it is refused
   (409) while a pause or stop is pending. Repeating a call changes nothing (`changed: false`). Each change writes a
-  `supervisor.runner.pause`, `.resume` or `.wake` audit row. The Overview and Runs pages show **"Paused by the
+  `supervisor.runner.pause`, `.resume` or `.wake` audit row. The board and Runs pages show **"Paused by the
   Supervisor"** for a supervisor pause; what people do (Pause, Resume, Stop) is unchanged, and a person may resume the
   supervisor's pause. Unverified on the live service.
 - A runner whose last beat is 2 hours old or more is **silent** (`silent: true`); its next beat brings it back.
 - Audit: `runner.start` (first beat of a label) and `runner.back` (a beat after silence); ordinary beats are not audited.
 - Table `runner` (init-db adds it to an existing database). The task API is unchanged. Unverified on the live service.
-- **On the pages** (`templates/_runners.html`): Overview and Runs list the project's runners to every member, My work
+- **On the pages** (`templates/_runners.html`): the board and Runs list the project's runners to every member, My work
   lists **Your runners** (your own; every runner for an admin). Each shows the person, the label, the state in words
   (*Watching for work*, *Building · task #3*, *Planning*, *Paused*, *Silent*), the last beat, today's spend and a pending
   request ("Asked to pause", "Asked to stop").
@@ -475,14 +475,13 @@ Delivery words for real pushes are **unverified** until push is tried live.
 
 ## The frame (UX audit, PR 2; `shell.py`)
 
-- Signed in, `/` goes to **My work**. The top bar: My work (with the number of decisions waiting for you: plans you may
-  approve and blockers you may answer), Projects, Accounts (admins), and an account menu (Account, My tokens, Sign out).
-- Every project page shares one header (name, repository, your role, members, New task for people who run runners) and
-  tabs: **Overview** · Tasks (open, plans waiting) · Runs (live) · Blockers (waiting) · **Settings**. The counts come
-  from `shell.project_nav`, injected into every page that has `g.project`.
-- **Overview** (`/projects/<slug>`): Needs attention (plans waiting, blockers waiting, silent claims; deciders get the
-  action, others "View"), Working now (live claims with progress, and running runs), Recent activity (audit rows in
-  words). Refreshes itself every 30 s while open.
+- Signed in, `/` goes to **My work**. The frame follows `docs/designs`: a left sidebar (My work with the number of
+  decisions waiting for you, its per-project filters with markers, Projects, Admin for admins, a Light | Dark switch,
+  Settings, Log out) and a top bar (brand, "Updated … ago", the bell, the account menu with Account, My tokens, Sign out).
+- `/projects/<slug>` opens the project's board, which replaced the Overview. The board's head shows the name,
+  repository, your role and members, with Blockers (waiting count), Project settings and New task; below the board,
+  Recent activity | History and Runners | Runs (`shell.board_lower`). Every other project page has a breadcrumb back to
+  the board and its own heading. Counts come from `shell.project_nav`, injected into every page that has `g.project`.
 - **Settings**: Members (`/settings/members`), Repository (`/settings/repository`), Machine tokens (`/settings/tokens`;
   `/projects/<slug>/tokens` redirects). The projects list is cards with what waits in each.
 

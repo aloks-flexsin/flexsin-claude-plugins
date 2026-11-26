@@ -2,10 +2,10 @@
 {% from "_project.html" import header with context %}
 {% block title %}New task · {{ project.name }}{% endblock %}
 {% block content %}
-{{ header(project, "tasks", ("Tasks", url_for("tasks.tasks_page", slug=project.slug))) }}
+{{ header(project, "task", title="New task") }}
+<p class="lead">The runner of the person it is for plans it first. Nothing is built before the plan is approved.</p>
+<div class="main-aside">
 <div class="form-card">
-  <h2 class="page-title">New task</h2>
-  <p class="muted">The runner of the person it is for plans it first. The plan waits for approval before anything is built.</p>
   {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
   <form method="post" action="{{ url_for('tasks.task_add', slug=project.slug) }}" class="stack-form" enctype="multipart/form-data" data-paste-images data-max-bytes="{{ shot_limits.bytes }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -27,13 +27,25 @@
     </select>
     {% if can_upload %}
     <label for="t-shots">Screenshots <span class="optional">optional</span></label>
-    <input id="t-shots" type="file" name="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple>
-    <p class="muted small">PNG, JPEG, GIF or WebP; at most {{ shot_limits.size }} for the whole form and {{ shot_limits.count }} screenshots per task. You can also paste or drop images here.</p>
+    <div class="drop">
+      <input id="t-shots" type="file" name="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple>
+      <p class="muted small">Drop or paste images here, or choose files. PNG, JPEG, GIF or WebP; at most {{ shot_limits.size }} for the whole form and {{ shot_limits.count }} screenshots per task.</p>
+    </div>
     {% endif %}
     <div class="form-actions">
       <button type="submit" class="btn primary">Add task</button>
       <a class="btn" href="{{ url_for('tasks.tasks_page', slug=project.slug) }}">Cancel</a>
     </div>
   </form>
+</div>
+<aside class="card side-card next-steps">
+  <h3>What happens next</h3>
+  <ol class="plain-steps">
+    <li><span class="chip tone-neutral"><span class="mark ring" aria-hidden="true"></span>Open</span><span>It waits on the board until a runner takes it.</span></li>
+    <li><span class="chip tone-neutral"><span class="mark ring" aria-hidden="true"></span>Planning</span><span>The runner writes a plan with items.</span></li>
+    <li><span class="chip tone-attention"><span class="mark" aria-hidden="true"></span>Needs approval</span><span>You, or a manager, approve it from My work.</span></li>
+    <li><span class="chip tone-info"><span class="mark" aria-hidden="true"></span>Building</span><span>The runner builds, tests and opens a pull request.</span></li>
+  </ol>
+</aside>
 </div>
 {% endblock %}

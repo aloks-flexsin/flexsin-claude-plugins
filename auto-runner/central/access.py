@@ -2,8 +2,7 @@
 
 - `/projects` lists the projects the signed-in person may see; admins also get a form to create one, which needs the
   project's repository URL (see projects.normalize_repo_url).
-- `/projects/<slug>` is the project Overview (any member; shell.overview): what needs attention, who is working now,
-  recent activity. Settings: `/projects/<slug>/settings/members` (any member; owners and admins add, re-role and remove
+- `/projects/<slug>` opens the project's board (the design's project page replaced the Overview). Settings: `/projects/<slug>/settings/members` (any member; owners and admins add, re-role and remove
   members), `/settings/repository` (the repository URL; owners and admins change it with `POST /projects/<slug>/repo`,
   audited as `project.repo_url`, and "Share runner frictions with the auto-runner project", on by default, switched by
   owners and admins with `POST /projects/<slug>/share-frictions`, audited as `project.share_frictions`) and `/settings/tokens` (machine tokens, below; `/projects/<slug>/tokens` redirects).
@@ -54,7 +53,10 @@ def _list_page(error=None, status=200, form=None):
     rows = [dict(p, nav=shell.project_nav(db, p, g.account, projects.effective_role(db, p, g.account), moment))
             for p in projects.visible_to(db, g.account)]
     rows.sort(key=lambda p: -(p["nav"]["approval"] + p["nav"]["blockers"]))      # those needing you first; stable
-    page = render_template("projects.html", projects=rows,
+    q = (request.args.get("q") or "").strip()[:200]
+    if q:
+        rows = [p for p in rows if q.lower() in (p["name"] + " " + p["slug"] + " " + (p["repo_url"] or "")).lower()]
+    page = render_template("projects.html", projects=rows, q=q,
                            is_admin=g.account["role"] == projects.ADMIN, error=error, form=form or {})
     return page, status
 
@@ -81,7 +83,7 @@ def project_create():
     audit.record(db, "project.create", _at(), account_id=account["id"], project_id=project["id"],
                  detail={"slug": project["slug"], "name": project["name"], "repo_url": project["repo_url"]})
     db.commit()
-    return redirect(url_for("projects.overview_page", slug=project["slug"]))
+    return redirect(url_for("tasks.tasks_page", slug=project["slug"]))
 
 
 def _members_page(error=None, status=200, form_email="", invite=None):
@@ -108,9 +110,8 @@ def _record(db, action, detail):
 @bp.get("/projects/<slug>")
 @project_access("viewer")
 def overview_page(slug):
-    from . import shell
-    data = shell.overview(get_db(), g.project, g.account, g.project_role, auth.now())
-    return render_template("overview.html", project=g.project, **data)
+    """The project's address opens its board (the design's project page replaced the Overview)."""
+    return redirect(url_for("tasks.tasks_page", slug=g.project["slug"]))
 
 
 @bp.get("/projects/<slug>/settings/members")

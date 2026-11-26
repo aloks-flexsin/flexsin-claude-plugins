@@ -7,7 +7,7 @@ from .test_repo_url import conn, world  # noqa: F401  (fixtures)
 from .test_tasks import add, clock, team  # noqa: F401  (fixtures)
 
 URL = '/projects/alpha/tasks'
-HEADINGS = ['Open', 'Planning', 'Needs approval', 'Ready', 'Building', 'Done']
+HEADINGS = ['Open', 'Planning', 'Needs approval', 'Ready', 'Building']
 
 
 def set_status(conn, team, number, status):
@@ -16,7 +16,7 @@ def set_status(conn, team, number, status):
 
 
 def column(page, key):
-    return re.search(r'<section class="board-col" aria-labelledby="col-%s">(.*?)</section>' % key, page, re.S).group(1)
+    return re.search(r'<section class="board-col[^"]*" aria-labelledby="col-%s">(.*?)</section>' % key, page, re.S).group(1)
 
 
 def spread(conn, team):
@@ -28,8 +28,8 @@ def spread(conn, team):
     return numbers
 
 
-def test_every_status_is_in_exactly_one_column():
-    listed = [s for _, _, statuses in tasks.BOARD_COLUMNS for s in statuses]
+def test_every_status_is_in_exactly_one_column_or_history():
+    listed = [s for _, _, statuses in tasks.BOARD_COLUMNS for s in statuses] + list(tasks.DONE_STATUSES)
     assert sorted(listed) == sorted(tasks.STATUSES)
     assert [label for _, label, _ in tasks.BOARD_COLUMNS] == HEADINGS
 
@@ -37,9 +37,10 @@ def test_every_status_is_in_exactly_one_column():
 def test_the_board_shows_each_task_in_its_columns_with_counts(team, conn):
     spread(conn, team)
     page = team['clients']['viewer'].get(URL).get_data(as_text=True)
-    assert [h for h in re.findall(r'<h2 id="col-\w+">([A-Za-z ]+?) <span', page)] == HEADINGS
+    assert [h for h in re.findall(r'<h2 id="col-\w+"><span>([A-Za-z ]+?) <span', page)] == HEADINGS
     expect = {'open': ['T-open'], 'planning': ['T-planning', 'T-changes-requested'], 'approval': ['T-plan-review'],
-              'ready': ['T-approved', 'T-queued'], 'building': ['T-building'], 'done': ['T-done', 'T-rejected']}
+              'ready': ['T-approved', 'T-queued'], 'building': ['T-building']}
+    assert 'id="col-done"' not in page and '2 tasks are done. They are under' in page
     for key, titles in expect.items():
         col = column(page, key)
         assert '<span class="count">%d</span>' % len(titles) in col
@@ -108,18 +109,23 @@ def test_bad_cookie_shows_the_board_and_state_leaves_the_cookie(team):
     assert 'class="state-tabs"' in response.get_data(as_text=True) and not cookie_of(response)
 
 
-def test_done_column_is_capped_at_twenty(team, conn):
+def history(page):
+    return re.search(r'<section class="block" aria-label="History">(.*?)</section>', page, re.S).group(1)
+
+
+def test_done_tasks_are_under_history_capped_at_twenty(team, conn):
     for i in range(25):
         n = add(team, title='Finished %02d' % i, who='dev' if i < 22 else 'owner')
         set_status(conn, team, n, 'done')
     c = team['clients']['dev']
-    done = column(c.get(URL).get_data(as_text=True), 'done')
-    assert done.count('class="board-card"') == 20 and '<span class="count">25</span>' in done
+    page = c.get(URL).get_data(as_text=True)
+    assert 'Finished 24' not in page and '25 tasks are done.' in page and 'feed=history' in page
+    done = history(c.get(URL + '?feed=history').get_data(as_text=True))
+    assert done.count('<li>') == 20 and 'Finished 24' in done
     assert 'Show all 25 in the list' in done and 'view=list&amp;state=done' in done
-    done = column(c.get(URL + '?mine=1').get_data(as_text=True), 'done')
-    assert '<span class="count">22</span>' in done and done.count('class="board-card"') == 20
-    assert 'Show all 22 in the list' in done and 'mine=1' in done
-    assert 'Show all' not in column(c.get(URL + '?q=Finished 0').get_data(as_text=True), 'done')
+    done = history(c.get(URL + '?mine=1&feed=history').get_data(as_text=True))
+    assert done.count('<li>') == 20 and 'Show all 22 in the list' in done and 'mine=1' in done
+    assert 'Show all' not in history(c.get(URL + '?q=Finished 0&feed=history').get_data(as_text=True))
 
 
 def test_empty_project_and_empty_filter(team):
@@ -127,13 +133,31 @@ def test_empty_project_and_empty_filter(team):
     assert 'No tasks yet.' in page and 'class="board"' not in page
     add(team, title='Dark sidebar')
     page = team['clients']['dev'].get(URL + '?q=zzz').get_data(as_text=True)
-    assert page.count('Nothing here.') == 6 and page.count('class="board-col"') == 6
+    assert page.count('Nothing here.') == 5 and page.count('class="board-col"') == 5
 
 
 def test_board_has_recent_activity_and_runners_below_it_but_the_list_does_not(team, conn):
     spread(conn, team)
     page = team['clients']['viewer'].get(URL).get_data(as_text=True)
     assert 'aria-label="Recent activity"' in page and 'id="runners"' in page and 'All runs' in page
-    assert page.index('id="col-done"') < page.index('aria-label="Recent activity"')
+    assert page.index('id="col-building"') < page.index('aria-label="Recent activity"')
+    assert 'class="dot ' in page and 'aria-label="Runners"' in page
     listing = team['clients']['viewer'].get(URL + '?view=list').get_data(as_text=True)
     assert 'aria-label="Recent activity"' not in listing
+
+
+def test_lower_panels_switch_to_history_and_runs_and_keep_the_other_choice(team, conn):
+    spread(conn, team)
+    c = team['clients']['viewer']
+    page = c.get(URL + '?feed=history&side=runs').get_data(as_text=True)
+    assert 'aria-label="History"' in page and 'aria-label="Runs"' in page and 'No runs yet.' in page
+    assert 'T-done' in history(page) and 'T-rejected' in history(page)
+    toggle = re.search(r'<nav class="toggle" aria-label="Runners or runs">(.*?)</nav>', page, re.S).group(1)
+    assert 'feed=history' in toggle                      # switching one panel keeps the other's choice
+    assert 'aria-label="Recent activity"' in c.get(URL + '?feed=nonsense').get_data(as_text=True)
+
+
+def test_open_column_offers_add_only_to_those_who_can_add(team, conn):
+    add(team, title='Dark sidebar')
+    assert 'aria-label="Add a task"' in team['clients']['dev'].get(URL).get_data(as_text=True)
+    assert 'aria-label="Add a task"' not in team['clients']['viewer'].get(URL).get_data(as_text=True)

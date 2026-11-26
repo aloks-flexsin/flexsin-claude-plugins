@@ -4,11 +4,30 @@
 {% block title %}#{{ task.number }} {{ task.title }}{% endblock %}
 {% block body_attrs %}{% if task.status in ("planning", "queued", "building", "changes_requested", "approved") %} data-refresh="30"{% endif %}{% endblock %}
 {% block content %}
-{{ header(project, "tasks", ("Tasks", url_for("tasks.tasks_page", slug=project.slug))) }}
+{{ header(project, "task", ("Board", url_for("tasks.tasks_page", slug=project.slug))) }}
 
-<div class="task-title">
-  <h2 class="page-title">#{{ task.number }} {{ task.title }}</h2>
-  {{ ui.status("task", task.status) }}
+<div class="page-head task-head">
+  <div class="grow">
+    <h1 class="page-title">#{{ task.number }} {{ task.title }}</h1>
+    <div class="project-meta"><span>For <strong>{{ (task.assignee_email | display_name) if task.assignee_id else "the pool" }}</strong></span>
+      {% if task.claim_runner %}<span aria-hidden="true">·</span><span>{{ "built" if task.status in ("building", "done") else "planned" }} by {{ ui.runner(task.claim_runner) }}</span>{% endif %}
+      <span aria-hidden="true">·</span><span>updated {{ ui.when(task.updated_at) }}</span></div>
+  </div>
+  <div class="head-actions">
+    {{ ui.status("task", task.status) }}
+    {% if can_close %}
+    <details class="pop" id="close">
+      <summary class="btn">Close task…</summary>
+      <form method="post" action="{{ url_for('tasks.task_close', slug=project.slug, number=task.number) }}" class="pop-body"
+            data-confirm="Close task #{{ task.number }} {{ task.title }}?" data-confirm-detail="The task is marked rejected with your reason and no runner will take it." data-confirm-action="Close task">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="close-reason">Why is it closed?</label>
+        <textarea id="close-reason" name="reason" rows="3" maxlength="500" required></textarea>
+        <button type="submit" class="btn danger">Close task</button>
+      </form>
+    </details>
+    {% endif %}
+  </div>
 </div>
 
 {% if task.status == "rejected" %}
@@ -23,18 +42,6 @@
 
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 
-{% if can_close %}
-<details class="pop" id="close">
-  <summary class="btn">Close task…</summary>
-  <form method="post" action="{{ url_for('tasks.task_close', slug=project.slug, number=task.number) }}" class="pop-body"
-        data-confirm="Close task #{{ task.number }} {{ task.title }}?" data-confirm-detail="The task is marked rejected with your reason and no runner will take it." data-confirm-action="Close task">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label for="close-reason">Why is it closed?</label>
-    <textarea id="close-reason" name="reason" rows="3" maxlength="500" required></textarea>
-    <button type="submit" class="btn danger">Close task</button>
-  </form>
-</details>
-{% endif %}
 
 {% if can_decide %}
 <div class="decision-bar" id="decide">
@@ -91,6 +98,31 @@
     <section class="card note-card"><h3>Changes asked for</h3><p>{{ task.decision_comment }}</p></section>
     {% endif %}
 
+
+    {% if task.plan %}
+    <section class="card"><h3>Plan</h3><div class="md">{{ task.plan | md }}</div></section>
+    {% endif %}
+
+    {% if items %}
+    <section class="card">
+      <h3>Items {% if progress %}<span class="muted">· {{ progress.done }} of {{ progress.total }} done</span>{% endif %}</h3>
+      <ul class="checklist">
+        {% for i in items %}
+        <li class="item-{{ i.state }}">
+          <span class="check" aria-hidden="true"></span>
+          <div class="grow">
+            <div><code>{{ i.id }}</code> <strong>{{ i.title }}</strong>{% if i.show_state %} {{ ui.status("item", i.state) }}{% endif %}</div>
+            {% if i.text %}<div class="muted">{{ i.text }}</div>{% endif %}
+            {% if i.acceptance %}<div class="acceptance"><span>Done when</span> {{ i.acceptance }}</div>{% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% elif task['items'] %}
+    <section class="card"><h3>Queue items</h3><pre class="wrap">{{ task['items'] }}</pre></section>
+    {% endif %}
+
     <section class="card shots" id="screenshots">
       <h3>Screenshots {% if shots %}<span class="muted">· {{ shots | length }} of {{ shot_limits.count }}</span>{% endif %}</h3>
       {% if shots %}
@@ -133,30 +165,6 @@
       {% endif %}
     </section>
 
-    {% if task.plan %}
-    <section class="card"><h3>Plan</h3><div class="md">{{ task.plan | md }}</div></section>
-    {% endif %}
-
-    {% if items %}
-    <section class="card">
-      <h3>Items {% if progress %}<span class="muted">· {{ progress.done }} of {{ progress.total }} done</span>{% endif %}</h3>
-      <ul class="checklist">
-        {% for i in items %}
-        <li class="item-{{ i.state }}">
-          <span class="check" aria-hidden="true"></span>
-          <div class="grow">
-            <div><code>{{ i.id }}</code> <strong>{{ i.title }}</strong>{% if i.show_state %} {{ ui.status("item", i.state) }}{% endif %}</div>
-            {% if i.text %}<div class="muted">{{ i.text }}</div>{% endif %}
-            {% if i.acceptance %}<div class="acceptance"><span>Done when</span> {{ i.acceptance }}</div>{% endif %}
-          </div>
-        </li>
-        {% endfor %}
-      </ul>
-    </section>
-    {% elif task['items'] %}
-    <section class="card"><h3>Queue items</h3><pre class="wrap">{{ task['items'] }}</pre></section>
-    {% endif %}
-
     {% if task.note and task.status == "rejected" %}
     <section class="card"><h3>Why it was closed</h3><p>{{ task.note }}</p>
       {% if closed %}<p class="muted small">{% if closed.by %}Closed by {{ closed.by | display_name }}{% else %}Closed{% endif %} · {{ ui.when(closed.at) }}</p>{% endif %}</section>
@@ -164,30 +172,10 @@
     <section class="card"><h3>Runner's last report</h3><p>{{ task.note }}</p></section>
     {% endif %}
 
-    {% if runs %}
-    <h3>Runs</h3>
-    <div class="table-wrap"><table>
-      <thead><tr><th>Started</th><th>Who</th><th>State</th><th>Items</th><th>Pull request</th></tr></thead>
-      <tbody>{% for r in runs %}
-        <tr><td class="nowrap">{{ ui.when(r.started) }}</td><td>{{ r.user or "unknown" }}</td>
-          <td>{{ ui.status("run", r.state) }}{% if r.reason and r.state == "stopped" %} <span class="muted">{{ r.reason | reason_text }}</span>{% endif %}</td>
-          <td>{{ r.done }} done{% if r.blocked %}, {{ r.blocked }} blocked{% endif %}</td>
-          <td>{% if r.pr_url %}<a href="{{ r.pr_url }}" rel="noopener noreferrer">{{ r.pr_label }}</a>{% endif %}</td></tr>
-      {% endfor %}</tbody>
-    </table></div>
-    {% endif %}
-
-    <h3>Activity</h3>
-    {% if activity %}
-    <ul class="feed">
-      {% for e in activity %}<li><span>{{ e.text }}</span>{{ ui.when(e.at) }}</li>{% endfor %}
-    </ul>
-    {% else %}
-    {{ ui.empty("Nothing recorded yet.") }}
-    {% endif %}
   </div>
 
   <aside class="task-side">
+    <section class="card side-card">
     <dl class="facts">
       <dt>For</dt><dd>{% if task.assignee_id %}{{ ui.person(task.assignee_email) }}{% else %}<span class="muted">The pool: the next free runner takes it</span>{% endif %}</dd>
       <dt>Runner</dt><dd>{% if live %}{{ ui.runner(task.claim_runner) }}{% if task.status != "plan_review" %} <span class="muted">· seen {{ ui.when(task.heartbeat_at) }}</span>{% endif %}
@@ -200,6 +188,7 @@
       <dt>Added</dt><dd>{{ ui.when(task.created_at) }}</dd>
       <dt>Updated</dt><dd>{{ ui.when(task.updated_at) }}</dd>
     </dl>
+    </section>
     {% if can_set_manual %}
     <form method="post" action="{{ url_for('tasks.task_manual', slug=project.slug, number=task.number) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -231,6 +220,29 @@
       </form>
     </details>
     {% endif %}
+    <section class="card side-card">
+      <h3>Activity</h3>
+      {% if activity %}
+      <ul class="feed">
+        {% for e in activity %}<li><span>{{ e.text }}</span>{{ ui.when(e.at) }}</li>{% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted small">Nothing recorded yet.</p>
+      {% endif %}
+    </section>
+    <section class="card side-card">
+      <h3>Runs</h3>
+      {% if runs %}
+      <ul class="feed">
+        {% for r in runs %}
+        <li><span class="grow">{{ ui.status("run", r.state) }}{% if r.reason and r.state == "stopped" %} <span class="muted">{{ r.reason | reason_text }}</span>{% endif %}
+          <span class="sub">{{ r.user or "unknown" }} · {{ r.done }} done{% if r.blocked %}, {{ r.blocked }} blocked{% endif %}{% if r.pr_url %} · <a href="{{ r.pr_url }}" rel="noopener noreferrer">{{ r.pr_label }}</a>{% endif %}</span></span>{{ ui.when(r.started) }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted small">No run yet.{% if task.status in ("open", "planning", "plan_review", "changes_requested") %} It starts after approval.{% endif %}</p>
+      {% endif %}
+    </section>
   </aside>
 </div>
 {% endblock %}

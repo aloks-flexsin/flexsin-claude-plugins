@@ -1,5 +1,5 @@
-"""The shared frame of every page (UX audit, PR 2): the top bar's decision badge, the project header with its tabs and
-counts, and the project Overview.
+"""The shared frame of every page (UX audit, PR 2): the top bar's decision badge, the project header and its
+counts, the sidebar, and the board's lower panels.
 
 - `nav_badge(db, account)`: decisions waiting for this person across projects (plans they may approve + blockers they
   may answer), for the My work link. Cheap: two queries per project, no event parsing.
@@ -7,8 +7,7 @@ counts, and the project Overview.
 - `notif_count`: the person's unread, unresolved notifications, for the bell in the top bar.
 - `project_nav(db, project, account, role, now)`: what every project page's header shows: role, members, whether this
   person can run runners, and the tab counts (open tasks, plans waiting, live runs, waiting blockers).
-- `overview(db, project, account, role, now)`: Needs attention (plans waiting, blockers waiting, silent claims), Working
-  now (live claims and running runs, with progress) and Recent activity (audit rows in words).
+- `board_lower(db, project, account, now)`: the board's Recent activity (audit rows in words) and runners.
 Both are injected into templates by `init_app` whenever `g.project` / `g.account` are set, so routes stay unchanged.
 """
 import json
@@ -53,7 +52,7 @@ def project_nav(db, project, account, role, now):
             "show_slug": projects._slugify(project["name"]) != project["slug"]}
 
 
-# ---------- Overview ----------
+# ---------- Board: recent activity ----------
 
 def _sentence(row, project_slug):
     """One audit row in words for Recent activity, or None to leave it out."""
@@ -102,46 +101,62 @@ def _sentence(row, project_slug):
     link = None
     if n and row["action"].startswith("task."):
         link = ("tasks.task_page", {"slug": project_slug, "number": n})
-    return {"text": text, "at": row["at"], "link": link} if text else None
+    return {"text": text, "at": row["at"], "link": link, "tone": _tone(row["action"], d)} if text else None
 
 
-def overview(db, project, account, role, now):
-    all_tasks = [dict(t) for t in tasks.for_project(db, project["id"])]
-    project_runs = runs.summarise(runs.project_events(db, project["id"]), now)
-    attention = []
-    for t in all_tasks:
-        if t["status"] == "plan_review":
-            attention.append({"kind": "plan", "task": t, "can_act": t["assignee_id"] == account["id"]
-                              or projects.allows(role, tasks.APPROVER_ROLE)})
-        elif t["claim_id"] and t["status"] in tasks.RUNNER_SIDE and not tasks.claim_live(t, now):
-            attention.append({"kind": "silent", "task": t, "can_act": role == projects.ADMIN})
-    for b in db.query(blockers._ROW + " AND b.status IN (%s) ORDER BY b.created_at"
-                      % ", ".join("?" * len(blockers.ANSWERABLE)), (project["id"],) + blockers.ANSWERABLE):
-        attention.append({"kind": "blocker", "blocker": dict(b), "can_act": projects.allows(role, "manager")})
-    working = []
-    for t in all_tasks:
-        if t["status"] in ("planning", "building", "changes_requested") and tasks.claim_live(t, now):
-            mine = [r for r in project_runs if r["task"] == t["number"]]
-            working.append({"task": t, "progress": runs.task_progress(mine, t["items"]),
-                            "run": mine[0] if mine else None})
-    for r in project_runs:
-        if r["state"] == "running" and r["task"] is None:
-            working.append({"task": None, "progress": None, "run": r})
+def _tone(action, detail):
+    """The coloured dot beside an activity line (design): done green, stopped or blocker red, waiting amber, runner
+    work blue, everything else a hollow ring."""
+    if action in ("task.done",) or (action == "task.report" and detail.get("result") == "done"):
+        return "ok"
+    if action in ("task.report", "task.plan.reject", "supervisor.deploy.failed", "runner.stop"):
+        return "bad"
+    if action in ("task.plan.post", "task.plan.changes"):
+        return "attn"
+    if action in ("task.claim", "task.take", "task.plan.approve", "decision.record", "supervisor.deploy.done"):
+        return "info"
+    return "off"
+
+
+def board_lower(db, project, account, now):
+    """The board's lower panels: Recent activity (audit rows in words, with a tone for their dot) and the runners."""
     rows = db.query("SELECT a.*, acc.email, acc.name FROM audit a LEFT JOIN account acc ON acc.id = a.account_id"
                     " WHERE a.project_id = ? ORDER BY a.at DESC, a.id DESC LIMIT 60", (project["id"],))
     activity = [s for s in (_sentence(r, project["slug"]) for r in rows) if s][:RECENT]
-    done = [t for t in all_tasks if t["status"] == "done"][:3]
-    return {"attention": attention, "working": working, "activity": activity, "done": done,
-            "runners": runners.views(db, project, account, now)}
+    return {"activity": activity, "runners": runners.views(db, project, account, now)}
 
 
 SIDE_PROJECTS = 5
 
 
-def side_projects(db, account, current_slug=None):
-    """The sidebar's Projects list: up to SIDE_PROJECTS the person can see (the open one first), and the total."""
+def _marker(db, project, account, role, now):
+    """The sidebar marker of one project: blocked (a blocker waits), waits (a plan this person may approve), running
+    (a live claim on a task being planned or built), else None. A few cheap queries; no event parsing."""
+    approve, _ = _decidable(db, project, account, role)
+    waiting = db.query_one("SELECT COUNT(*) AS n FROM blocker WHERE project_id = ? AND status IN (%s)"
+                           % ", ".join("?" * len(blockers.ANSWERABLE)), (project["id"],) + blockers.ANSWERABLE)["n"]
+    if waiting:
+        return "blocked"
+    if approve:
+        return "waits"
+    rows = db.query("SELECT * FROM project_task WHERE project_id = ? AND status IN ('planning', 'building',"
+                    " 'changes_requested')", (project["id"],))
+    return "running" if any(tasks.claim_live(dict(r), now) for r in rows) else None
+
+
+def side_projects(db, account, current_slug=None, now=None):
+    """The sidebar: its Projects list (up to SIDE_PROJECTS the person can see, the open one first, and the total) and
+    My work's per-project filters with a marker each (only when the person has more than one project)."""
     rows = sorted(projects.visible_to(db, account), key=lambda p: p["slug"] != current_slug)   # stable sort
-    return {"items": [{"name": p["name"], "slug": p["slug"]} for p in rows[:SIDE_PROJECTS]], "total": len(rows)}
+    out = {"items": [{"name": p["name"], "slug": p["slug"]} for p in rows[:SIDE_PROJECTS]], "total": len(rows),
+           "mine": [], "markers": False}
+    if len(rows) > 1:
+        now = now or auth.now()
+        shown = sorted(rows, key=lambda p: p["name"].lower())[:SIDE_PROJECTS]
+        out["mine"] = [{"name": p["name"], "slug": p["slug"],
+                        "marker": _marker(db, p, account, projects.effective_role(db, p, account), now)} for p in shown]
+        out["markers"] = any(m["marker"] for m in out["mine"])
+    return out
 
 
 def init_app(app):

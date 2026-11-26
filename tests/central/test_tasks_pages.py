@@ -15,7 +15,7 @@ def test_merged_task_shows_merged_time(app, team, conn):
     client = team['clients']['dev']
     page = client.get('/projects/alpha/tasks/%d' % n).get_data(as_text=True)
     assert 'Merged 23 Nov, 10:30' in page
-    for url in ('/projects/alpha/tasks?state=done&view=list', '/projects/alpha/tasks?view=board'):
+    for url in ('/projects/alpha/tasks?state=done&view=list', '/projects/alpha/tasks?view=board&feed=history'):
         listing = client.get(url).get_data(as_text=True)
         assert 'Shipped thing' in listing and 'Merged 23 Nov, 10:30' in listing, url
     assert 'Merged' not in client.get('/projects/alpha/tasks/%d' % other).get_data(as_text=True)

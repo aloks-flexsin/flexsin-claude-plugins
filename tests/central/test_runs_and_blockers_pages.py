@@ -50,7 +50,7 @@ def test_the_answer_page_marks_and_preselects_the_recommendation(w):
     page = w['clients']['owner'].get('/projects/alpha/blockers/B-colour').get_data(as_text=True)
     assert 'class="option-card recommended"' in page and 'value="Orange" checked' in page
     assert 'value="Blue" checked' not in page and 'Recommended</span>' in page
-    assert '<details class="card context">' in page and 'If the answer is wrong' in page
+    assert '<details class="card context" open>' in page and 'If the answer is wrong' in page
     assert '<strong>Holding up:</strong> Finishing A1.' in page
     viewer = w['clients']['viewer'].get('/projects/alpha/blockers/B-colour').get_data(as_text=True)
     assert 'option-card' not in viewer and '(recommended)' in viewer and 'An owner, manager or admin answers it.' in viewer

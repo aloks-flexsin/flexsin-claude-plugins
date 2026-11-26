@@ -13,10 +13,13 @@
 {%- if r.account_check == "mismatch" %} <span class="chip tone-attention" title="The Claude CLI's signed-in account is not the one this runner was set up for (reported by the runner, unverified)">Claude account not confirmed</span>{% endif %}
 {%- endmacro %}
 {% block content %}
-{{ header(project, "runs") }}
+{{ header(project, "runs", title="Runs") }}
+<p class="lead">Built from the events each runner sends. A run with no event for {{ stale_hours }} hours shows as silent.</p>
+<div class="main-aside">
+<div class="stack">
 
 <section class="block">
-  <div class="block-head"><h2>Working now</h2><span class="muted" data-updated>Updated just now</span></div>
+  <div class="block-head"><h2>Working now</h2><span class="muted">Live runs refresh every 30 seconds</span></div>
   {% if active %}
   <div class="cards">
     {% for r in active %}
@@ -33,7 +36,6 @@
   {% endif %}
 </section>
 
-{{ rn.section(runners, request.full_path if request.query_string else request.path) }}
 
 <section class="block">
   <div class="block-head"><h2>History</h2></div>
@@ -70,9 +72,13 @@
   {% else %}
   {{ ui.empty("No run here with that outcome.") }}
   {% endif %}
-  <p class="muted small">Built from the events each runner sends. A run with no end shows as silent after {{ stale_hours }} hours without an event.</p>
   {% else %}
   {{ ui.empty("No runs yet. A run appears here as soon as a runner connected to this project sends its first events.") }}
   {% endif %}
 </section>
+</div>
+<aside class="stack">
+{{ rn.section(runners, request.full_path if request.query_string else request.path) }}
+</aside>
+</div>
 {% endblock %}

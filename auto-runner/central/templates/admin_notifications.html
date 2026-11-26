@@ -3,9 +3,11 @@
 {% from "_tabs.html" import settings_tabs, admin_tabs %}
 {% block title %}Notification log{% endblock %}
 {% block content %}
+<h1>Admin</h1>
+<p class="lead">Accounts of everyone who can sign in, the log of every notification sent, and where runners got stuck.</p>
 {{ admin_tabs('log') }}
 <div class="page-head">
-  <div><h1>Notification log</h1><p class="lead">The newest notifications across everyone, with how each was delivered.
+  <div><h2>Notification log</h2><p class="lead">The newest notifications across everyone, with how each was delivered.
     <a href="{{ url_for('admin.accounts_page') }}">Back to Accounts</a></p></div>
 </div>
 

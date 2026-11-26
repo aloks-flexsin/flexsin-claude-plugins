@@ -71,11 +71,11 @@ def test_my_work_filters_by_project_and_lists_each_task_once(app, team, conn):
     n, _ = building_task(app, team)
     send_run(app, team, n)
     page = team['clients']['dev'].get('/my').get_data(as_text=True)
-    assert 'aria-current="page">All</a>' in page and '>Beta</a>' in page
+    assert 'aria-current="page">All</a>' in page and 'href="/my?project=beta"' in page   # the sidebar's filters
     assert page.count('href="/projects/alpha/tasks/%d">#%d CSV export' % (n, n)) == 1      # mine, not also "the team's"
     assert '1 of 2 items' in page and 'on E2' in page
     beta_only = team['clients']['dev'].get('/my?project=beta').get_data(as_text=True)
-    assert 'CSV export' not in beta_only and 'aria-current="page">Beta</a>' in beta_only
+    assert 'CSV export' not in beta_only and 'aria-current="page"><span class="grow ellip">Beta</span>' in beta_only
     unknown = team['clients']['dev'].get('/my?project=nope').get_data(as_text=True)
     assert 'aria-current="page">All</a>' in unknown and 'CSV export' in unknown
 
@@ -119,7 +119,7 @@ def test_an_empty_project_offers_the_first_task(team):
 
 def test_new_task_page_and_done_when(team, conn):
     c = team['clients']['dev']
-    assert 'href="/projects/alpha/tasks/new">New task' in c.get('/projects/alpha').get_data(as_text=True)
+    assert 'href="/projects/alpha/tasks/new">New task' in c.get('/projects/alpha/tasks').get_data(as_text=True)
     page = c.get('/projects/alpha/tasks/new').get_data(as_text=True)
     assert 'How we know it' in page and 'value="pool"' in page                       # me or the pool
     assert team['accounts']['viewer']['id'] not in page                              # only admins choose someone else

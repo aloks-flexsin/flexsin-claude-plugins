@@ -48,6 +48,13 @@
     confirmDialog(f);
   }, true);
 
+  /* A link with data-open="<id>" (and a page opened at #<id>) opens that <details>, e.g. "Create a project". */
+  function openDetails(id) { var d = document.getElementById(id); if (d && d.tagName === "DETAILS") { d.open = true; d.scrollIntoView({ block: "nearest" }); } }
+  document.querySelectorAll("a[data-open]").forEach(function (a) {
+    a.addEventListener("click", function () { openDetails(a.getAttribute("data-open")); });
+  });
+  if (location.hash.length > 1) openDetails(location.hash.slice(1));
+
   /* Relative times: <time data-ago datetime="..."> stays "12 min ago" while the page is open. */
   function ago(t) {
     var s = (Date.now() - Date.parse(t)) / 1000;

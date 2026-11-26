@@ -29,7 +29,7 @@ def rule(selector):
 
 def test_style_rules_keep_the_board_inside_its_own_scroll():
     assert 'overflow-x:auto' in rule('.board')
-    assert 'repeat(6,minmax(200px,1fr))' in rule('.board')
+    assert 'repeat(5,minmax(200px,1fr))' in rule('.board')
     assert 'max-width:1440px' in rule('main.wide')
     assert 'align-items:flex-start' in rule('.board-card')
     assert 'overflow-wrap:anywhere' in rule('.page-title')

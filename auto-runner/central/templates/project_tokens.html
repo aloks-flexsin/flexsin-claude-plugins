@@ -3,7 +3,7 @@
 {% from "_project.html" import header, settings_nav with context %}
 {% block title %}{{ project.name }} machine tokens{% endblock %}
 {% block content %}
-{{ header(project, "settings") }}
+{{ header(project, "settings", title="Project settings") }}
 {{ settings_nav(project, "tokens") }}
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 {% if new_token %}

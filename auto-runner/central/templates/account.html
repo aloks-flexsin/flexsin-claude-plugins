@@ -2,10 +2,11 @@
 {% from "_tabs.html" import settings_tabs, admin_tabs %}
 {% block title %}Account{% endblock %}
 {% block content %}
-{{ settings_tabs('account') }}
-<div class="narrow">
-<h1>Account</h1>
+<h1>Settings</h1>
 <p class="lead">{{ g.account.email }}{% if g.account.role == "admin" %} · site admin{% endif %}</p>
+{{ settings_tabs('account') }}
+<div class="two-col settings-cols">
+<div class="col">
 
 <section class="form-card" id="name">
   <h2>Your name</h2>
@@ -20,22 +21,6 @@
   </form>
 </section>
 
-<section class="form-card" id="claude-accounts">
-  <h2>Your Claude accounts</h2>
-  <p class="muted">The username and Claude account your runners report when they start. Your sign-in is what proves who you are.</p>
-  {% if identities %}
-  <table>
-    <thead><tr><th>Username</th><th>Claude account</th><th>Surface</th><th>First seen</th><th>Last seen</th></tr></thead>
-    <tbody>
-    {% for i in identities %}
-    <tr><td>{{ i.username }}</td><td>{{ i.claude_account }}</td><td>{{ i.surface }}</td><td>{{ i.first_seen }}</td><td>{{ i.last_seen }}</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="muted">None reported yet: your runners report it when they start.</p>
-  {% endif %}
-</section>
 
 <section class="form-card" id="password">
   <h2>Password</h2>
@@ -57,6 +42,8 @@
     <div class="form-actions"><button type="submit" class="btn primary">Change password</button></div>
   </form>
 </section>
+</div>
+<div class="col">
 <section class="form-card" id="push">
   <h2>Notifications on this browser</h2>
   {% if push.configured %}
@@ -73,6 +60,22 @@
   <p class="muted">Push is not set up on this service. You still see everything waiting on you under the bell.</p>
   {% endif %}
 </section>
-<p class="muted"><a href="{{ url_for('personal.tokens_page') }}">My tokens</a>: the computers you signed in from Claude.</p>
+<section class="form-card" id="claude-accounts">
+  <h2>Your Claude accounts</h2>
+  <p class="muted">The username and Claude account your runners report when they start. Your sign-in is what proves who you are.</p>
+  {% if identities %}
+  <table>
+    <thead><tr><th>Username</th><th>Claude account</th><th>Surface</th><th>First seen</th><th>Last seen</th></tr></thead>
+    <tbody>
+    {% for i in identities %}
+    <tr><td>{{ i.username }}</td><td>{{ i.claude_account }}</td><td>{{ i.surface }}</td><td>{{ i.first_seen }}</td><td>{{ i.last_seen }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">None reported yet: your runners report it when they start.</p>
+  {% endif %}
+</section>
+</div>
 </div>
 {% endblock %}

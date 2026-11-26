@@ -14,7 +14,7 @@
 </div>
 {%- endmacro %}
 {% block content %}
-<div class="notif-head">
+<div class="notif-head page-head">
   <h1>Notifications</h1>
   {% if notif_count %}
   <form method="post" action="{{ url_for('notifications.notifications_read_all') }}">
@@ -23,14 +23,20 @@
   {% endif %}
 </div>
 <p class="lead">Plans to approve, changes asked of you, tasks given to you and blockers to answer, in every project you are a member of.</p>
-<h2>Waiting</h2>
-{% if waiting %}
-<div class="list">{% for n in waiting %}{{ row(n, False) }}{% endfor %}</div>
-{% else %}
-{{ ui.empty("Nothing is waiting on you.") }}
-{% endif %}
+<div class="two-col">
+<section class="block">
+  <div class="block-head"><h2>Waiting</h2>{% if waiting %}<span class="muted">Newest first</span>{% endif %}</div>
+  {% if waiting %}
+  <div class="list">{% for n in waiting %}{{ row(n, False) }}{% endfor %}</div>
+  {% else %}
+  {{ ui.empty("Nothing is waiting on you.") }}
+  {% endif %}
+</section>
 {% if done %}
-<h2>Done</h2>
-<div class="list">{% for n in done %}{{ row(n, True) }}{% endfor %}</div>
+<section class="block">
+  <div class="block-head"><h2>Done</h2></div>
+  <div class="list">{% for n in done %}{{ row(n, True) }}{% endfor %}</div>
+</section>
 {% endif %}
+</div>
 {% endblock %}
