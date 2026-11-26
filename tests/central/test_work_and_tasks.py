@@ -121,7 +121,8 @@ def test_new_task_page_and_done_when(team, conn):
     c = team['clients']['dev']
     assert 'href="/projects/alpha/tasks/new">New task' in c.get('/projects/alpha').get_data(as_text=True)
     page = c.get('/projects/alpha/tasks/new').get_data(as_text=True)
-    assert 'How we know it' in page and 'name="assignee"' not in page               # only admins choose who
+    assert 'How we know it' in page and 'value="pool"' in page                       # me or the pool
+    assert team['accounts']['viewer']['id'] not in page                              # only admins choose someone else
     assert 'name="assignee"' in team['clients']['admin'].get('/projects/alpha/tasks/new').get_data(as_text=True)
     assert team['clients']['viewer'].get('/projects/alpha/tasks/new').status_code == 403
     resp = post(c, '/projects/alpha/tasks', title='CSV', description='Users ask.', done_when='A test downloads it.')
@@ -176,7 +177,8 @@ def test_admin_actions_sit_in_the_more_menu(app, team):
     n = planned(app, team)
     page = team['clients']['admin'].get('/projects/alpha/tasks/%d' % n).get_data(as_text=True)
     assert '<details class="more">' in page and 'Take back from runner' in page
-    assert '<details class="more">' not in team['clients']['owner'].get('/projects/alpha/tasks/%d' % n).get_data(as_text=True)
+    assert '<details class="more">' in team['clients']['owner'].get('/projects/alpha/tasks/%d' % n).get_data(as_text=True)
+    assert '<details class="more">' not in team['clients']['viewer'].get('/projects/alpha/tasks/%d' % n).get_data(as_text=True)
 
 
 def test_a_rejected_task_says_so_instead_of_steps(app, team):

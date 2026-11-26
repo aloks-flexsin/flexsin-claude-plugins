@@ -19,13 +19,12 @@
     <input id="t-prio" type="number" name="priority" value="{{ form.priority }}" step="1" placeholder="1 is most urgent; empty sorts last">
     <label for="t-deps">Waits for tasks <span class="optional">optional</span></label>
     <input id="t-deps" type="text" name="depends_on" value="{{ form.depends_on }}" maxlength="200" placeholder="Task numbers, e.g. 3, 4">
-    {% if is_admin %}
     <label for="t-who">For</label>
     <select id="t-who" name="assignee">
       <option value="{{ g.account.id }}">Me ({{ g.account.email }})</option>
-      {% for m in assignees %}{% if m.account_id != g.account.id %}<option value="{{ m.account_id }}"{% if form.assignee == m.account_id %} selected{% endif %}>{{ m.email | display_name }} ({{ m.email }}, {{ m.role }})</option>{% endif %}{% endfor %}
+      <option value="pool"{% if form.assignee == "pool" %} selected{% endif %}>The pool: the next free runner takes it</option>
+      {% if is_admin %}{% for m in assignees %}{% if m.account_id != g.account.id %}<option value="{{ m.account_id }}"{% if form.assignee == m.account_id %} selected{% endif %}>{{ m.email | display_name }} ({{ m.email }}, {{ m.role }})</option>{% endif %}{% endfor %}{% endif %}
     </select>
-    {% endif %}
     {% if can_upload %}
     <label for="t-shots">Screenshots <span class="optional">optional</span></label>
     <input id="t-shots" type="file" name="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple>

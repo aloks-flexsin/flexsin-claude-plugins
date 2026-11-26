@@ -3,6 +3,7 @@
 SQL is written with `?` placeholders; for Postgres they become `%s`.
 """
 import os
+import re
 import sqlite3
 
 SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema.sql")
@@ -189,6 +190,38 @@ def add_identity_surface(db):
     return True
 
 
+def task_assignee_optional(db):
+    """Let `project_task.assignee_id` be NULL (a task in the project's pool) in a database made when it was NOT NULL.
+    Postgres: ALTER COLUMN ... DROP NOT NULL. SQLite cannot drop a constraint, so the table is rebuilt from its own
+    CREATE statement with the NOT NULL removed and every row copied. Return True when it changed something. The caller
+    commits."""
+    if db.kind == "postgres":
+        row = db.query_one("SELECT is_nullable FROM information_schema.columns WHERE table_name = 'project_task'"
+                           " AND column_name = 'assignee_id'")
+        if row is None or row["is_nullable"] == "YES":
+            return False
+        db.execute("ALTER TABLE project_task ALTER COLUMN assignee_id DROP NOT NULL")
+        return True
+    info = {r["name"]: r for r in db.query("PRAGMA table_info(project_task)")}
+    if "assignee_id" not in info or not info["assignee_id"]["notnull"]:
+        return False
+    create = db.query_one("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'project_task'")["sql"]
+    rebuilt = re.sub(r"(assignee_id\s+VARCHAR\(64\))\s+NOT\s+NULL", r"\1", create, count=1, flags=re.I)
+    rebuilt = re.sub(r"^\s*CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?\"?project_task\"?", "CREATE TABLE project_task_new",
+                     rebuilt, count=1, flags=re.I)
+    if rebuilt == create or "project_task_new" not in rebuilt:
+        raise RuntimeError("could not rebuild project_task to make assignee_id optional")
+    columns = ", ".join(info)
+    if not db.conn.in_transaction:
+        db.execute("BEGIN")                          # sqlite3 does not open a transaction for DDL by itself
+    db.execute("DROP TABLE IF EXISTS project_task_new")
+    db.execute(rebuilt)
+    db.execute("INSERT INTO project_task_new (%s) SELECT %s FROM project_task" % (columns, columns))
+    db.execute("DROP TABLE project_task")
+    db.execute("ALTER TABLE project_task_new RENAME TO project_task")
+    return True
+
+
 def _repo_keys(db):
     """-> [(project id, slug, stored repo_key or None, key computed from repo_url or None)]."""
     from . import projects as _projects                          # the one place that turns a URL into a key
@@ -230,6 +263,7 @@ def init_db(url):
         if duplicates:
             raise DuplicateRepositories(duplicates)
         added = add_missing_columns(db)
+        task_assignee_optional(db)                   # not a column add: a NOT NULL is dropped (the task pool)
         fill_repo_keys(db)
         db.execute(REPO_KEY_INDEX)
         db.commit()

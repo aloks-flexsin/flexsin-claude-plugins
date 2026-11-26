@@ -33,6 +33,21 @@
         {% if r.control != "stop" %}{{ control_form(r, "stop", "Stop runner", "Stop " ~ name ~ "?", "It finishes the step it is on and ends. Someone has to start it again on its computer.", next_url) }}{% endif %}
       </div>
       {% endif %}
+      {% if r.hand_over %}
+      <details class="more">
+        <summary class="btn">Give runner</summary>
+        <form method="post" action="{{ url_for('runners.hand_over_runner', slug=r.project.slug, runner_id=r.id) }}" class="pop-body"
+              data-confirm="Give {{ name }} to another person?" data-confirm-detail="Its next beat must come with that person's sign-in; the current person's computer gets refused under this label." data-confirm-action="Give runner">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="next" value="{{ next_url }}">
+          <label for="ho-{{ r.id }}">Give it to</label>
+          <select id="ho-{{ r.id }}" name="account">
+            {% for m in r.hand_over %}<option value="{{ m.id }}">{{ m.email | display_name }} ({{ m.email }})</option>{% endfor %}
+          </select>
+          <button type="submit" class="btn">Give runner</button>
+        </form>
+      </details>
+      {% endif %}
     </div>
     {% endfor %}
   </div>

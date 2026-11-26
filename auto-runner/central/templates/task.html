@@ -63,7 +63,7 @@
   </div>
 </div>
 {% elif task.status == "plan_review" %}
-<div class="decision-bar quiet"><div><strong>The plan waits for approval</strong> <span class="muted">by {{ task.assignee_email | display_name }} or a manager, owner or admin.</span></div></div>
+<div class="decision-bar quiet"><div><strong>The plan waits for approval</strong> <span class="muted">by {{ (task.assignee_email | display_name) if task.assignee_id else "anyone" }} or a manager, owner or admin.</span></div></div>
 {% elif progress and task.status in ("building", "done") %}
 <div class="decision-bar quiet">
   {{ ui.progress(progress.done, progress.total, ("on " ~ progress.current) if progress.current else "") }}
@@ -189,7 +189,7 @@
 
   <aside class="task-side">
     <dl class="facts">
-      <dt>For</dt><dd>{{ ui.person(task.assignee_email) }}</dd>
+      <dt>For</dt><dd>{% if task.assignee_id %}{{ ui.person(task.assignee_email) }}{% else %}<span class="muted">The pool: the next free runner takes it</span>{% endif %}</dd>
       <dt>Runner</dt><dd>{% if live %}{{ ui.runner(task.claim_runner) }}{% if task.status != "plan_review" %} <span class="muted">· seen {{ ui.when(task.heartbeat_at) }}</span>{% endif %}
         {% elif quiet %}<span class="warn-line">{{ ui.runner(task.claim_runner) }} quiet for over {{ ttl_hours }} h; the claim expired</span>
         {% else %}<span class="muted">No runner has taken it yet</span>{% endif %}</dd>
@@ -199,19 +199,27 @@
       <dt>Added</dt><dd>{{ ui.when(task.created_at) }}</dd>
       <dt>Updated</dt><dd>{{ ui.when(task.updated_at) }}</dd>
     </dl>
-    {% if is_admin and task.status not in ('done', 'rejected') %}
+    {% if can_take %}
+    <form method="post" action="{{ url_for('tasks.task_take', slug=project.slug, number=task.number) }}"
+          data-confirm="Take task #{{ task.number }}?" data-confirm-detail="It becomes yours and your runner takes it at its next look for work. Its branch and pull request are kept." data-confirm-action="Take it">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn primary">Take it</button>
+    </form>
+    {% endif %}
+    {% if can_manage %}
     <details class="more">
-      <summary class="btn">More</summary>
+      <summary class="btn">Reassign or release</summary>
       <form method="post" action="{{ url_for('tasks.task_release', slug=project.slug, number=task.number) }}" class="pop-body"
-            data-confirm="Change who works on task #{{ task.number }}?" data-confirm-detail="The runner working on it stops at its next step. Work goes back one step (planning to open, building to approved); a new person plans it afresh." data-confirm-action="Confirm">
+            data-confirm="Change who works on task #{{ task.number }}?" data-confirm-detail="The runner working on it stops at its next step. Work goes back one step (planning to open, building to approved); branch and pull request are kept." data-confirm-action="Confirm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label for="r-who">Give it to</label>
         <select id="r-who" name="assignee">
-          <option value="">{{ task.assignee_email | display_name }} (keep)</option>
+          <option value="">{% if task.assignee_id %}{{ task.assignee_email | display_name }} (keep){% else %}The pool (keep){% endif %}</option>
+          {% if task.assignee_id %}<option value="pool">The pool: any runner takes it</option>{% endif %}
           {% for m in assignees %}{% if m.account_id != task.assignee_id %}<option value="{{ m.account_id }}">{{ m.email | display_name }} ({{ m.role }})</option>{% endif %}{% endfor %}
         </select>
         <button type="submit" class="btn danger">{{ "Take back from runner" if task.claim_id else "Save" }}</button>
-        <p class="muted small">Admins only. The runner stops this task at its next step; work goes back one step.</p>
+        <p class="muted small">The assignee, a manager or above. Keeping the person and saving releases the runner's claim.</p>
       </form>
     </details>
     {% endif %}

@@ -125,20 +125,22 @@ may not stick over plain http. The API endpoints do not use the cookie.
   item with no run state shows no badge; a rejected task's note sits under "Why it was closed" with who closed it and
   when (from its `task.close` audit row); the screenshot upload form is hidden on done and rejected tasks; the runner
   line reads "No runner has taken it yet"; the Tasks tab count is labelled "open tasks" and the attention pill reads "N to approve".
-- `/projects/<slug>/tasks/new`: people who can run runners (developer and above) add a task for themselves; admins for
-  any such member. "How we know it's done" is stored as a `Done when:` section of the description (no column of its own).
+- `/projects/<slug>/tasks/new`: people who can run runners (developer and above) add a task for themselves or for the
+  project's **pool** ("For: The pool"); admins for any such member. "How we know it's done" is stored as a `Done when:` section of the description (no column of its own).
 - `/projects/<slug>/tasks/<N>`: a step tracker (Open → Planned → Approval → Building → Done), the decision bar while the
   plan waits (Approve; Request changes opens the required comment; Reject asks first), the build's progress, the plan
   rendered as Markdown (escaped), the items as a checklist with each item's live state and acceptance line, a side panel
-  (person, runner, branch, pull request), the admin's release/reassign under **More**, the runs and an **Activity**
-  history (from the audit log: added, claimed, plan posted, decisions, released, reported; plus run starts and ends).
+  (person or "The pool", runner, branch, pull request), **Take it** and **Reassign or release** (see Task pool), the runs and an **Activity**
+  history (from the audit log: added, claimed, taken, plan posted, decisions, released, reassigned, reported, done on
+  merge; plus run starts and ends).
   Pages showing work in progress reload every 30 seconds while nobody is typing.
 - States: `open` → `planning` (a runner claimed it) → `plan_review` → `approved` → `building` → `done`; or
   `changes_requested` (back to the runner with a comment) and `rejected`. A task typed in the terminal is recorded as
   `queued` (its plan was approved there; shown as "Queued" under In progress). Its claim stays alive while it is
   queued, like a plan waiting for approval. A heartbeat with no state, or `"state": "building"`, moves `queued` to
   `building`; `"state": "queued"` moves an approved or building task back to `queued`. `report` accepts a queued task, the
-  next-task call never takes one, and an admin release moves it to `approved`.
+  next-task call never takes one, and a release moves it to `approved`. `report` with `result: stopped` ends the claim
+  too: the task goes back to `approved` with its branch, pull request and note kept, so it returns to the pool.
   A queued task's heartbeat may carry a `note` (at most 300 characters) saying why it waits, such as "waits:
   <branch> is not merged into origin/main yet"; the task page shows it under the Queued line. The note is cleared when
   the task moves to `building` (a heartbeat or the next-task call) or is released (unverified until seen live).
@@ -152,9 +154,19 @@ may not stick over plain http. The API endpoints do not use the cookie.
   project manager, owner or admin. Audited.
 - **Claims:** only the runner holding a task's claim may post its plan, beat or report. A claim lives while its runner
   beats (any task call) within 2 hours, and for as long as its plan waits for a person. A silent claim expires and the task
-  can be taken again. Admins **release** a claim or **give the task to someone else** on the task page (audited): the
-  runner gets 409 on its next call and stops that task. Work goes back one step (planning → open, building → approved);
-  a new assignee plans it afresh.
+  can be taken again. A release or reassign (see Task pool) ends the claim: the runner gets 409 on its next call and
+  stops that task. Work goes back one step (planning → open, building → approved); a new assignee plans it afresh.
+- **Task pool** (autonomy plan, phase 2; tests `tests/central/test_task_pool.py`): `project_task.assignee_id` may be NULL
+  (a pool task). `POST /api/v1/tasks/next` takes the account's own tasks first, then the pool, in the same order:
+  unassigned tasks, and other members' tasks whose person has **no active runner** (no runner of theirs beat within
+  `runners.SILENT_AFTER`, 2 hours, or every such runner is asked to stop) or whose **claim expired**. A live claim is never
+  taken. Taking one makes the account its assignee and writes `task.take` (number, from, to, reason `unassigned` | `no
+  active runner` | `claim expired`, runner, `via: runner`). Only a developer or above takes from the pool (never a viewer
+  or the supervisor). On the task page, **Take it** (`POST /projects/<slug>/tasks/<n>/take`, asks first) lets a developer
+  or above make a task theirs when no runner holds it (409 otherwise; `task.take` with `via: page`). **Reassign or
+  release** (`POST /projects/<slug>/tasks/<n>/release`, `assignee` = a member's account id, `pool`, or empty to keep the
+  person and only end the claim) is for the assignee, a manager or above and admins (404 for anyone else; a pool task is
+  managed by managers and above); it writes `task.release` or `task.reassign` (from, to, pool).
 - **API** (personal tokens only, the project named as for every call): `GET /api/v1/tasks` (every task, with the runner
   working on each, never a claim id), `GET /api/v1/tasks/<N>`, `POST /api/v1/tasks/next` (`{runner}` → claims the account's
   next task: approved, building, changes requested, planning, then open; returns the task, the claim and `action`
@@ -166,7 +178,11 @@ may not stick over plain http. The API endpoints do not use the cookie.
   token's person, with the same rules as the task page (assignee or manager and above; `changes` needs a comment; 409
   when no plan waits; 404 for an unknown task); it records `task.plan.<decision>` with `"via": "api"`, so the Activity
   line ends "(through the API)", and returns `{task}`.
-- Table `project_task` (init-db creates it).
+- Table `project_task` (init-db creates it). **Migration (task pool):** `python -m central init-db` makes
+  `assignee_id` nullable in an existing database (`db.task_assignee_optional`: Postgres `ALTER COLUMN ... DROP NOT NULL`;
+  SQLite rebuilds the table from its own CREATE statement and copies every row). Until it runs, adding a pool task fails;
+  everything else works. **Rollback:** deploy the previous code after giving every pool task an assignee (the previous
+  code's joins skip tasks without one).
 - **Supervisor read API** (`supervisor.py`, personal tokens; these two routes are read-only): `GET /api/v1/supervisor/whoami` returns
   `{role, email}` for any valid token (role is `null` for a project token). `GET /api/v1/supervisor/state?project=<slug>`
   needs the `supervisor` account role (403 for any other role, 401 without a token, 404 only for an unknown project once the
@@ -179,7 +195,8 @@ may not stick over plain http. The API endpoints do not use the cookie.
   "items", "priority", "depends_on"}` (the last two as on any task) (decision record 0010, 6a: the supervisor adds tasks that trace to work already asked for). Supervisor role
   only (403 otherwise, 401 without a token, 404 for an unknown project). `from` says what the task comes from and is
   required (400 without it); it is appended to the description as "From: ...". `assignee` is the email of a member who can
-  run runners (developer or above; 400 otherwise, and never the supervisor itself), and that person's runner takes it.
+  run runners (developer or above; 400 otherwise, and never the supervisor itself), and that person's runner takes it;
+  left out or null, the task goes to the pool.
   Without a plan the task is `open`; with `plan` and `items` (both or neither) it is `plan_review` with no claim and the
   usual "plan waiting" notification. Answers 201 with `{task}` and writes `task.create` (via `supervisor`) and
   `supervisor.task.add` (number, from, assignee, with_plan) audit rows. **A person decides plans on tasks the supervisor
@@ -200,11 +217,19 @@ may not stick over plain http. The API endpoints do not use the cookie.
   `{"phase": "decided" | "done" | "failed" | "refused", "sha": "...", "method": "...", "reasons": [...], "evidence": {...},
   "merge_sha": "..."}`. Supervisor role only (403 otherwise, 401 without a token). It merges nothing: the supervisor's pass
   calls the forge between `decided` and `done` / `failed`. Each call writes one `supervisor.merge.<phase>` audit row (detail:
-  number, sha, method, reasons, evidence, merge_sha); `done` also sets `project_task.merged_at`. `sha` is required except for
+  number, sha, method, reasons, evidence, merge_sha); `done` also sets `project_task.merged_at` and makes the task
+  `done` (claim ended, drafted friction fixed, a `task.done` audit row with `via: merge`) unless it is already done or
+  rejected. `sha` is required except for
   `refused`. `decided` for a merged task answers 409; `done` and `failed` need an earlier `decided` for the same SHA (else
   409). **Re-running is safe:** a `refused` that repeats the task's previous row (same SHA and reasons) and a `done` for a
   merged task change nothing and answer 200 with `"already": true`. The task page and the task list show "Merged <time>"
   once `merged_at` is set. Tests: `tests/central/test_supervisor_e2e.py`, `tests/central/test_tasks_pages.py`.
+- **Release and reassign** `POST /api/v1/supervisor/tasks/<n>/release?project=<slug>` (`{"reason"}`) ends the claim
+  (assignee, branch and pull request kept; `changed: false` when there is no claim) and
+  `POST /api/v1/supervisor/tasks/<n>/reassign?project=<slug>` (`{"assignee": email or null, "reason"}`; null = the pool;
+  400 without `assignee` or for a member below developer) gives the task to someone else. Supervisor role only (403), 404
+  for an unknown project or task, 409 for a done or rejected task. Each change writes `task.release` / `task.reassign` and
+  `supervisor.task.release` / `supervisor.task.reassign` (from, to, reason). Tests: `tests/central/test_task_pool.py`.
 - **Queue order** `PUT /api/v1/supervisor/order?project=<slug>` with `{"orders": [{"number", "rank", "reason"}]}`. Supervisor
   role only (403 otherwise, 401 without a token). Every number must be a task of the project (404) and every rank a whole
   number of 1 or more, with no number twice (400); on any error nothing is written. A rank equal to the stored `rank` is
@@ -272,7 +297,10 @@ may not stick over plain http. The API endpoints do not use the cookie.
 - `POST /api/v1/runners/beat?project=<slug>` (personal tokens only, developer or above) with
   `{label, state, task: N|null, spend_usd}`, sent by a watching runner each step and when idle. The first beat for a
   label creates the runner, owned by that person; a label belongs to one person per project, so another person's token
-  gets 403. Returns `{runner, control}`, where `control` is `null`, `"pause"` (wait without claiming), `"stop"` (end
+  gets 403 until the label is handed over: **Give runner** on the runner lists (`POST
+  /projects/<slug>/runners/<id>/hand-over`, `account` = a developer or above, asks first) by the runner's person, a manager
+  or above, admins or the supervisor (`runners.hand_over`; 404 for anyone else, 400 for a member below developer). It
+  clears any pause or stop and writes `runner.reassign` (label, from, to). Returns `{runner, control}`, where `control` is `null`, `"pause"` (wait without claiming), `"stop"` (end
   cleanly) or `"wake"` (see Supervisor control below).
 - **Supervisor control:** `POST /api/v1/supervisor/runners/<id>/<pause|resume|wake>?project=<slug>` (personal token of a
   `supervisor` account; anyone else gets 403, an unknown runner or action 404). The supervisor account also counts in
