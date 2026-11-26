@@ -7,7 +7,7 @@
 {%- endmacro %}
 
 {% macro person(email, name=None, sub=None) -%}
-{%- set shown = email | display_name(name) -%}
+{%- set shown = (email | display_name(name)) if email else "Unassigned" -%}
 <span class="person" title="{{ email }}"><span class="av" aria-hidden="true">{{ shown | initials }}</span><span><span class="person-name">{{ shown }}</span>{% if sub %}<span class="person-sub">{{ sub }}</span>{% endif %}</span></span>
 {%- endmacro %}
 

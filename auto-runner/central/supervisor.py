@@ -1,5 +1,5 @@
 """Supervisor API (decision record 0010): who the caller is, one project's state (read-only), adding a task that traces
-to asked-for work (6a), plan decisions and merge records.
+to asked-for work (6a), plan decisions, merge records, and releasing or reassigning a task (the task pool).
 
 Every route takes a personal token. All but `whoami` need an account with the `supervisor` role. `state` (any project,
 no membership needed) never shows a claim id and writes nothing.
@@ -112,6 +112,7 @@ def add_task():
     """The supervisor adds a task (decision record 0010, 6a) with `?project=<slug>` and `{"title", "description", "from",
     "assignee": email, "plan", "items", "priority", "depends_on"}` (priority and depends_on as on any task). `from` (what the task traces to) is required and is appended to the description
     as "From: ...". The assignee must be a member who can run runners (developer or above); their runner takes the task.
+    Without an assignee (left out or null) the task goes to the project's pool and the first free runner takes it.
     With `plan` and `items` the task waits for plan approval (`plan_review`, no claim) and a person decides it: the
     supervisor never approves or sends back a plan on a task it added. Otherwise the task is `open` and the assignee's
     runner plans it. Writes `task.create` and `supervisor.task.add` audit rows."""
@@ -125,9 +126,11 @@ def add_task():
     body = request.get_json(silent=True)
     body = body if isinstance(body, dict) else {}
     email = body.get("assignee")
-    assignee = accounts.find_by_email(db, email.strip()) if isinstance(email, str) and email.strip() else None
-    if assignee is None:
-        return _error("assignee must be the email of a member who can run runners", 400)
+    assignee = None
+    if email is not None and not (isinstance(email, str) and not email.strip()):
+        assignee = accounts.find_by_email(db, email.strip()) if isinstance(email, str) else None
+        if assignee is None:
+            return _error("assignee must be the email of a member who can run runners, or left out for the pool", 400)
     moment = auth.now()
     plan, items = body.get("plan"), body.get("items")
     with_plan = bool((isinstance(plan, str) and plan.strip()) or (isinstance(items, str) and items.strip()))
@@ -145,7 +148,7 @@ def add_task():
     audit.record(db, "task.create", sessions.iso(moment), account_id=account["id"], project_id=project["id"],
                  detail={"number": row["number"], "via": "supervisor", "approval": "page" if with_plan else None})
     audit.record(db, "supervisor.task.add", sessions.iso(moment), account_id=account["id"], project_id=project["id"],
-                 detail={"number": row["number"], "from": body.get("from").strip(), "assignee": assignee["email"],
+                 detail={"number": row["number"], "from": body.get("from").strip(), "assignee": assignee["email"] if assignee else None,
                          "with_plan": with_plan})
     if with_plan:
         tasks.notify_plan(db, project, row, moment)
@@ -247,7 +250,8 @@ def merge_record(number):
     """The supervisor records a merge in phases, with `?project=<slug>` and `{"phase": "decided" | "done" | "failed" |
     "refused", "sha", "method", "reasons", "evidence", "merge_sha"}`. It merges nothing itself (the pass calls the forge
     between `decided` and `done`/`failed`); it writes one `supervisor.merge.<phase>` audit row per call, and `done` also
-    sets `project_task.merged_at`. `decided` is refused (409) for a task already merged; `done` and `failed` need an
+    sets `project_task.merged_at` and makes the task `done` (claim ended; a `task.done` audit row) unless it is already
+    done or rejected. `decided` is refused (409) for a task already merged; `done` and `failed` need an
     earlier `decided` for the same SHA. A `refused` that repeats the previous row (same SHA and reasons) and a `done`
     for a merged task are no-ops (`already: true`)."""
     db = get_db()
@@ -286,6 +290,9 @@ def merge_record(number):
     method = body.get("method") if isinstance(body.get("method"), str) else None
     if phase == "done":
         db.execute("UPDATE project_task SET merged_at = ? WHERE id = ?", (sessions.iso(moment), row["id"]))
+        if tasks.mark_done(db, project, row, account["id"], moment):      # merged is done: the task leaves the pool
+            audit.record(db, "task.done", sessions.iso(moment), account_id=account["id"], project_id=project["id"],
+                         detail={"number": number, "via": "merge", "from": row["status"]})
         row = tasks.get(db, project["id"], number)
     audit.record(db, "supervisor.merge." + phase, sessions.iso(moment), account_id=account["id"], project_id=project["id"],
                  detail={"number": number, "sha": sha, "method": method, "reasons": reasons, "evidence": evidence,
@@ -373,3 +380,77 @@ def control_runner(runner_id, action):
                                                        "state": row["state"]})
     db.commit()
     return jsonify(runner=runners.public(runners.by_id(db, project["id"], runner_id), moment), changed=changed)
+
+
+def _supervisor_task(number):
+    """-> (db, account, project, row) for a supervisor call on task `number`; on a problem `row` is an error response."""
+    db = get_db()
+    account = _caller(db)
+    if account is None or account["role"] != accounts.SUPERVISOR:
+        tokens._fail(403, "this needs a supervisor account")
+    project = projects.get_by_slug(db, request.args.get("project"))
+    if project is None:
+        return db, account, None, _error("no such project", 404)
+    row = tasks.get(db, project["id"], number)
+    if row is None:
+        return db, account, project, _error("no such task", 404)
+    if row["status"] in ("done", "rejected"):
+        return db, account, project, _error("task %d is already %s" % (number, row["status"]), 409)
+    return db, account, project, row
+
+
+def _reason(body):
+    reason = body.get("reason") if isinstance(body, dict) else None
+    return reason.strip()[:300] if isinstance(reason, str) else ""
+
+
+@bp.post("/api/v1/supervisor/tasks/<int:number>/release")
+def release_task(number):
+    """The supervisor ends a task's claim, with `?project=<slug>` and `{"reason"}`: the runner gets 409 at its next call
+    and the task goes back one step (planning to open, building to approved), assignee, branch and pull request kept, so
+    its person's next runner (or the pool) takes it again. Writes `task.release` and `supervisor.task.release` audit rows.
+    Answers `{"task", "changed"}`; a task without a claim is not changed."""
+    db, account, project, row = _supervisor_task(number)
+    if not isinstance(row, dict):
+        return row
+    body = request.get_json(silent=True)
+    moment = auth.now()
+    if not row["claim_id"]:
+        return jsonify(task=tasks.public(row, moment), changed=False)
+    updated = tasks.release(db, project, row, None, moment)
+    for action in ("task.release", "supervisor.task.release"):
+        audit.record(db, action, sessions.iso(moment), account_id=account["id"], project_id=project["id"],
+                     detail={"number": number, "runner": row["claim_runner"], "reason": _reason(body)})
+    db.commit()
+    return jsonify(task=tasks.public(updated, moment), changed=True)
+
+
+@bp.post("/api/v1/supervisor/tasks/<int:number>/reassign")
+def reassign_task(number):
+    """The supervisor gives a task to a member, with `?project=<slug>` and `{"assignee": email or null, "reason"}`;
+    null puts it back in the pool. The claim ends (as release). The member must be a developer or above (400). Writes
+    `task.reassign` and `supervisor.task.reassign` audit rows (from, to, reason). Answers `{"task", "changed"}`; giving it
+    to its current assignee changes nothing."""
+    db, account, project, row = _supervisor_task(number)
+    if not isinstance(row, dict):
+        return row
+    body = request.get_json(silent=True)
+    body = body if isinstance(body, dict) else {}
+    if "assignee" not in body:
+        return _error("assignee is the email of a member, or null for the pool", 400)
+    email = body.get("assignee")
+    moment = auth.now()
+    to = None
+    if email is not None:
+        to = accounts.find_by_email(db, email.strip()) if isinstance(email, str) and email.strip() else None
+        if to is None or not tasks._can_run(db, project, to):
+            return _error("assignee must be the email of a member who is a developer or above", 400)
+    if (to["id"] if to else None) == row["assignee_id"]:
+        return jsonify(task=tasks.public(row, moment), changed=False)
+    updated = tasks.release(db, project, row, to, moment, pool=to is None)
+    for action in ("task.reassign", "supervisor.task.reassign"):
+        audit.record(db, action, sessions.iso(moment), account_id=account["id"], project_id=project["id"],
+                     detail={"number": number, "runner": row["claim_runner"], "from": row["assignee_email"],
+                             "to": to["email"] if to else None, "pool": to is None, "reason": _reason(body)})
+    db.commit()
+    return jsonify(task=tasks.public(updated, moment), changed=True)

@@ -2,7 +2,8 @@
 
 A runner sends `POST /api/v1/runners/beat?project=<slug>` with a personal token each step and when idle:
 `{"label": ..., "state": ..., "task": N or null, "spend_usd": today's spend}`. The first beat for a label creates the
-runner, owned by the token's account; a label belongs to one person in a project, so another person's token gets 403.
+runner, owned by the token's account; a label belongs to one person in a project, so another person's token gets 403
+until the label's person or a manager or above gives it to them (`hand_over`, "Give runner" on the Runs page).
 The reply carries `control`: null (carry on), "pause" (wait without claiming), "stop" (end cleanly) or "wake" (the
 Supervisor asks it to look for work now; said once, then cleared). A runner whose
 last beat is older than SILENT_AFTER is shown as silent. People set `control` from the pages (Pause, Resume and Stop, at the end of this
@@ -80,6 +81,42 @@ def silent(row, moment):
     return beat is None or moment - beat >= SILENT_AFTER
 
 
+def watcher_active(db, project_id, account_id, moment):
+    """True when `account_id` has a runner in the project that beat within SILENT_AFTER and is not asked to stop: its
+    person is watching for work, so the task pool leaves that person's tasks to them."""
+    rows = db.query("SELECT beat_at, control FROM runner WHERE project_id = ? AND account_id = ?", (project_id, account_id))
+    return any(not silent(r, moment) and r["control"] != "stop" for r in rows)
+
+
+def can_hand_over(db, project, row, account):
+    """Who may give a runner label to another person: its person, a manager or above in the project (admins included)
+    and the supervisor."""
+    from . import projects
+    if account is None:
+        return False
+    if row["account_id"] == account["id"] or account["role"] == "supervisor":
+        return True
+    return projects.allows(projects.effective_role(db, project, account), "manager")
+
+
+def hand_over(db, project, row, to, by, moment):
+    """Give the runner label `row` to account `to` (a developer or above in the project): its next beat with `to`'s
+    token is accepted, and the previous person's token gets 403. Writes `runner.reassign`; the caller commits.
+    -> True when the owner changed."""
+    from . import projects
+    if not can_hand_over(db, project, row, by):
+        raise RunnerError("only the runner's person or a manager or above gives a runner to someone else", 403)
+    if to is None or not projects.allows(projects.effective_role(db, project, to), "developer"):
+        raise RunnerError("choose a member who is a developer or above", 400)
+    if row["account_id"] == to["id"]:
+        return False
+    db.execute("UPDATE runner SET account_id = ?, control = NULL, control_by = NULL, control_at = NULL WHERE id = ?",
+               (to["id"], row["id"]))
+    audit.record(db, "runner.reassign", _at(moment), account_id=by["id"], project_id=project["id"],
+                 detail={"label": row["label"], "from": row["account_email"], "to": to["email"]})
+    return True
+
+
 def beat(db, project, account, label, state, task, spend, moment):
     """Record one beat and commit -> (row, created, was_silent). 403 when the label is another person's runner."""
     label, state = _text(label, MAX_LABEL, "the label"), _text(state, MAX_STATE, "the state")
@@ -99,7 +136,8 @@ def beat(db, project, account, label, state, task, spend, moment):
             db.commit()
             return get(db, project["id"], label), True, False
     if row["account_id"] != account["id"]:
-        raise RunnerError("runner %r belongs to another person in this project; choose another label" % label, 403)
+        raise RunnerError("runner %r belongs to another person in this project; choose another label, or ask its person "
+                          "or a manager to give it to you (Give runner on the Runs page)" % label, 403)
     was_silent = silent(row, moment)
     db.execute("UPDATE runner SET state = ?, task_number = ?, spend_usd = ?, beat_at = ? WHERE id = ?",
                (state, task, spend, at, row["id"]))
@@ -203,7 +241,20 @@ def view(row, moment, account, project):
 
 
 def views(db, project, account, moment, only_controllable=False):
-    out = [view(r, moment, account, project) for r in for_project(db, project["id"])]
+    """The project's runners as the pages show them; `hand_over` lists who each runner can be given to (developers and
+    above other than its person) when `account` may give it (can_hand_over), else []."""
+    from . import projects
+    members = None
+    out = []
+    for r in for_project(db, project["id"]):
+        v = view(r, moment, account, project)
+        v["hand_over"] = []
+        if can_hand_over(db, project, r, account):
+            if members is None:
+                members = [m for m in projects.members(db, project["id"])
+                           if projects.allows(m["role"], "developer") and not m["disabled"]]
+            v["hand_over"] = [{"id": m["account_id"], "email": m["email"]} for m in members if m["account_id"] != r["account_id"]]
+        out.append(v)
     return [v for v in out if v["can_control"]] if only_controllable else out
 
 
@@ -215,6 +266,29 @@ def set_control(db, row, action, account, moment):
     db.execute("UPDATE runner SET control = ?, control_by = ?, control_at = ? WHERE id = ?",
                (value, account["id"], _at(moment), row["id"]))
     return True
+
+
+@bp.post("/projects/<slug>/runners/<runner_id>/hand-over")
+@project_access("viewer")
+def hand_over_runner(slug, runner_id):
+    """Give a runner label to another member (`account` form field): its person or a manager or above; 404 otherwise."""
+    from . import accounts
+    db, moment = get_db(), auth.now()
+    row = by_id(db, g.project["id"], runner_id)
+    if row is None or not can_hand_over(db, g.project, row, g.account):
+        abort(404)
+    back = ui.safe_next(request.form.get("next")) or url_for("runs.runs_page", slug=slug)
+    to = accounts.get(db, (request.form.get("account") or "").strip())
+    if not ui.confirmed():
+        return ui.confirm_page("Give %s to %s?" % (ui.runner_label(row["label"]), to["email"] if to else "another member"),
+                               "Its next beat must come with that person's sign-in; the current person's computer gets "
+                               "refused under this label.", "Give runner", back)
+    try:
+        hand_over(db, g.project, row, to, g.account, moment)
+    except RunnerError as e:
+        abort(e.status if e.status in (400, 403) else 400)
+    db.commit()
+    return redirect(back)
 
 
 @bp.post("/projects/<slug>/runners/<runner_id>/<action>")

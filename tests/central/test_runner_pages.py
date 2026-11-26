@@ -50,10 +50,12 @@ def test_who_sees_which_buttons(app, team, conn):
             text = page(team, who, path)
             assert control_url(row, 'pause') in text and control_url(row, 'stop') in text, (who, path)
             assert control_url(row, 'resume') not in text
-    for who in ('owner', 'manager', 'viewer'):                       # other members see it without buttons
+    for who in ('owner', 'manager', 'viewer'):                       # other members see it without control buttons
         for path in PAGES:
             text = page(team, who, path)
-            assert LABEL in text and '/runners/%s/' % row['id'] not in text, (who, path)
+            assert LABEL in text and all(control_url(row, a) not in text for a in ('pause', 'stop', 'resume')), (who, path)
+            # managers and above may give the runner to someone else (task pool); viewers may not
+            assert ('/runners/%s/hand-over' % row['id'] in text) == (who != 'viewer'), (who, path)
     assert LABEL in page(team, 'dev', '/my') and control_url(row, 'pause') in page(team, 'dev', '/my')
     assert LABEL in page(team, 'admin', '/my')
     assert LABEL not in page(team, 'owner', '/my')                   # My work lists only runners you may control

@@ -1,20 +1,27 @@
 """Central tasks: the single source of what each person's runner should do next (decision record 0007, step 4).
 
-A task belongs to a project and is **assigned to one person**. People add tasks for themselves; admins add them for
-anyone. Every member sees every task of the project.
+A task belongs to a project and is **assigned to one person**, or to nobody (the project's **pool**). People add tasks
+for themselves or for the pool; admins add them for anyone. Every member sees every task of the project.
 
 Life of a task (`status`):
   open --claim--> planning --plan posted--> plan_review --approve--> approved --claim--> building --report done--> done
-                      ^                        | request changes                                 \\--report stopped: stays building
-                      +---- changes_requested <+         reject --> rejected
+                      ^                        | request changes             ^                       |
+                      +---- changes_requested <+         reject --> rejected  +-- report stopped ----+ (claim released)
+A merge the supervisor records (`supervisor.merge.done`) also makes the task `done`.
+
+**Pool.** A runner takes its own person's tasks first, then the pool: unassigned tasks, and other members' tasks whose
+person has no active runner (no beat within runners.SILENT_AFTER) or whose claim expired. Taking one from the pool makes
+that runner's person the assignee (`task.take` audit row). On the task page a developer or above can **Take it**; the
+assignee, a manager or above, and the supervisor (API) can **Release** the claim or **Reassign** the task (to a member or
+back to the pool).
 A task typed in the terminal (`/auto-runner:auto <task>`, plan approved there) is recorded straight as `queued` (its run has not started; the first heartbeat without a state makes it `building`);
 a plan proposed from the terminal (`"approval": "page"`) is recorded as `plan_review`, claimed, and approved on the page.
 
 **Claims.** A runner takes its person's next task with `POST /api/v1/tasks/next` and gets a claim id; only that claim
 may post a plan, beat or report. A claim stays alive while its runner sends a heartbeat (or any task call) within
 CLAIM_TTL, and while its plan waits for a person (`plan_review`): waiting for a person never expires a claim. A silent
-claim expires and the task can be taken again. An admin can release a claim or reassign the task; the runner then gets
-409 on its next call and stops that task.
+claim expires and the task can be taken again. When a claim is released or the task reassigned, the runner gets 409 on
+its next call and stops that task.
 
 **Plan approval.** The plan (`plan`, the plan text; `items`, the queue items) is approved, sent back with a comment, or
 rejected on the task page by the assignee or a project manager, owner or admin.
@@ -76,12 +83,12 @@ def claim_live(row, moment):
 
 
 def get(db, project_id, number):
-    return db.query_one("SELECT t.*, a.email AS assignee_email FROM project_task t JOIN account a ON a.id = t.assignee_id"
+    return db.query_one("SELECT t.*, a.email AS assignee_email FROM project_task t LEFT JOIN account a ON a.id = t.assignee_id"
                         " WHERE t.project_id = ? AND t.number = ?", (project_id, number))
 
 
 def for_project(db, project_id):
-    return db.query("SELECT t.*, a.email AS assignee_email FROM project_task t JOIN account a ON a.id = t.assignee_id"
+    return db.query("SELECT t.*, a.email AS assignee_email FROM project_task t LEFT JOIN account a ON a.id = t.assignee_id"
                     " WHERE t.project_id = ? ORDER BY t.number DESC", (project_id,))
 
 
@@ -145,7 +152,9 @@ def create(db, project, by, assignee, title, description, moment, status="open",
     """Add a task and commit -> its row. People add tasks for themselves; an admin for any member who can run runners.
     `priority` (an integer, lower is more urgent) and `depends_on` (task numbers of this project) are optional.
     A supervisor (decision record 0010, 6a) adds tasks for a member who can run runners, and only with `source`: what
-    the task traces to (a review, a plan's "Needs a person", a failing check, a person's request). It never invents scope."""
+    the task traces to (a review, a plan's "Needs a person", a failing check, a person's request). It never invents scope.
+    `assignee` None puts the task in the project's pool: the first runner of a developer or above takes it (take_next).
+    Anyone who may add tasks (a developer or above, an admin, the supervisor) may add one to the pool."""
     title = _text(title, MAX_TITLE, "the title", required=True)
     description = _text(description, MAX_TEXT, "the description")
     if by["role"] == accounts.SUPERVISOR:
@@ -153,10 +162,15 @@ def create(db, project, by, assignee, title, description, moment, status="open",
         description = ((description + "\n\n") if description else "") + "From: " + source
         if len(description) > MAX_TEXT:
             raise TaskError("the description is longer than %d characters" % MAX_TEXT)
+    elif assignee is None:
+        if not (_can_run(db, project, by) or by["role"] == projects.ADMIN):
+            raise TaskError("only a developer or above adds a task to the pool", 403)
     elif assignee["id"] != by["id"] and by["role"] != projects.ADMIN:
         raise TaskError("only an admin adds tasks for someone else", 403)
-    if not _can_run(db, project, assignee):
+    if assignee is not None and not _can_run(db, project, assignee):
         raise TaskError("%s is not a developer or above in this project, so no runner of theirs can take it" % assignee["email"])
+    if assignee is None and runner:
+        raise TaskError("a task a runner holds has an assignee")
     priority, depends = parse_priority(priority), parse_depends(depends_on)
     at = _at(moment)
     for _ in range(3):                                     # the number is per project; a clash just takes the next one
@@ -173,7 +187,8 @@ def create(db, project, by, assignee, title, description, moment, status="open",
             db.execute("INSERT INTO project_task (id, project_id, number, title, description, assignee_id, created_by, "
                        "status, plan, items, claim_id, claim_runner, heartbeat_at, created_at, updated_at, priority, depends_on) "
                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                       (secrets.token_hex(16), project["id"], number, title, description, assignee["id"], by["id"],
+                       (secrets.token_hex(16), project["id"], number, title, description,
+                        assignee["id"] if assignee else None, by["id"],
                         status, plan or None, items or None, claim, runner, at if runner else None, at, at,
                         priority, json.dumps(depends) if depends else None))
         except Exception:
@@ -184,36 +199,76 @@ def create(db, project, by, assignee, title, description, moment, status="open",
     raise TaskError("could not number the task; try again", 409)
 
 
+def _order(rows):
+    """By status (TAKE_ORDER), then priority (lower first, unset last), rank (unset last) and number."""
+    return sorted(rows, key=lambda r: (TAKE_ORDER.index(r["status"]), r["priority"] is None, r["priority"] or 0,
+                                       r["rank"] is None, r["rank"] or 0, r["number"]))
+
+
+def pool_reason(db, project, row, account, moment):
+    """Why `account`'s runner may take `row` from the pool -> "unassigned", "no active runner" (its person has no runner
+    that beat within runners.SILENT_AFTER), "claim expired" (its runner went quiet), or None when it may not."""
+    from . import runners                                   # runners does not import this module; kept local anyway
+    if row["assignee_id"] == account["id"]:
+        return None
+    if row["assignee_id"] is None:
+        return "unassigned"
+    if not runners.watcher_active(db, project["id"], row["assignee_id"], moment):
+        return "no active runner"
+    if row["claim_id"] and not claim_live(row, moment):
+        return "claim expired"
+    return None
+
+
 def take_next(db, project, account, runner, moment):
     """Claim the account's next task in this project for `runner` and commit -> (row, claim id) or (None, None).
-    Order: approved (build it), building (resume), changes requested, planning, open; within each status by priority
-    (lower first, unset last), then rank (unset last), then number. A task is skipped while a task it depends on is not done."""
-    rows = db.query("SELECT * FROM project_task WHERE project_id = ? AND assignee_id = ? AND status IN (%s)"
-                    " ORDER BY number" % ", ".join("?" * len(TAKE_ORDER)), (project["id"], account["id"]) + TAKE_ORDER)
-    rows = sorted(rows, key=lambda r: (r["priority"] is None, r["priority"] or 0, r["rank"] is None, r["rank"] or 0, r["number"]))
-    waiting = {n for r in rows for n in depends_of(r)}
+    Own tasks first; then the project's pool (decision: shared task pool): unassigned tasks, and other members' tasks
+    whose person has no active runner or whose claim expired (pool_reason). Taking one from the pool makes the account
+    its assignee and writes a `task.take` audit row (from, to, reason). Only a developer or above takes from the pool.
+    Order within each group: approved (build it), building (resume), changes requested, planning, open; within each status
+    by priority (lower first, unset last), then rank (unset last), then number. A task is skipped while a task it depends
+    on is not done, and while another runner holds a live claim on it."""
+    rows = db.query("SELECT * FROM project_task WHERE project_id = ? AND status IN (%s) ORDER BY number"
+                    % ", ".join("?" * len(TAKE_ORDER)), (project["id"],) + TAKE_ORDER)
+    own = _order([r for r in rows if r["assignee_id"] == account["id"]])
+    pool = []
+    if _can_run(db, project, account):
+        for r in _order([r for r in rows if r["assignee_id"] != account["id"]]):
+            reason = pool_reason(db, project, r, account, moment)
+            if reason:
+                pool.append((r, reason))
+    waiting = {n for r in own + [p[0] for p in pool] for n in depends_of(r)}
     unfinished = set()
     if waiting:
         unfinished = {r["number"] for r in db.query("SELECT number, status FROM project_task WHERE project_id = ?",
                                                     (project["id"],)) if r["number"] in waiting and r["status"] != "done"}
     at = _at(moment)
-    for status in TAKE_ORDER:
-        for row in [r for r in rows if r["status"] == status]:
-            if unfinished and unfinished.intersection(depends_of(row)):
-                continue                                   # waits for a task that is not done
-            if claim_live(row, moment) and row["claim_runner"] != runner:
-                continue                                   # another runner of this person holds it
-            claim = secrets.token_urlsafe(16)
-            new_status = {"open": "planning", "approved": "building"}.get(status, status)
-            cur = db.execute("UPDATE project_task SET claim_id = ?, claim_runner = ?, heartbeat_at = ?, status = ?,"
-                             " note = CASE WHEN ? = 'building' AND ? <> 'building' THEN NULL ELSE note END,"
-                             " updated_at = ? WHERE id = ? AND (claim_id IS NULL OR claim_id = ? OR heartbeat_at IS NULL"
-                             " OR heartbeat_at < ? OR claim_runner = ?)",
-                             (claim, runner, at, new_status, new_status, status, at, row["id"], row["claim_id"] or "",
-                              _at(moment - CLAIM_TTL), runner))
-            if cur.rowcount == 1:
-                db.commit()
-                return get(db, project["id"], row["number"]), claim
+    for row, reason in [(r, None) for r in own] + pool:
+        if unfinished and unfinished.intersection(depends_of(row)):
+            continue                                       # waits for a task that is not done
+        if claim_live(row, moment) and row["claim_runner"] != runner:
+            continue                                       # another runner holds it
+        status = row["status"]
+        claim = secrets.token_urlsafe(16)
+        new_status = {"open": "planning", "approved": "building"}.get(status, status)
+        same_owner = "assignee_id IS NULL" if row["assignee_id"] is None else "assignee_id = ?"
+        cur = db.execute("UPDATE project_task SET claim_id = ?, claim_runner = ?, heartbeat_at = ?, status = ?,"
+                         " assignee_id = ?,"
+                         " note = CASE WHEN ? = 'building' AND ? <> 'building' THEN NULL ELSE note END,"
+                         " updated_at = ? WHERE id = ? AND status = ? AND " + same_owner +
+                         " AND (claim_id IS NULL OR claim_id = ? OR heartbeat_at IS NULL"
+                         " OR heartbeat_at < ? OR claim_runner = ?)",
+                         (claim, runner, at, new_status, account["id"], new_status, status, at, row["id"], status)
+                         + ((row["assignee_id"],) if row["assignee_id"] is not None else ())
+                         + (row["claim_id"] or "", _at(moment - CLAIM_TTL), runner))
+        if cur.rowcount == 1:
+            if reason:
+                previous = accounts.get(db, row["assignee_id"]) if row["assignee_id"] else None
+                audit.record(db, "task.take", at, account_id=account["id"], project_id=project["id"],
+                             detail={"number": row["number"], "from": previous["email"] if previous else None,
+                                     "to": account["email"], "reason": reason, "runner": runner, "via": "runner"})
+            db.commit()
+            return get(db, project["id"], row["number"]), claim
     db.commit()
     return None, None
 
@@ -294,10 +349,12 @@ def report(db, project, number, claim, result, branch, pr_url, note, moment):
     if result not in ("done", "stopped"):
         raise TaskError("result must be done or stopped")
     pr_url = pr_url if isinstance(pr_url, str) and pr_url.startswith("https://") else None
+    # done ends the claim; stopped releases it too (the task goes back to approved, branch and pull request kept), so a
+    # stalled task returns to the pool: its person's next runner, or another member's when theirs is not active, takes it
     db.execute("UPDATE project_task SET status = ?, branch = COALESCE(?, branch), pr_url = COALESCE(?, pr_url), note = ?,"
-               " heartbeat_at = ?, updated_at = ?, claim_id = CASE WHEN ? = 'done' THEN NULL ELSE claim_id END"
-               " WHERE id = ?", ("done" if result == "done" else "building", _text(branch, 300, "the branch") or None,
-                                 pr_url, _text(note, 2000, "the note") or None, _at(moment), _at(moment), result, row["id"]))
+               " heartbeat_at = NULL, updated_at = ?, claim_id = NULL, claim_runner = NULL"
+               " WHERE id = ?", ("done" if result == "done" else "approved", _text(branch, 300, "the branch") or None,
+                                 pr_url, _text(note, 2000, "the note") or None, _at(moment), row["id"]))
     if result == "done":
         frictions.task_ended(db, project, row, "done", row["assignee_id"], _at(moment))   # a drafted friction is fixed
     db.commit()
@@ -365,16 +422,38 @@ def close(db, project, row, account, reason, moment):
     return reason
 
 
-def release(db, project, row, assignee, moment):
-    """An admin ends the claim (and, with `assignee`, gives the task to someone else). Work in progress goes back to
-    the step it was at: planning -> open, building -> approved."""
+def can_manage(db, project, row, account):
+    """Release the claim or reassign the task: its assignee, a manager or above (admins included) and the supervisor.
+    A pool task (no assignee) is managed by managers and above and the supervisor."""
+    if account is None:
+        return False
+    if account["role"] == accounts.SUPERVISOR:
+        return True
+    if row["assignee_id"] is not None and row["assignee_id"] == account["id"]:
+        return True
+    return projects.allows(projects.effective_role(db, project, account), APPROVER_ROLE)
+
+
+def can_take(db, project, row, account, moment):
+    """"Take it" on the task page: a developer or above takes a task that is not theirs, not finished, and that no
+    runner holds right now (a live claim is released by its assignee or a manager first)."""
+    return (row["status"] not in ("done", "rejected") and row["assignee_id"] != account["id"]
+            and not claim_live(row, moment) and _can_run(db, project, account))
+
+
+def release(db, project, row, assignee, moment, pool=False):
+    """End the claim (and, with `assignee`, give the task to someone else; with `pool`, to nobody: back to the pool).
+    Work in progress goes back to the step it was at: planning -> open, building -> approved. Branch and pull request
+    are kept. Commits."""
     at = _at(moment)
+    reassigned = assignee is not None or pool
     status = {"planning": "open", "building": "approved", "queued": "approved"}.get(row["status"], row["status"])
-    if assignee is not None and status in ("plan_review", "changes_requested"):
+    if reassigned and status in ("plan_review", "changes_requested"):
         status = "open"                                     # a new person plans it afresh
+    owner = None if pool else (assignee["id"] if assignee else row["assignee_id"])
     db.execute("UPDATE project_task SET claim_id = NULL, claim_runner = NULL, heartbeat_at = NULL, status = ?,"
                " note = CASE WHEN ? = 'queued' THEN NULL ELSE note END, assignee_id = ?, updated_at = ? WHERE id = ?",
-               (status, row["status"], assignee["id"] if assignee else row["assignee_id"], at, row["id"]))
+               (status, row["status"], owner, at, row["id"]))
     # a plan or a change request that no longer waits (the task went back to open for a new person) is done
     for kind, waiting in (("plan", "plan_review"), ("changes", "changes_requested")):
         if status != waiting:
@@ -384,6 +463,36 @@ def release(db, project, row, assignee, moment):
         notify_assigned(db, project, updated, moment)
     db.commit()
     return updated
+
+
+def take(db, project, row, account, moment):
+    """A person takes the task for themselves from the task page (can_take) -> the updated row; writes `task.take`.
+    Commits."""
+    if not can_take(db, project, row, account, moment):
+        raise TaskError("you cannot take task %d: it is yours, finished, held by a running runner, or you are not a "
+                        "developer here" % row["number"], 409)
+    reason = "unassigned" if row["assignee_id"] is None else "taken on the task page"
+    updated = release(db, project, row, None, moment) if row["claim_id"] else row
+    db.execute("UPDATE project_task SET assignee_id = ?, updated_at = ? WHERE id = ?", (account["id"], _at(moment), row["id"]))
+    audit.record(db, "task.take", _at(moment), account_id=account["id"], project_id=project["id"],
+                 detail={"number": row["number"], "from": updated["assignee_email"], "to": account["email"],
+                         "reason": reason, "via": "page"})
+    db.commit()
+    return get(db, project["id"], row["number"])
+
+
+def mark_done(db, project, row, by, moment):
+    """The task's pull request is merged (the supervisor's `merge.done`): the task is done and its claim ends. Does not
+    commit. A task already done or rejected is left as it is -> True when it changed."""
+    if row["status"] in ("done", "rejected"):
+        return False
+    at = _at(moment)
+    db.execute("UPDATE project_task SET status = 'done', claim_id = NULL, claim_runner = NULL, heartbeat_at = NULL,"
+               " updated_at = ? WHERE id = ?", (at, row["id"]))
+    for kind in ("plan", "changes"):
+        notifications.resolve(db, notifications.task_key(project, row["number"], kind), moment)
+    frictions.task_ended(db, project, row, "done", by, at)        # a drafted friction is fixed
+    return True
 
 
 def public(row, moment, full=False):
@@ -671,7 +780,9 @@ def task_add(slug):
     db, moment = get_db(), auth.now()
     assignee = g.account
     chosen = (request.form.get("assignee") or "").strip()
-    if chosen and chosen != g.account["id"]:
+    if chosen == "pool":
+        assignee = None
+    elif chosen and chosen != g.account["id"]:
         assignee = accounts.get(db, chosen)
         if assignee is None:
             abort(404)
@@ -688,7 +799,7 @@ def task_add(slug):
                                "depends_on": (request.form.get("depends_on") or "")[:200]})
     audit.record(db, "task.create", _at(moment), account_id=g.account["id"], project_id=g.project["id"],
                  detail={"number": row["number"], "assignee": row["assignee_email"]})
-    if row["assignee_id"] != g.account["id"]:
+    if row["assignee_id"] not in (None, g.account["id"]):
         notify_assigned(db, g.project, row, moment)
     db.commit()
     # Screenshots chosen on the form are stored after the task exists, so a refused file never loses the task; the
@@ -776,7 +887,8 @@ def _detail(number, error=None, status=200):
                            live=live, quiet=bool(row["claim_id"]) and not live and row["status"] in RUNNER_SIDE,
                            can_decide=row["status"] == "plan_review" and can_decide(db, g.project, row, g.account),
                            can_close=row["status"] in CLOSABLE and can_decide(db, g.project, row, g.account),
-                           is_admin=g.account["role"] == projects.ADMIN, assignees=_runners(db, g.project),
+                           can_manage=row["status"] not in ("done", "rejected") and can_manage(db, g.project, row, g.account),
+                           can_take=can_take(db, g.project, row, g.account, moment), assignees=_runners(db, g.project),
                            activity=_activity(db, g.project, number, task_runs), error=error,
                            ttl_hours=int(CLAIM_TTL.total_seconds() // 3600), shots=shots,
                            can_upload=projects.allows(g.project_role, _att.UPLOAD_ROLE) and row["status"] not in ("done", "rejected"),
@@ -846,26 +958,49 @@ def task_close(slug, number):
 @bp.post("/projects/<slug>/tasks/<int:number>/release")
 @project_access("viewer")
 def task_release(slug, number):
-    """Admins only: end the claim, and optionally give the task to another member."""
-    if g.account["role"] != projects.ADMIN:
+    """Release (end the claim) or Reassign (`assignee`: a member's account id, or "pool" for nobody): the assignee, a
+    manager or above, or an admin. Anyone else gets 404."""
+    db, moment = get_db(), auth.now()
+    row = get(db, g.project["id"], number)
+    if row is None or not can_manage(db, g.project, row, g.account):
         abort(404)
+    chosen = (request.form.get("assignee") or "").strip()
+    pool = chosen == "pool" and row["assignee_id"] is not None
+    to = accounts.get(db, chosen) if chosen and chosen != "pool" and chosen != row["assignee_id"] else None
+    if not ui.confirmed():
+        question = ("Give task #%d to %s?" % (number, to["email"]) if to else
+                    "Put task #%d back in the pool?" % number if pool else "Take task #%d back from its runner?" % number)
+        return ui.confirm_page(question,
+                               "The runner working on it stops at its next step. Work goes back one step (planning to open, "
+                               "building to approved); branch and pull request are kept"
+                               + ("; the next person plans it afresh." if (to or pool) else "."),
+                               "Give it to them" if to else "Put it in the pool" if pool else "Release it",
+                               url_for("tasks.task_page", slug=slug, number=number))
+    if chosen and chosen != "pool" and chosen != row["assignee_id"] and (to is None or not _can_run(db, g.project, to)):
+        return _detail(number, error="choose a member who is a developer or above", status=400)
+    release(db, g.project, row, to, moment, pool=pool)
+    audit.record(db, "task.reassign" if (to or pool) else "task.release", _at(moment), account_id=g.account["id"],
+                 project_id=g.project["id"], detail={"number": number, "runner": row["claim_runner"],
+                                                     "from": row["assignee_email"],
+                                                     "to": to["email"] if to else None, "pool": pool})
+    db.commit()
+    return redirect(url_for("tasks.task_page", slug=slug, number=number))
+
+
+@bp.post("/projects/<slug>/tasks/<int:number>/take")
+@project_access("viewer")
+def task_take(slug, number):
+    """Take it: a developer or above makes the task theirs (can_take); their runner takes it next."""
     db, moment = get_db(), auth.now()
     row = get(db, g.project["id"], number)
     if row is None:
         abort(404)
-    chosen = (request.form.get("assignee") or "").strip()
+    if not can_take(db, g.project, row, g.account, moment):
+        return _detail(number, error="you cannot take this task: it is yours, finished, held by a running runner, or "
+                                     "you are not a developer here", status=409)
     if not ui.confirmed():
-        to = accounts.get(db, chosen) if chosen and chosen != row["assignee_id"] else None
-        return ui.confirm_page(("Give task #%d to %s?" % (number, to["email"])) if to else "Take task #%d back from its runner?" % number,
-                               "The runner working on it stops at its next step. Work goes back one step (planning to open, "
-                               "building to approved)" + ("; the new person plans it afresh." if to else "."),
-                               "Give it to them" if to else "Take it back", url_for("tasks.task_page", slug=slug, number=number))
-    assignee = accounts.get(db, chosen) if chosen and chosen != row["assignee_id"] else None
-    if chosen and chosen != row["assignee_id"] and (assignee is None or not _can_run(db, g.project, assignee)):
-        return _detail(number, error="choose a member who is a developer or above", status=400)
-    release(db, g.project, row, assignee, moment)
-    audit.record(db, "task.reassign" if assignee else "task.release", _at(moment), account_id=g.account["id"],
-                 project_id=g.project["id"], detail={"number": number, "runner": row["claim_runner"],
-                                                     "to": assignee["email"] if assignee else None})
-    db.commit()
+        return ui.confirm_page("Take task #%d %s?" % (number, row["title"]),
+                               "It becomes yours and your runner takes it at its next look for work. Its branch and "
+                               "pull request are kept.", "Take it", url_for("tasks.task_page", slug=slug, number=number))
+    take(db, g.project, row, g.account, moment)
     return redirect(url_for("tasks.task_page", slug=slug, number=number))

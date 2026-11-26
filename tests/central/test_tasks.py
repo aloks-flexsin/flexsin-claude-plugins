@@ -150,7 +150,7 @@ def test_a_second_runner_of_the_same_person_skips_a_live_claim(app, team, conn, 
 def test_an_admin_releases_and_reassigns(app, team, conn):
     n = add(team)
     claim = take(app, team)['claim']
-    assert post(team['clients']['manager'], '/projects/alpha/tasks/%d/release' % n, confirm='1').status_code == 404   # admins only
+    assert post(team['clients']['viewer'], '/projects/alpha/tasks/%d/release' % n, confirm='1').status_code == 404   # assignee, manager+ only
     assert post(team['clients']['admin'], '/projects/alpha/tasks/%d/release' % n, confirm='1',
                 assignee=team['accounts']['manager']['id']).status_code == 302
     row = tasks.get(conn, team['alpha']['id'], n)

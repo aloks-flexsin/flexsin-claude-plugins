@@ -203,7 +203,7 @@ CREATE TABLE IF NOT EXISTS project_task (
     number INTEGER NOT NULL,
     title VARCHAR(200) NOT NULL,
     description TEXT,
-    assignee_id VARCHAR(64) NOT NULL REFERENCES account (id),
+    assignee_id VARCHAR(64) REFERENCES account (id),   -- NULL: in the project's pool (tasks.take_next)
     created_by VARCHAR(64) REFERENCES account (id),
     status VARCHAR(32) NOT NULL,
     plan TEXT,
