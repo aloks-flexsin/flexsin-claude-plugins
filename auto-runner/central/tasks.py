@@ -361,7 +361,27 @@ def report(db, project, number, claim, result, branch, pr_url, note, moment):
     return get(db, project["id"], number)
 
 
+def manual(row):
+    """True when a person ticked "manual" on the task: the supervisor leaves its plan to a person."""
+    return bool(row.get("manual"))
+
+
+def auto_mode(project, row):
+    """The supervisor decides this task: its project is in auto mode and the task is not marked manual."""
+    return projects.autonomy(project) == "auto" and not manual(row)
+
+
+def set_manual(db, row, value):
+    """Mark a task manual (True) or not; -> the value before. The caller audits and commits."""
+    before = manual(row)
+    db.execute("UPDATE project_task SET manual = ? WHERE id = ?", (1 if value else 0, row["id"]))
+    return before
+
+
 def can_decide(db, project, row, account):
+    """The assignee, a manager or above; in auto mode (auto_mode) also the supervisor, without a membership."""
+    if account["role"] == accounts.SUPERVISOR and auto_mode(project, row):
+        return True
     return row["assignee_id"] == account["id"] or projects.allows(projects.effective_role(db, project, account), APPROVER_ROLE)
 
 
@@ -500,7 +520,7 @@ def public(row, moment, full=False):
     out = {"number": row["number"], "title": row["title"], "status": row["status"], "assignee": row["assignee_email"],
            "runner": row["claim_runner"] if claim_live(row, moment) else None, "branch": row["branch"],
            "pr_url": row["pr_url"], "updated_at": row["updated_at"], "priority": row["priority"],
-           "depends_on": depends_of(row), "rank": row["rank"]}
+           "depends_on": depends_of(row), "rank": row["rank"], "manual": manual(row)}
     if full:
         out.update(description=row["description"] or "", plan=row["plan"] or "", items=row["items"] or "",
                    comment=row["decision_comment"] or "", note=row["note"] or "")
@@ -893,6 +913,8 @@ def _detail(number, error=None, status=200):
                            can_close=row["status"] in CLOSABLE and can_decide(db, g.project, row, g.account),
                            can_manage=row["status"] not in ("done", "rejected") and can_manage(db, g.project, row, g.account),
                            can_take=can_take(db, g.project, row, g.account, moment), assignees=_runners(db, g.project),
+                           project_auto=projects.autonomy(g.project) == "auto",
+                           can_set_manual=can_manage(db, g.project, row, g.account) and row["status"] not in ("done", "rejected"),
                            activity=_activity(db, g.project, number, task_runs), error=error,
                            ttl_hours=int(CLAIM_TTL.total_seconds() // 3600), shots=shots,
                            can_upload=projects.allows(g.project_role, _att.UPLOAD_ROLE) and row["status"] not in ("done", "rejected"),
@@ -987,6 +1009,25 @@ def task_release(slug, number):
                  project_id=g.project["id"], detail={"number": number, "runner": row["claim_runner"],
                                                      "from": row["assignee_email"],
                                                      "to": to["email"] if to else None, "pool": pool})
+    db.commit()
+    return redirect(url_for("tasks.task_page", slug=slug, number=number))
+
+
+@bp.post("/projects/<slug>/tasks/<int:number>/manual")
+@project_access("viewer")
+def task_manual(slug, number):
+    """Mark the task manual ("1": a person decides its plan, the supervisor leaves it alone) or back to the project's
+    mode ("0"): the assignee, a manager or above, or an admin (can_manage). Audited as `task.manual`."""
+    db, moment = get_db(), auth.now()
+    row = get(db, g.project["id"], number)
+    if row is None or not can_manage(db, g.project, row, g.account):
+        abort(404)
+    value = request.form.get("manual", "")
+    if value not in ("0", "1"):
+        return _detail(number, error='manual is "1" (on) or "0" (off)', status=400)
+    before = set_manual(db, row, value == "1")
+    audit.record(db, "task.manual", _at(moment), account_id=g.account["id"], project_id=g.project["id"],
+                 detail={"number": number, "manual": value == "1", "before": before})
     db.commit()
     return redirect(url_for("tasks.task_page", slug=slug, number=number))
 

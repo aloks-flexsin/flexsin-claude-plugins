@@ -409,3 +409,109 @@ def test_auto_mode_still_refuses_red_ci_and_secrets(app, team, conn, sup):
     outs = sup_mod.merge_step('alpha', http, reader(None, autonomy='auto'), 'origin/main', forge, MERGER)
     assert [o['outcome'] for o in outs] == ['refused', 'refused'] and forge.merges == []
 
+
+
+# ---------- autonomy (decision record 0012, Phase 3b) ----------
+
+def test_in_auto_mode_the_third_round_approves_and_a_manual_task_waits(app, team, conn, sup):
+    http = http_for(app, sup)
+    m = add(team, title='Second')
+    runner = 'alok/second-claude-auto-runner'
+    for _ in (1, 2):
+        post_plan(app, team, m, BAD, runner)
+        assert sup_mod.plan_step('alpha', http, reader(autonomy='auto'), 'origin/main')[0]['decision'] == 'changes'
+    post_plan(app, team, m, BAD, runner)
+    [third] = sup_mod.plan_step('alpha', http, reader(autonomy='auto'), 'origin/main')
+    assert third['decision'] == 'approve' and status(conn, team, m) == 'approved'
+    n = add(team)
+    tasks.set_manual(conn, tasks.get(conn, team['alpha']['id'], n), True)
+    conn.commit()
+    post_plan(app, team, n, GOOD)
+    [held] = sup_mod.plan_step('alpha', http, reader(autonomy='auto'), 'origin/main')
+    assert held['decision'] == 'escalate' and status(conn, team, n) == 'plan_review'
+
+
+def test_a_central_project_in_manual_mode_overrides_an_auto_repository(app, team, conn, sup):
+    projects.set_autonomy(conn, team['alpha']['id'], 'manual')
+    conn.commit()
+    http = http_for(app, sup)
+    m = add(team, title='Second')
+    for _ in (1, 2, 3):
+        post_plan(app, team, m, BAD, 'alok/second-claude-auto-runner')
+        out = sup_mod.plan_step('alpha', http, reader(autonomy='auto'), 'origin/main')
+    assert out[0]['decision'] == 'escalate' and status(conn, team, m) == 'plan_review'
+
+
+def test_task_autonomy_needs_all_three_to_say_auto():
+    assert sup_mod.task_autonomy({'autonomy': 'auto'}, {'autonomy': 'auto'}, {'manual': False}) == 'auto'
+    assert sup_mod.task_autonomy({'autonomy': 'auto'}, {}, {}) == 'auto'
+    assert sup_mod.task_autonomy({'autonomy': 'manual'}, {'autonomy': 'auto'}, {}) == 'manual'
+    assert sup_mod.task_autonomy({'autonomy': 'auto'}, {'autonomy': 'manual'}, {}) == 'manual'
+    assert sup_mod.task_autonomy({'autonomy': 'auto'}, {'autonomy': 'auto'}, {'manual': True}) == 'manual'
+
+
+# ---------- deploy (decision record 0012, Phase 5) ----------
+
+class _Deployer:
+    def __init__(self, codes):
+        self.codes, self.ran = list(codes), []
+
+    def head(self, base_ref):
+        return 'c' * 40
+
+    def run(self, command, sha, timeout):
+        self.ran.append(command)
+        return self.codes.pop(0), 'out'
+
+
+def deploy_reader(deploy, autonomy='auto'):
+    def read(ref, path):
+        if path == '.claude/auto.json':
+            return json.dumps({'autonomy': autonomy, 'deploy': deploy}), 'cfg'
+        return POLICY, 'sha-1'
+    return read
+
+
+def test_a_pass_deploys_once_and_records_it(app, team, conn, sup):
+    http = http_for(app, sup)
+    d = _Deployer([0])
+    [out] = sup_mod.deploy_step('alpha', http, deploy_reader({'command': 'make deploy'}), 'origin/main', d)
+    assert out['outcome'] == 'deployed'
+    assert [r['action'] for r in conn.query("SELECT action FROM audit WHERE action LIKE 'supervisor.deploy.%' ORDER BY at, id")] \
+        == ['supervisor.deploy.started', 'supervisor.deploy.done']
+    state = http('GET', '/api/v1/supervisor/state?project=alpha')[1]
+    assert state['last_deploy']['sha'] == 'c' * 40 and state['last_deploy']['phase'] == 'done'
+    assert sup_mod.deploy_step('alpha', http, deploy_reader({'command': 'make deploy'}), 'origin/main', d) == []
+    assert d.ran == ['make deploy']
+
+
+def test_a_failed_deploy_adds_a_pool_task_and_a_manual_project_deploys_nothing(app, team, conn, sup):
+    http = http_for(app, sup)
+    d = _Deployer([1, 0])
+    [out] = sup_mod.deploy_step('alpha', http, deploy_reader({'command': 'deploy', 'rollback_command': 'undo'}),
+                                'origin/main', d)
+    assert out['outcome'] == 'failed' and d.ran == ['deploy', 'undo']
+    task = tasks.get(conn, team['alpha']['id'], out['task'])
+    assert task['status'] == 'open' and task['assignee_id'] is None and 'failed deploy of ' in task['description']
+    projects.set_autonomy(conn, team['alpha']['id'], 'manual')
+    conn.commit()
+    d2 = _Deployer([0])
+    conn.execute("DELETE FROM audit WHERE action LIKE 'supervisor.deploy.%'")
+    conn.commit()
+    assert sup_mod.deploy_step('alpha', http, deploy_reader({'command': 'deploy'}), 'origin/main', d2) == []
+    assert d2.ran == []
+
+
+def test_the_deploy_route_is_supervisor_only_and_validates(app, team, conn, sup):
+    url = '/api/v1/supervisor/deploys?project=alpha'
+    send = lambda token, body: new_client(app).post(url, json=body, headers={'Authorization': 'Bearer ' + token})
+    assert send(team['token']['dev'], {'phase': 'started', 'sha': 'x'}).status_code == 403
+    assert send(sup, {'phase': 'later', 'sha': 'x'}).status_code == 400
+    assert send(sup, {'phase': 'started'}).status_code == 400
+    assert send(sup, {'phase': 'done', 'sha': 'x'}).status_code == 409
+    assert new_client(app).post('/api/v1/supervisor/deploys?project=nope', json={'phase': 'started', 'sha': 'x'},
+                                headers={'Authorization': 'Bearer ' + sup}).status_code == 404
+    resp = send(sup, {'phase': 'started', 'sha': 'x', 'output': 'y' * 5000})
+    assert resp.status_code == 200 and resp.get_json()['last_deploy']['phase'] == 'started'
+    [row] = audit.rows(conn, 'supervisor.deploy.started')
+    assert len(row['detail']['output']) == 2000

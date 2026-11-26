@@ -200,14 +200,26 @@ may not stick over plain http. The API endpoints do not use the cookie.
   Without a plan the task is `open`; with `plan` and `items` (both or neither) it is `plan_review` with no claim and the
   usual "plan waiting" notification. Answers 201 with `{task}` and writes `task.create` (via `supervisor`) and
   `supervisor.task.add` (number, from, assignee, with_plan) audit rows. **A person decides plans on tasks the supervisor
-  added:** on such a task the plan-decision route turns approve and changes into escalate (`"converted": true`), so the
-  supervisor never approves its own work. Tests: `tests/central/test_supervisor_api.py`.
+  added (manual mode only):** on such a task the plan-decision route turns approve and changes into escalate
+  (`"converted": true`). In auto mode (see **Autonomy** below) the supervisor decides them like any other. Tests: `tests/central/test_supervisor_api.py`.
+- **Autonomy** (decision record 0012, Phase 3b): `project.autonomy` is `auto` (the default) or `manual`; owners and admins
+  switch it on Settings › Repository (`POST /projects/<slug>/autonomy`, audited as `project.autonomy` with from and to).
+  `project_task.manual` (0/1) is set on the task page by the assignee, a manager or above, or the supervisor
+  (`POST /projects/<slug>/tasks/<n>/manual` with `manual=1|0`, audited as `task.manual`); the task page says who decides
+  ("The supervisor (auto mode)" or "A person"). A task is decided in **auto mode** when its project is auto, it is not
+  manual, and the plan-decision body's optional `autonomy` (the caller's repository setting) is not `"manual"`
+  (`tasks.auto_mode`). On a manual task in an auto project the supervisor's approve and changes become `escalate`.
+  `GET /api/v1/supervisor/state` answers `autonomy` and each task's `manual`; the task API shows `manual` too. Two
+  columns are added by `python -m central init-db`. Tests: `tests/central/test_autonomy.py`.
 - **Plan decision** `POST /api/v1/supervisor/tasks/<n>/plan-decision?project=<slug>` with
   `{"decision": "approve" | "changes" | "escalate", "reasons": [...], "policy_sha": "...", "comment": "..."}`. Needs the
   `supervisor` account role (403 otherwise, 401 without a token) and, for approve and changes, membership as manager (it
   calls `tasks.decide`, so the same rules apply: the plan must be waiting, else 409). `changes` without a comment uses the
   reasons as the comment. **Round cap:** the round count is the number of `supervisor.plan.changes` audit rows for the task
-  (no column); a `changes` when it is already 2 becomes `escalate` (`"converted": true`). On a task the supervisor added itself, approve and changes also become `escalate`. `escalate` does not call
+  (no column); a `changes` when it is already 2 becomes `escalate` (`"converted": true`). On a task the supervisor added itself, approve and changes also become `escalate`. Those two rules and the manager membership apply in
+  manual mode only; in **auto mode** the supervisor decides without a membership, decides tasks it added, and a third
+  `changes` becomes `approve` of the latest plan with the reason "the plan was already sent back N times: the supervisor
+  approves the latest plan (auto mode)". `escalate` does not call
   `tasks.decide`: the plan stays in review, the managers are notified (the usual "plan waiting" notification) and a person
   decides. Every call writes one `supervisor.plan.<decision>` audit row (detail: number, policy_sha, reasons, round,
   converted). **Re-running is safe:** when the current plan post already has a supervisor decision the call changes
@@ -230,6 +242,13 @@ may not stick over plain http. The API endpoints do not use the cookie.
   400 without `assignee` or for a member below developer) gives the task to someone else. Supervisor role only (403), 404
   for an unknown project or task, 409 for a done or rejected task. Each change writes `task.release` / `task.reassign` and
   `supervisor.task.release` / `supervisor.task.reassign` (from, to, reason). Tests: `tests/central/test_task_pool.py`.
+- **Deploy record** `POST /api/v1/supervisor/deploys?project=<slug>` with `{"phase": "started" | "done" | "failed" |
+  "rolled_back", "sha", "reasons", "output", "task"}` (decision record 0012, Phase 5). Supervisor role only. It deploys
+  nothing itself; the pass runs the project's deploy command between `started` and the result. One
+  `supervisor.deploy.<phase>` audit row per call, `output` cut to its last 2000 characters; `done`, `failed` and
+  `rolled_back` need an earlier `started` for the same SHA (409). `GET /api/v1/supervisor/state` answers `last_deploy`
+  (`{sha, phase, at}` of the latest row, or null), so a pass deploys each base head once. Recent activity says
+  "deployed", "deploy failed" and "rolled back". Tests: `tests/central/test_supervisor_e2e.py`.
 - **Queue order** `PUT /api/v1/supervisor/order?project=<slug>` with `{"orders": [{"number", "rank", "reason"}]}`. Supervisor
   role only (403 otherwise, 401 without a token). Every number must be a task of the project (404) and every rank a whole
   number of 1 or more, with no number twice (400); on any error nothing is written. A rank equal to the stored `rank` is

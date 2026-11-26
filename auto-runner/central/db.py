@@ -31,6 +31,8 @@ COLUMNS_ADDED = (
     ("project_task", "depends_on", "TEXT"),
     ("project_task", "rank", "INTEGER"),
     ("project", "share_frictions", "INTEGER NOT NULL DEFAULT 1"),
+    ("project", "autonomy", "VARCHAR(8) NOT NULL DEFAULT 'auto'"),
+    ("project_task", "manual", "INTEGER NOT NULL DEFAULT 0"),
 )
 REPO_KEY_INDEX = "CREATE UNIQUE INDEX IF NOT EXISTS project_repo_key ON project (repo_key)"
 

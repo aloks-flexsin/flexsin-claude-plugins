@@ -188,6 +188,17 @@
         "file": {"$ref": "#/$defs/text"},
         "versioning": {"type": "string", "enum": ["semver"]}
       }
+    },
+    "deploy": {
+      "type": "object", "additionalProperties": false,
+      "description": "Deploy after a merge (decision record 0012, Phase 5): in auto mode the Supervisor runs command in a detached worktree of the base head whenever that head was not deployed yet, then checks smoke_url (any 2xx, up to smoke_tries tries, default 3). A failed command or smoke check runs rollback_command (if set) and adds a fix task to the pool. timeout_s caps each command (default 600). No command: nothing is deployed. Secrets the command needs come from the environment, never from this file.",
+      "properties": {
+        "command": {"$ref": "#/$defs/text"},
+        "smoke_url": {"$ref": "#/$defs/text"},
+        "rollback_command": {"$ref": "#/$defs/text"},
+        "smoke_tries": {"$ref": "#/$defs/count"},
+        "timeout_s": {"$ref": "#/$defs/count"}
+      }
     }
   }
 }

@@ -4,6 +4,23 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+### Added
+- Supervisor `watch` (autonomy Phase 5): `autosupervisor.py watch [--every SECONDS]` runs a pass every 15 minutes
+  for every project in `AUTO_SUPERVISOR_PROJECTS` (`slug=clone dir,...`), each with its own clone's policy and
+  settings and its own GitHub repository, until `.auto/STOP`. One project's error does not stop the others.
+- Init adds `.github/workflows/tests.yml` (runs the detected test command on every pull request) when a project has no
+  CI workflow, so the Supervisor has a check to wait for.
+- Supervisor deploy step (autonomy Phase 5): a `deploy` section in `.claude/auto.json` (`command`, `smoke_url`,
+  `rollback_command`, `smoke_tries`, `timeout_s`). In auto mode, after merges, the Supervisor deploys each new base head
+  once in a separate worktree, checks the smoke URL, and on failure rolls back and adds a fix task to the pool. Central
+  records every deploy (`POST /api/v1/supervisor/deploys`, audit `supervisor.deploy.*`, `last_deploy` in the state).
+  Nothing is deployed without a `deploy.command`; no project sets one yet. Unverified against a live deploy.
+- Central: autonomy switch per project (Settings › Repository, owners and admins, audited; default auto) and a per-task
+  "manual" flag on the task page. In auto mode the supervisor decides plans without a manager membership, also on tasks
+  it added, and approves the latest plan after two rounds of changes instead of escalating; a manual task or project
+  keeps the old escalations. The Supervisor pass decides each task in auto mode only when the repository, the central
+  project and the task all say auto. Needs `python -m central init-db` (two columns). Unverified against the live service.
+
 ### Fixed
 - Runner: a run on a central task works only that task's items. The shared queue can hold another task's open items
   (still being built on another branch); the runner used to take the first ready one, so one account's run started

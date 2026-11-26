@@ -121,7 +121,7 @@ def members_page(slug):
 
 def _repository_page(error=None, status=200):
     return render_template("project_repository.html", project=g.project, error=error,
-                           shares_frictions=frictions.shares(g.project),
+                           shares_frictions=frictions.shares(g.project), autonomy=projects.autonomy(g.project),
                            can_manage=projects.allows(g.project_role, "owner")), status
 
 
@@ -155,6 +155,21 @@ def share_frictions_set(slug):
     db = get_db()
     before = frictions.set_sharing(db, g.project["id"], value == "1")
     _record(db, "project.share_frictions", {"from": before, "to": value == "1"})
+    return redirect(url_for("projects.repository_page", slug=slug))
+
+
+@bp.post("/projects/<slug>/autonomy")
+@project_access("owner")
+def autonomy_set(slug):
+    """Owners and admins switch the project between "auto" (the supervisor decides plans and merges) and "manual" (a
+    person does, as before). Audited as `project.autonomy`."""
+    value = request.form.get("autonomy", "")
+    db = get_db()
+    try:
+        before = projects.set_autonomy(db, g.project["id"], value)
+    except projects.ProjectError as exc:
+        return _repository_page(error=str(exc), status=400)
+    _record(db, "project.autonomy", {"from": before, "to": value})
     return redirect(url_for("projects.repository_page", slug=slug))
 
 

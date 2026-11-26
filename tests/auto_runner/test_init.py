@@ -257,3 +257,38 @@ def test_master_repo_needs_a_master_rule(tmp_path):
     ready(p)                                           # writes rules for main only
     cfg = ar.autocfg.load(p)
     assert any('git checkout master' in x for x in safe.preflight(p, cfg, 'master'))
+
+
+# ---------- a minimal CI workflow (decision record 0012, Phase 5) ----------
+
+def test_apply_adds_a_ci_workflow_when_the_project_has_none(tmp_path, capsys):
+    p = make_repo(tmp_path)
+    (p / 'package.json').write_text(json.dumps({'scripts': {'test': 'jest'}}), encoding='utf-8')
+    ai.main(['--project', str(p), '--local'])
+    assert '.github/workflows/tests.yml: create' in capsys.readouterr().out and not (p / '.github').exists()
+    ai.main(['--project', str(p), '--local', '--apply'])
+    text = (p / '.github' / 'workflows' / 'tests.yml').read_text(encoding='utf-8')
+    assert 'pull_request' in text and 'actions/setup-node@v4' in text and text.rstrip().endswith('- run: npm test')
+    ai.main(['--project', str(p), '--remove', '--apply'])                 # unedited: init's remove takes it away
+    assert not (p / '.github' / 'workflows' / 'tests.yml').exists()
+
+
+def test_an_existing_workflow_or_no_tests_means_no_ci_file(tmp_path, capsys):
+    p = make_repo(tmp_path)
+    (p / 'tests').mkdir()
+    (p / 'tests' / 'test_a.py').write_text('', encoding='utf-8')
+    (p / '.github' / 'workflows').mkdir(parents=True)
+    (p / '.github' / 'workflows' / 'ci.yaml').write_text('name: ci\n', encoding='utf-8')
+    ai.main(['--project', str(p), '--local', '--apply'])
+    assert sorted(f.name for f in (p / '.github' / 'workflows').iterdir()) == ['ci.yaml']
+    q = make_repo(tmp_path, name='empty')
+    ai.main(['--project', str(q), '--local', '--apply'])
+    assert not (q / '.github').exists()
+
+
+@pytest.mark.parametrize('cmd,setup', [('python -m pytest -q', 'setup-python'), ('dotnet test', 'setup-dotnet'),
+                                       ('go test ./...', 'setup-go'), ('cargo test', 'checkout')])
+def test_ci_workflow_per_stack(cmd, setup):
+    text = ai.ci_workflow(cmd)
+    assert setup in text and ('- run: ' + cmd) in text
+    assert ai.ci_workflow('make check') is None

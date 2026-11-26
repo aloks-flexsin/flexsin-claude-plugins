@@ -175,6 +175,25 @@ def set_repo_url(db, project_id, repo_url):
     return before["repo_url"]
 
 
+AUTONOMY = ("auto", "manual")
+
+
+def autonomy(project):
+    """A project's autonomy: "auto" (the default; the supervisor decides plans and merges) or "manual" (a person
+    decides, as before decision record 0012). A database that has not run init-db yet has no column: "auto"."""
+    value = (project or {}).get("autonomy")
+    return value if value in AUTONOMY else "auto"
+
+
+def set_autonomy(db, project_id, value):
+    """Switch a project to "auto" or "manual"; -> the value before. The caller audits and commits."""
+    if value not in AUTONOMY:
+        raise ProjectError('autonomy is "auto" or "manual"')
+    before = autonomy(db.query_one("SELECT * FROM project WHERE id = ?", (project_id,)))
+    db.execute("UPDATE project SET autonomy = ? WHERE id = ?", (value, project_id))
+    return before
+
+
 def get_by_slug(db, slug):
     return db.query_one("SELECT * FROM project WHERE slug = ?", ((slug or "").lower(),))
 
