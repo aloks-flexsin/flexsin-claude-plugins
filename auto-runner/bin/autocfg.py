@@ -4,6 +4,8 @@ Config loader for the auto-runner plugin (stdlib only).
 The project file is `.claude/auto.json`; every key is optional and a missing file means all defaults:
 
     test_command     command that proves the suite is green ('' = none; then check_only must be true to run)
+    item_test_command  command that tests one item's own test files ('' = always run test_command); `{tests}` is replaced by
+                     the quoted paths, or they are appended when it has no `{tests}`
     check_only       true = no tests exist; every status and log then says "unverified: no tests"
     queue_file       the one file a person reads (default .auto/queue.md)
     rules_files      files the agent must read first (none assumed; list them)
@@ -57,6 +59,7 @@ KNOWN_BRANCHES = ('main', 'master', 'trunk', 'develop')
 DEFAULTS = {
     'test_command': '',
     'check_command': '',
+    'item_test_command': '',
     'path_prepend': [],
     'check_only': False,
     'queue_file': '.auto/queue.md',

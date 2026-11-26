@@ -941,3 +941,117 @@ def test_stop_at_percent_is_validated(project):
         with pytest.raises(ar.autocfg.ConfigError):
             ar.autocfg.load(project)
     assert ar.USAGE_LIMIT_DEFAULTS['stop_at_percent'] == 90
+
+
+# ---- T1: an item's own test files and the per-item test command
+
+def _repo_with_commit(tmp_path, files):
+    wt = tmp_path / 'wt'
+    wt.mkdir()
+    for args in (['init', '-q'], ['config', 'user.email', 'a@b.c'], ['config', 'user.name', 'a']):
+        subprocess.run(['git', '-C', str(wt), *args], check=True)
+    for name, text in files.items():
+        f = wt / name
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text, encoding='utf-8')
+    subprocess.run(['git', '-C', str(wt), 'add', '-A'], check=True)
+    subprocess.run(['git', '-C', str(wt), 'commit', '-q', '-m', 'x'], check=True)
+    sha = subprocess.run(['git', '-C', str(wt), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
+    return wt, sha
+
+
+def test_item_tests_names_existing_files_and_commit_test_files(tmp_path):
+    wt, sha = _repo_with_commit(tmp_path, {'tests/test_a.py': '', 'src/mod.py': '', 'web/x.spec.ts': '', 'tests/data.json': '',
+                                           'other/readme.md': ''})
+    (tmp_path / 'outside.py').write_text('', encoding='utf-8')
+    block = ('- [ ] **T9 x.** do it\n  *Acceptance:* `python -m pytest -q tests/test_a.py tests/test_gone.py ../outside.py` '
+             'and src/mod.py passes\n')
+    assert ar.item_tests(wt, block, [sha]) == ['src/mod.py', 'tests/data.json', 'tests/test_a.py', 'web/x.spec.ts']
+    # a named path that does not exist and one outside the worktree are dropped; a commit's non-test file is not added
+    assert ar.item_tests(wt, '- [ ] **T9 x.**\n  *Acceptance:* tests/test_gone.py ../outside.py\n', []) == []
+    assert ar.item_tests(wt, '- [ ] **T9 x.**\n', [sha]) == ['tests/data.json', 'tests/test_a.py', 'web/x.spec.ts']
+
+
+def test_item_test_cmd():
+    assert ar.item_test_cmd({'item_test_command': ''}, ['tests/a.py']) is None
+    assert ar.item_test_cmd({'item_test_command': 'pytest -q {tests}'}, []) is None
+    assert ar.item_test_cmd({}, ['tests/a.py']) is None
+    assert ar.item_test_cmd({'item_test_command': 'pytest -q {tests} -x'}, ['tests/a.py', 'tests/b.py']) == \
+        'pytest -q tests/a.py tests/b.py -x'
+    assert ar.item_test_cmd({'item_test_command': 'pytest -q'}, ['tests/a.py']) == 'pytest -q tests/a.py'
+    import shlex
+    cmd = ar.item_test_cmd({'item_test_command': 'pytest {tests}'}, ['my tests/a.py', 'b.py'])
+    parts = cmd.split(' ', 1)[1]
+    if os.name == 'nt':
+        assert parts == '"my tests/a.py" b.py'
+    else:
+        assert shlex.split(parts) == ['my tests/a.py', 'b.py']
+
+
+def test_config_accepts_item_test_command(tmp_path):
+    (tmp_path / '.claude').mkdir()
+    (tmp_path / '.claude' / 'auto.json').write_text('{"item_test_command": "pytest -q {tests}"}', encoding='utf-8')
+    assert ar.autocfg.load(tmp_path)['item_test_command'] == 'pytest -q {tests}'
+    assert ar.autocfg.load(tmp_path / 'none')['item_test_command'] == ''
+
+
+# ---- T2: the item's own tests run after each item
+
+ITEM_QUEUE = """# Queue
+
+- [ ] **A1 First thing.** Build the first thing in a small file, with enough words to pass any length rule we might have.
+  *Acceptance:* `python -m pytest -q tests/test_a.py` passes.
+
+- [ ] **A2 Second thing.** Build the second thing in a small file, with enough words to pass any length rule we might have.
+  *Acceptance:* tests/test_missing.py passes.
+
+## Needs a person
+- nothing
+"""
+ITEM_CMD = 'runitem {tests}'
+
+
+def item_project(project, **kw):
+    (project / 'tests').mkdir()
+    (project / 'tests' / 'test_a.py').write_text('', encoding='utf-8')
+    sh(project, 'add', 'tests/test_a.py')
+    sh(project, 'commit', '-q', '-m', 'tests')
+    set_cfg(project, **kw)
+    (project / '.auto' / 'queue.md').write_text(ITEM_QUEUE, encoding='utf-8')
+
+
+def recording_tests(commands, *codes):
+    seq = list(codes)
+    return lambda command, cwd: (commands.append(command) or (seq.pop(0) if seq else 0), 'fake suite')
+
+
+def scopes(p):
+    return [e['detail']['scope'] for e in events(p) if e['type'] == 'tests']
+
+
+def test_item_run_gets_the_named_test_file_and_scope_item(project):
+    item_project(project, item_test_command=ITEM_CMD)
+    commands = []
+    ar.run(project, max_iterations=2, claude=fake_agent(), tests=recording_tests(commands))
+    assert commands == ['runitem tests/test_a.py', GREEN]
+    assert scopes(project) == ['item', 'full']          # A2 names no existing test file: the full command, scope full
+    assert all(ar.autoevents.validate(e) == [] for e in events(project))
+
+
+def test_empty_item_test_command_runs_the_full_command_every_time(project):
+    item_project(project, item_test_command='')
+    commands = []
+    ar.run(project, max_iterations=2, claude=fake_agent(), tests=recording_tests(commands))
+    assert commands == [GREEN, GREEN]
+    assert scopes(project) == ['full', 'full']
+
+
+def test_red_item_run_fix_note_names_the_item_command(project):
+    item_project(project, item_test_command=ITEM_CMD, review={'max_fix_rounds': 1})
+    commands, calls = [], []
+    first = fake_agent(calls=calls)
+    claude = lambda cmd, cwd: first(cmd, cwd) if not calls else (calls.append(cmd) or (0, ''))   # fix round: nothing to commit
+    ar.run(project, max_iterations=2, claude=claude, tests=recording_tests(commands, 1, 0))
+    assert commands[0] == 'runitem tests/test_a.py'
+    note = next(a for a in calls[1] if 'own test run (' in a)
+    assert 'own test run (runitem tests/test_a.py)' in note and f'({GREEN})' not in note
