@@ -127,6 +127,15 @@
         "daily_budget_usd": {"$ref": "#/$defs/amount"}
       }
     },
+    "sandbox": {
+      "type": "object", "additionalProperties": false,
+      "description": "Claude Code's sandbox for each item's agent. enabled (default true): where the sandbox works (macOS, Linux and WSL2 with bubblewrap and socat) the agent runs every shell command inside it with no allowlist; elsewhere it keeps the shell allowlist. required (default false): refuse to start when the sandbox is not available. allowed_domains: hosts sandboxed commands may reach (default github.com, *.github.com, pypi.org, files.pythonhosted.org, registry.npmjs.org).",
+      "properties": {
+        "enabled": {"$ref": "#/$defs/flag"},
+        "required": {"$ref": "#/$defs/flag"},
+        "allowed_domains": {"$ref": "#/$defs/texts"}
+      }
+    },
     "usage_limit": {
       "type": "object", "additionalProperties": false,
       "description": "When Claude's usage limit stops an item: wait for the reset (up to max_wait_minutes, default 360) and continue, instead of stopping. Off by default. stop_at_percent (1-100, default 90; 100 = never) stops the run between items when a plan-usage window reaches it.",

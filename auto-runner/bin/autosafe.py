@@ -40,6 +40,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -371,6 +372,35 @@ def central_problems(cfg, env=None):
             + ', '.join(missing) + '. Set them, or set "central.enabled": false to keep answers local.']
 
 
+SANDBOX_FIX = ('The Claude Code sandbox works on macOS, and on Linux or WSL2 with bubblewrap and socat installed '
+               '(`sudo apt-get install bubblewrap socat`); on Windows run Claude Code inside a WSL2 distribution')
+
+
+def sandbox_available(platform=None, which=None):
+    """-> (True, '') when Claude Code's sandbox can run here, else (False, why). macOS always; Linux (WSL2 included) when
+    `bwrap` and `socat` are on PATH; native Windows never (Claude Code then runs commands unsandboxed)."""
+    platform = sys.platform if platform is None else platform
+    which = shutil.which if which is None else which
+    if platform == 'darwin':
+        return True, ''
+    if platform.startswith('linux'):
+        missing = [t for t in ('bwrap', 'socat') if not which(t)]
+        return (False, 'missing ' + ' and '.join(missing)) if missing else (True, '')
+    return False, f'not supported on {platform}'
+
+
+def sandbox_problems(cfg, available=None):
+    """A refusal only when `sandbox.required` is true and the sandbox cannot run here; otherwise the runner keeps the
+    shell allowlist and says so."""
+    s = cfg.get('sandbox') if isinstance(cfg, dict) else None
+    s = s if isinstance(s, dict) else {}
+    if s.get('enabled') is False or s.get('required') is not True:
+        return []
+    ok, why = (available or sandbox_available)()
+    return [] if ok else [f'sandbox.required is true but the sandbox is not available ({why}). {SANDBOX_FIX}, or set '
+                          '"sandbox": {"required": false} to run with the shell allowlist instead.']
+
+
 def capability_problems(project, cfg, doctor=None):
     """One message when browser acceptance is on and a capability it needs is missing; [] otherwise."""
     if not browser_enabled(cfg):
@@ -527,7 +557,7 @@ def journey_problems(cfg):
 def preflight_groups(project, cfg, base, doctor=None, env=None):
     """-> [(group, message)] for every problem, in check order; empty means the runner may start. The group is a fixed
     code per check (worktree, runner_name, model, base_url, journey, central, env_file, path_prepend, publish, principles,
-    capability, no_commit, no_tests, settings), safe to send as a friction subject. Same arguments as `preflight`."""
+    capability, sandbox, no_commit, no_tests, settings), safe to send as a friction subject. Same arguments as `preflight`."""
     problems = []
 
     def add(group, messages):
@@ -544,6 +574,7 @@ def preflight_groups(project, cfg, base, doctor=None, env=None):
     add('publish', publish_problems(project, cfg, base, env))
     add('principles', principles_problems(project, cfg))
     add('capability', capability_problems(project, cfg, doctor))
+    add('sandbox', sandbox_problems(cfg))
     if not has_commit(project):
         add('no_commit', ['The repository has no commit yet (the worktree is made from a commit). Commit once, then run again.'])
     if not cfg['test_command'] and not cfg['check_only']:
