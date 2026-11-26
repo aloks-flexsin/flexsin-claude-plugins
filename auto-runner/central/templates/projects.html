@@ -1,13 +1,24 @@
 {% extends "base.html" %}
 {% block title %}Projects{% endblock %}
 {% block content %}
-<h1>Projects</h1>
-<p class="lead">Every project you can see, those needing you first.</p>
+<div class="page-head">
+  <div><h1>Projects</h1>
+    <p class="lead">Every project you can see, those needing you first.</p></div>
+  <div class="head-actions">
+    <form method="get" action="{{ url_for('projects.projects_page') }}" class="search" role="search">
+      <label class="sr-only" for="p-q">Search projects</label>
+      <input id="p-q" type="search" name="q" value="{{ q }}" placeholder="Search projects" maxlength="200">
+    </form>
+    {% if is_admin %}<a class="btn primary" href="#create" data-open="create">Create a project</a>{% endif %}
+  </div>
+</div>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
-{% if projects %}
+{% if q and not projects %}
+<div class="empty"><p>No project matches “{{ q }}”. <a href="{{ url_for('projects.projects_page') }}">Show all</a></p></div>
+{% elif projects %}
 <div class="project-cards">
   {% for p in projects %}
-  <a class="project-card" href="{{ url_for('projects.overview_page', slug=p.slug) }}">
+  <a class="project-card" href="{{ url_for('tasks.tasks_page', slug=p.slug) }}">
     <span class="project-card-name">{% if p.nav.blockers %}<svg class="mk mk-bad" viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Blocked"><path d="M6 1l5.5 10H.5z" fill="currentColor"/></svg>{% elif p.nav.approval %}<svg class="mk mk-attn" viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Waits for you"><circle cx="6" cy="6" r="5" fill="currentColor"/></svg>{% elif p.nav.live_runs %}<svg class="mk mk-run" viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Running"><rect x="1" y="1" width="10" height="10" rx="1.5" fill="currentColor"/></svg>{% endif %} {{ p.name }}</span>
     <span class="muted">{{ (p.repo_url or "no repository yet") | replace("https://", "") | replace(".git", "") }}</span>
     <span class="project-card-meta">
@@ -24,7 +35,7 @@
 <div class="empty"><p>You are not a member of any project yet. An owner or admin invites you from the project's Settings.</p></div>
 {% endif %}
 {% if is_admin %}
-<details class="card"{% if error %} open{% endif %}>
+<details class="card" id="create"{% if error %} open{% endif %}>
 <summary><strong>Create a project</strong></summary>
 <form method="post" action="{{ url_for('projects.project_create') }}" class="stack">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

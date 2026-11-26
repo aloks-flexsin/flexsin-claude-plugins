@@ -76,7 +76,7 @@ def test_my_work_for_the_assignee_a_manager_and_a_viewer(app, team, conn, clock)
     assert 'Waiting for you <span class="pill attention">2</span>' in manager            # the plan and the blocker
     assert 'Which colour?' in manager and 'B-1' in manager
     viewer = team['clients']['viewer'].get('/my').get_data(as_text=True)
-    assert 'No plans or blockers wait for you.' in viewer
+    assert 'No plan or blocker needs you.' in viewer
     assert 'Nothing is in progress.' in viewer                       # a plan waiting for a person is not runner work
 
 

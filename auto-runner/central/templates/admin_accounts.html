@@ -3,9 +3,11 @@
 {% from "_tabs.html" import settings_tabs, admin_tabs %}
 {% block title %}Accounts{% endblock %}
 {% block content %}
+<h1>Admin</h1>
+<p class="lead">Accounts of everyone who can sign in, the log of every notification sent, and where runners got stuck.</p>
 {{ admin_tabs('accounts') }}
 <div class="page-head">
-  <div><h1>Accounts</h1><p class="lead">Everyone who can sign in, across all projects. To give someone a project, invite
+  <div><h2>Accounts</h2><p class="lead">Everyone who can sign in, across all projects. To give someone a project, invite
     them from the project's Settings › Members instead: that adds the account and the membership in one step.
     <a href="{{ url_for('admin.notifications_log') }}">Notification log</a> ·
     <a href="{{ url_for('frictions.frictions_page') }}">Runner frictions</a></p></div>

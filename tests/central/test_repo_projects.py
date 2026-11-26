@@ -69,7 +69,7 @@ def test_changing_the_repository_to_a_taken_one_is_refused(app, conn):
 def test_the_form_fills_in_the_slug_and_refuses_a_taken_repository(world, conn):
     admin = world['clients']['admin']
     resp = post(admin, '/projects', slug='', name='', repo_url=FORMS[0])
-    assert resp.status_code == 302 and resp.headers['Location'].endswith('/projects/case-study-va')
+    assert resp.status_code == 302 and resp.headers['Location'].endswith('/projects/case-study-va/tasks')
     resp = post(admin, '/projects', slug='', name='', repo_url=FORMS[3])
     assert resp.status_code == 400 and 'already belongs to project' in resp.get_data(as_text=True)
 

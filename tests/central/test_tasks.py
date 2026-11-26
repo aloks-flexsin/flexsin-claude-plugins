@@ -323,7 +323,6 @@ def test_a_closed_task_says_why_and_by_whom_and_takes_no_screenshots(app, team, 
     page = team['clients']['dev'].get('/projects/alpha/tasks/%d' % n).get_data(as_text=True)
     assert 'Why it was closed' in page and 'Not needed any more.' in page and 'Closed by' in page
     assert "Runner's last report" not in page and 'Add screenshots' not in page
-    assert '<span class="count" title="open tasks">' in page and ' open tasks</span>' in page
 
 
 def test_item_labels_say_what_is_true(app, team, conn):

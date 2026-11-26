@@ -172,7 +172,7 @@ def test_only_admins_create_projects(world, conn):
         assert post(world['clients'][who], '/projects', slug='gamma', name='Gamma', repo_url=REPO).status_code == 404
     assert projects.get_by_slug(conn, 'gamma') is None
     resp = post(world['clients']['admin'], '/projects', slug='Gamma', name='Gamma', repo_url=' %s ' % REPO)
-    assert resp.status_code == 302 and resp.headers['Location'].endswith('/projects/gamma')
+    assert resp.status_code == 302 and resp.headers['Location'].endswith('/projects/gamma/tasks')
     gamma = projects.get_by_slug(conn, 'gamma')
     [row] = audit.rows(conn, 'project.create')
     assert row['account_id'] == world['accounts']['admin']['id'] and row['project_id'] == gamma['id']

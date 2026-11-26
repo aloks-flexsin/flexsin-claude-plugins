@@ -556,6 +556,22 @@ harness cannot copy.
 Remove a finished worktree with `git worktree remove <folder>` (unlink any shared folder junction first so the real one is never touched).
 
 ## Central sidebar (task 22)
-The central service's pages now sit in a left sidebar (My work with its waiting count, Projects, Admin for admins,
-theme switch and Settings); the top bar keeps the brand, the bell and the account menu. Project pages keep their
-header and tabs. My work is two columns (waiting and done; progress and runners). A project's Tasks board has Recent activity and Runners below it. The Projects list shows those needing you first, with a marker. Every page section is a panel (task, blockers, runs, settings and admin pages share it). Settings (Account, My tokens) and Admin (Accounts, Notification log, Runner frictions) have section tabs. The Task page keeps its main and side columns, project settings keep their Members, Repository and Machine tokens tabs, and the signed-out pages keep their cards. Every page in `docs/designs` is covered.
+The central service's pages follow the approved design in `docs/designs` (checked side by side, page by page, at 1366 px).
+- **Frame.** A left sidebar: My work with its waiting count and, for people in more than one project, a filter per
+  project with a marker (waits for you, running, blocked) and a legend; Projects; Admin (Accounts, Notification log,
+  Runner frictions) for admins; a Light | Dark switch, Settings and Log out. The top bar keeps the brand with
+  "Updated … ago", the bell and the account menu. On a narrow screen the sidebar becomes a row above the content.
+- **Project page.** `/projects/<slug>` opens the board (it replaced the Overview). Its head has the repository, your
+  role, the members and the Blockers (with the waiting count), Project settings and New task buttons; there are no
+  tabs. The board has five columns (Open, Planning, Needs approval, Ready, Building; Open has a + to add a task);
+  finished tasks are under History below it. The lower panels switch with plain links: Recent activity | History
+  (`?feed=history`) and Runners | Runs (`?side=runs`).
+- **Other project pages** (task, new task, runs, blockers, blocker, settings) carry a breadcrumb back to the board and
+  their own name as the heading. The task page puts facts, activity and runs in its side column; the blocker page its
+  context (if late, if wrong, assumptions) and answers; runs its runners; new task "What happens next"; project
+  settings the roles.
+- **My work** has two columns: Waiting for you (or a "Nothing waiting" note) and Recently done; In progress grouped
+  into My progress and Team progress, then your runners. Notifications and Blockers are two columns (waiting, done).
+- **Projects** shows those needing you first, three to a row, with a search (`?q=`) and, for admins, Create a project.
+- **Settings** (Account, My tokens) and **Admin** (Accounts, Notification log, Runner frictions) have section tabs
+  under the page heading; Account is two columns. Signing in a computer (`/device`) has no sidebar.

@@ -708,11 +708,12 @@ BOARD_COLUMNS = (("open", "Open", ("open",)),
                  ("planning", "Planning", ("planning", "changes_requested")),
                  ("approval", "Needs approval", ("plan_review",)),
                  ("ready", "Ready", ("approved", "queued")),
-                 ("building", "Building", ("building",)),
-                 ("done", "Done", ("done", "rejected")))
+                 ("building", "Building", ("building",)))
+DONE_STATUSES = ("done", "rejected")    # finished tasks leave the board for the History panel below it (design)
 
 
-DONE_CAP = 20                       # cards shown in the board's Done column
+RECENT_RUNS = 6                     # rows in the board's Runs panel
+DONE_CAP = 20                       # rows shown in the board's History panel
 TASK_VIEW_MAX_AGE = 365 * 24 * 3600
 
 
@@ -741,7 +742,8 @@ def _list_page():
                    for k, label, statuses in BOARD_COLUMNS]
         for c in columns:
             c["total"] = len(c["rows"])
-        next(c for c in columns if c["key"] == "done")["rows"] = columns[-1]["rows"][:DONE_CAP]
+        finished = sorted((r for r in rows if r["status"] in DONE_STATUSES), key=lambda r: r["updated_at"], reverse=True)
+        done = {"rows": finished[:DONE_CAP], "total": len(finished)}
         shown = [r for c in columns for r in c["rows"]]
     else:
         if state not in [t["key"] for t in tabs]:
@@ -755,8 +757,14 @@ def _list_page():
             r["progress"] = _runs.task_progress([x for x in task_runs if x["task"] == r["number"]], r["items"])
     lower = None
     if view == "board":
-        from . import shell as _shell          # the board's lower panels: recent activity and runners
-        lower = _shell.overview(db, g.project, g.account, g.get("project_role"), moment)
+        from . import shell as _shell          # the board's lower panels: activity or history, runners or runs
+        lower = _shell.board_lower(db, g.project, g.account, moment)
+        lower["done"] = done
+        lower["feed"] = "history" if request.args.get("feed") == "history" else "activity"
+        lower["side"] = "runs" if request.args.get("side") == "runs" else "runners"
+        if lower["side"] == "runs":
+            from . import runs as _runs
+            lower["runs"] = _runs.summarise(_runs.project_events(db, g.project["id"]), moment)[:RECENT_RUNS]
     response = make_response(render_template("tasks.html", project=g.project, tabs=tabs, state=state, tasks=shown,
                                              mine=mine, q=q, view=view, columns=columns, lower=lower,
                                              any_tasks=bool(for_project(db, g.project["id"])), can_add=_can_add(db)))

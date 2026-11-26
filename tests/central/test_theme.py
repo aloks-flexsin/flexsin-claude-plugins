@@ -60,7 +60,7 @@ def test_stylesheet_no_longer_follows_the_system_setting():
 # --- L2: the dark mode toggle -------------------------------------------------------------------------------------
 
 def _theme_form(page):
-    start = page.index('<form method="post" class="theme-form"')
+    start = page.index('<form method="post" class="theme-form')
     return page[start:page.index('</form>', start)]
 
 
@@ -79,7 +79,7 @@ def test_posting_dark_sets_the_cookie_and_the_next_page_is_dark(signed_in):
     page = signed_in.get('/my').get_data(as_text=True)
     assert 'data-theme="dark"' in _html_tag(page)
     form = _theme_form(page)
-    assert '>Light mode</button>' in form and 'name="theme" value="light"' in form
+    assert 'value="dark" aria-pressed="true">Dark</button>' in form and 'value="light" aria-pressed="false"' in form
 
 
 def test_posting_light_switches_back(signed_in):
@@ -91,12 +91,12 @@ def test_posting_light_switches_back(signed_in):
     page = signed_in.get('/my').get_data(as_text=True)
     assert 'data-theme="light"' in _html_tag(page)
     form = _theme_form(page)
-    assert '>Dark mode</button>' in form and 'name="theme" value="dark"' in form
+    assert 'value="light" aria-pressed="true">Light</button>' in form and 'value="dark" aria-pressed="false"' in form
 
 
 def test_signed_out_toggle_works_and_returns_to_the_page(client):
     form = _theme_form(client.get('/signin').get_data(as_text=True))
-    assert '>Dark mode</button>' in form and 'name="next" value="/signin"' in form
+    assert 'name="theme" value="dark"' in form and 'name="next" value="/signin"' in form
     resp = _post_theme(client, 'dark', next_path='/signin', csrf_from='/signin')
     assert resp.status_code == 302 and resp.headers['Location'].endswith('/signin')
     assert 'data-theme="dark"' in _html_tag(client.get('/signin').get_data(as_text=True))

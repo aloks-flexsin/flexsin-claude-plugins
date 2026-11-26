@@ -183,7 +183,7 @@ def api_beat():
 
 # ---------- on the pages: state in words, and Pause / Resume / Stop ----------
 #
-# Overview, Runs and My work list runners. Each runner's person and admins (the account role, not a project role) get
+# The board, Runs and My work list runners. Each runner's person and admins (the account role, not a project role) get
 # Pause, Resume and Stop; everyone else sees the runner without buttons and gets 404 if they post. Each action asks
 # first (`data-confirm` dialog, or `ui.confirm_page` without JavaScript), sets `control` (what the next beat returns)
 # and writes an audit row `runner.pause`, `runner.resume` or `runner.stop`.

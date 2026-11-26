@@ -3,8 +3,10 @@
 {% from "_tabs.html" import settings_tabs, admin_tabs %}
 {% block title %}My tokens{% endblock %}
 {% block content %}
+<h1>Settings</h1>
+<p class="lead">{{ g.account.email }}{% if g.account.role == "admin" %} · site admin{% endif %}</p>
 {{ settings_tabs('tokens') }}
-<h1>My tokens</h1>
+<h2>My tokens</h2>
 <p class="lead">One token per computer you signed in from Claude. Each works for the projects where you are a developer
   or above, stops working after {{ idle_days }} days without use, and can be revoked here at any time.</p>
 {% if tokens %}

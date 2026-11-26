@@ -196,7 +196,7 @@ dialog.confirm-dialog p{color:var(--muted);margin:0}
 .feed li{display:flex;justify-content:space-between;gap:12px;padding:11px 16px;border-top:1px solid var(--line);font-size:14px}
 .feed li:first-child{border-top:0}
 .feed time{color:var(--muted);white-space:nowrap}
-.project-cards{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));margin:0 0 22px}
+.project-cards{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));margin:0 0 22px}
 .project-card{display:flex;flex-direction:column;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;color:var(--text)}
 .project-card:hover{border-color:var(--brand);text-decoration:none}
 .project-card-name{font-size:17px;font-weight:700}
@@ -234,7 +234,7 @@ input.wide{min-width:min(520px,100%)}
 .view-toggle a{padding:5px 12px;border-radius:8px;color:var(--muted);font-weight:500;font-size:14px}
 .view-toggle a:hover{text-decoration:none;color:var(--text)}
 .view-toggle a[aria-current=page]{background:var(--brand-soft);color:var(--brand);font-weight:600}
-.board{display:grid;grid-template-columns:repeat(6,minmax(200px,1fr));gap:12px;align-items:start;overflow-x:auto}
+.board{display:grid;grid-template-columns:repeat(5,minmax(200px,1fr));gap:12px;align-items:start;overflow-x:auto}
 .board-col{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);box-shadow:none;padding:10px;margin:0}
 .board-col h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:2px 4px 10px}
 .board-col .count{font-weight:500;opacity:.8}
@@ -451,3 +451,99 @@ ul.plain{padding-left:18px}
 .block>.list .list-row:first-child,.block>.feed li:first-child{border-top:0}
 .block .cards{margin-top:4px}
 .col-foot{margin:0;font-size:13px;text-align:right}
+
+/* Design pass (docs/designs): board of five columns, finished tasks under History, toggled lower panels. */
+.board-col{background:var(--neutral-soft,#eef0f3);min-height:280px;box-sizing:border-box}
+.board-col h2{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px}
+.board-col.attn h2{color:var(--attn)}
+a.col-add{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;margin:-6px -4px -6px 0;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--brand);font-size:18px;font-weight:500}
+a.col-add:hover{background:var(--brand-soft);border-color:var(--brand);text-decoration:none}
+.done-note{font-size:13px;color:var(--muted);margin:10px 2px 0}
+.lower{margin-top:20px}
+.block-head .toggle{margin:0}
+.toggle{display:inline-flex;background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:3px;flex-wrap:wrap}
+.toggle a{padding:7px 12px;border-radius:7px;color:var(--muted);font-size:13px;font-weight:500;line-height:1.2}
+.toggle a:hover{text-decoration:none;color:var(--text)}
+.toggle a[aria-current=page]{background:var(--brand-soft);color:var(--brand);font-weight:600}
+.block-head:has(.toggle){align-items:center}
+.feed li{align-items:flex-start}
+.feed li>.grow{line-height:1.45}
+.feed .sub{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;margin-top:7px}
+.dot.info{background:var(--info)}.dot.attn{background:var(--attn-mark,#c27a00)}.dot.bad{background:var(--bad-mark,#c8382a)}
+.dot.ok{background:var(--ok-mark,#1f8a4c)}.dot.off{background:transparent;border:2px solid var(--muted);width:6px;height:6px}
+.col-foot{text-align:left;margin-top:8px}
+
+/* Design pass: the frame. "Updated" beside the brand, a Light | Dark switch, Log out in the sidebar, My work's
+   per-project filters with markers and a legend; the content uses the full width beside the sidebar. */
+.updated{color:var(--muted);font-size:13px;display:inline-flex;align-items:center;gap:6px;margin-left:-4px}
+.live-dot{width:7px;height:7px;border-radius:50%;background:var(--ok-mark)}
+.shell main{max-width:1440px;margin:0;padding:24px 32px 48px}
+.side{flex-basis:240px}
+.side-item.sub{padding-left:24px}
+.side a.side-item .pill{margin-left:auto}
+.legend{font-size:12px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;padding:6px 10px 0}
+.legend span{display:inline-flex;align-items:center;gap:4px}
+.mk{flex:none;display:inline-flex}
+.seg{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px;margin:0 0 4px}
+.seg button{flex:1;font:inherit;font-size:13px;font-weight:500;border:0;border-radius:7px;background:none;color:var(--muted);cursor:pointer;min-height:34px}
+.seg button[aria-pressed=true]{background:var(--surface);color:var(--text);box-shadow:var(--shadow);font-weight:600}
+.mini-seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:2px;margin:0}
+.mini-seg button{font:inherit;font-size:12px;border:0;background:none;color:var(--muted);padding:6px 10px;border-radius:999px;cursor:pointer;min-height:32px}
+.mini-seg button[aria-pressed=true]{background:var(--brand-soft);color:var(--brand);font-weight:600}
+.side-out{margin:0}
+[data-theme="dark"] .board-col{background:#141922}
+@media (max-width:820px){
+  .updated{display:none}
+  .shell main{padding:20px 14px 40px}
+  .side .legend{display:none}
+  .seg{margin:0}
+}
+
+/* Design pass: My work. Progress grouped into mine and the team's; a dashed note when nothing waits. */
+.label-h{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 2px;display:flex;align-items:center;gap:8px}
+.block-head+.label-h{margin-top:4px}
+.pill.off{background:var(--neutral-soft);color:var(--neutral)}
+.progress-row{align-items:center}
+.progress-row .progress{width:150px;flex:none}
+.note-empty{display:flex;gap:10px;align-items:flex-start;border:1px dashed var(--line);border-radius:10px;padding:12px 14px;font-size:14px;color:var(--muted);margin:0}
+.note-empty strong{color:var(--text)}
+
+/* Design pass: task page. Title as the heading with its status on the right; facts, activity and runs in the side. */
+.task-head h1{margin:0 0 4px}
+.task-head .head-actions{align-items:center}
+.task-side .side-card{padding:14px 16px;margin:0}
+.task-side .side-card h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 6px}
+.task-side .feed{border:0;background:none;border-radius:0}
+.task-side .feed li{padding:8px 0;font-size:13px}
+.page-crumb{margin-bottom:2px}
+.head-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.proj-head{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-start;margin-bottom:18px}
+.proj-head h1{margin:0 0 4px}
+.proj-head h1 small{font-size:14px;font-weight:500;color:var(--muted);margin-left:6px}
+a.btn.blockers{border-color:var(--bad-mark);color:var(--bad)}
+
+/* Design pass: main column and a 320px side column (blocker, runs, new task, settings pages). */
+.main-aside{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px;align-items:start}
+.stack{display:flex;flex-direction:column;gap:20px;min-width:0}
+.stack>.block,.stack>.card,.stack>details.card{margin:0}
+.side-card{padding:14px 16px}
+.side-card h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 6px}
+.side-card .feed{border:0;background:none;border-radius:0}
+aside.stack .block-head{flex-wrap:wrap}
+aside.stack .block-head .muted{font-size:13px}
+.list-row.blocker-waiting{border:1px solid var(--bad-mark);background:var(--bad-soft);border-radius:10px;padding:12px 14px}
+@media (max-width:900px){.main-aside{grid-template-columns:minmax(0,1fr)}}
+.drop{border:1px dashed var(--line);border-radius:10px;padding:14px;text-align:center;background:var(--bg)}
+.drop p{margin:6px 0 0}
+.plain-steps{list-style:none;margin:0;padding:0}
+.plain-steps li{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}
+.plain-steps li:last-child{border-bottom:0}
+.main-aside>.form-card{margin:0;max-width:none}
+.role-list{margin:0}
+.role-list dt{font-weight:600;font-size:14px;padding-top:10px;border-top:1px solid var(--line)}
+.role-list dt:first-child{border-top:0;padding-top:0}
+.role-list dd{margin:2px 0 10px;font-size:13px;color:var(--muted)}
+.page-head .head-actions .search input{min-width:220px}
+.shell>.content:only-child main{margin:0 auto}
+.board-col.attn .board-card{border-color:var(--attn-mark)}

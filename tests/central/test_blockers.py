@@ -191,4 +191,4 @@ def test_secrets_in_the_content_are_redacted_before_they_are_shown(w):
 
 
 def test_the_project_page_links_to_its_blockers(w):
-    assert '/projects/alpha/blockers' in w['clients']['viewer'].get('/projects/alpha/settings/members').get_data(as_text=True)
+    assert '/projects/alpha/blockers' in w['clients']['viewer'].get('/projects/alpha/tasks').get_data(as_text=True)

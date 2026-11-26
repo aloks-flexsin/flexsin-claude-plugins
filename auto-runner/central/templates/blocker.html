@@ -5,9 +5,7 @@
 {% block content %}
 {{ header(project, "blockers", ("Blockers", url_for("blockers.blockers_page", slug=project.slug))) }}
 
-<div class="task-title">
-  <h2 class="page-title">{{ content.question or blocker.question or "A runner is waiting for an answer" }}</h2>
-</div>
+<h1 class="page-title">{{ content.question or blocker.question or "A runner is waiting for an answer" }}</h1>
 <p class="blocker-meta">
   {{ ui.status("blocker", blocker.status) }}
   <span class="muted">{{ blocker.blocker_id }}{% if blocker.task %} · item <code>{{ blocker.task }}</code>{% endif %}
@@ -22,6 +20,9 @@
 {% endif %}
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 
+<div class="main-aside">
+<div class="stack">
+<section class="block">
 {% if can_answer %}
 <form method="post" action="{{ url_for('blockers.blocker_answer', slug=project.slug, blocker_id=blocker.blocker_id) }}" class="answer-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -52,12 +53,15 @@
 </section>
 {% endif %}
 
+</section>
 {% if content.recommendation and not recommended %}
 <section class="card"><h3>Recommendation</h3><p>{{ content.recommendation }}</p></section>
 {% endif %}
 
+</div>
+<aside class="stack">
 {% if content.impact_if_delayed or content.impact_if_wrong or assumptions or evidence %}
-<details class="card context">
+<details class="card context" open>
   <summary><strong>Context</strong> <span class="muted">if it is late, if it is wrong, assumptions, evidence</span></summary>
   {% if content.impact_if_delayed %}<h3>If the answer is late</h3><p>{{ content.impact_if_delayed }}</p>{% endif %}
   {% if content.impact_if_wrong %}<h3>If the answer is wrong</h3><p>{{ content.impact_if_wrong }}</p>{% endif %}
@@ -66,13 +70,19 @@
 </details>
 {% endif %}
 
-{% if decisions %}
+<section class="card side-card">
 <h3>Answers</h3>
+{% if decisions %}
 <ul class="feed">
   {% for d in decisions %}
   <li><span><strong>{{ (d.email or "") | display_name }}</strong>{% if d.option_label %} chose <strong>{{ d.option_label }}</strong>{% endif %}{% if d.text %}: {{ d.text }}{% endif %}
     {% if d.delivery %}<span class="muted"> · delivery {{ d.delivery | lower | replace("_", " ") }}</span>{% endif %}</span>{{ ui.when(d.created_at) }}</li>
   {% endfor %}
 </ul>
+{% else %}
+<p class="muted small">No answer yet. A manager, owner or admin answers it.</p>
 {% endif %}
+</section>
+</aside>
+</div>
 {% endblock %}
