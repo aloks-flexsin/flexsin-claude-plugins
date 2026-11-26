@@ -5,6 +5,11 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Fixed
+- Runner: a run on a central task works only that task's items. The shared queue can hold another task's open items
+  (still being built on another branch); the runner used to take the first ready one, so one account's run started
+  another account's work. The request's item IDs are now kept with the current task, the run picks only among them,
+  ends once they are ticked (saying how many other items it left untouched) and reports the task done. Runs without a
+  central task are unchanged.
 - Watch mode: while a task request waits for an earlier branch to be merged, planning goes on. After a resumed build
   that only waited, the same step claims the next task: a plan task is planned (a posted plan is reported as waiting,
   a failed one as failed), and a build task only gets its own pending folder and is built later, once it is first in

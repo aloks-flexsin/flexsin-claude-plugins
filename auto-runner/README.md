@@ -105,6 +105,13 @@ The runner can also be started by hand: `python bin/auto_run.py [--project DIR] 
   `.auto/pending/<slug>/` and carries on as a run without `--enqueue`. While another run holds the lock it only says the
   request is checked and waiting, and touches neither the folder nor `.auto/run/current-task.json`. A request with only
   some of its IDs queued, or with changed item text, is refused as before.
+- **A run on a central task works only that task's items:** the queue is shared, so it can hold another request's open
+  items (a task still being built on another branch). When a request from a central task is added or resumed, its item
+  IDs are kept in `.auto/run/current-task.json` as `items` (`autotasks.adopt(..., items)`; `current()` keeps them when
+  it takes a newer claim). The run then picks only ready items among them, ends with reason `queue_empty` once none is
+  open (printing `the task's items are done; N open item(s) of other requests left untouched` when others are open),
+  and reports the task done on that basis. Other items are never worked, ticked or given a status line by that run.
+  With no current task, or one without `items`, every ready item is worked in file order as before.
 - **Push and pull request:** see "Publishing a run"; both are on unless turned off.
 
 Create `.auto/STOP` to stop a run between iterations. `.auto/lock` keeps a second run out; delete it by hand only if a run died.
