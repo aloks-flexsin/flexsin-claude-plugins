@@ -556,4 +556,4 @@ Remove a finished worktree with `git worktree remove <folder>` (unlink any share
 ## Central sidebar (task 22, first slice)
 The central service's pages now sit in a left sidebar (My work with its waiting count, Projects, Admin for admins,
 theme switch and Settings); the top bar keeps the brand, the bell and the account menu. Project pages keep their
-header and tabs. The other pages from `docs/designs` follow in later slices.
+header and tabs. My work is two columns (waiting and done; progress and runners). The other pages from `docs/designs` follow in later slices.

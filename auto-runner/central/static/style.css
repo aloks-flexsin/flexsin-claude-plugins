@@ -437,3 +437,7 @@ ul.plain{padding-left:18px}
   .side a.side-item,.side-btn{width:auto}
   .side-foot{margin-top:0;border-top:0;padding-top:0;flex-direction:row;flex-wrap:wrap;align-items:center}
 }
+
+/* My work: two columns (waiting and done | progress and runners); one column on a narrow screen. */
+.two-col{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:20px;align-items:start}
+.two-col>.col{display:flex;flex-direction:column;gap:20px;min-width:0}
