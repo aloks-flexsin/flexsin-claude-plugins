@@ -753,8 +753,12 @@ def _list_page():
         task_runs = _runs.summarise(_runs.project_events(db, g.project["id"]), moment)
         for r in building:
             r["progress"] = _runs.task_progress([x for x in task_runs if x["task"] == r["number"]], r["items"])
+    lower = None
+    if view == "board":
+        from . import shell as _shell          # the board's lower panels: recent activity and runners
+        lower = _shell.overview(db, g.project, g.account, g.get("project_role"), moment)
     response = make_response(render_template("tasks.html", project=g.project, tabs=tabs, state=state, tasks=shown,
-                                             mine=mine, q=q, view=view, columns=columns,
+                                             mine=mine, q=q, view=view, columns=columns, lower=lower,
                                              any_tasks=bool(for_project(db, g.project["id"])), can_add=_can_add(db)))
     if chosen in ("board", "list"):
         response.set_cookie("task_view", chosen, max_age=TASK_VIEW_MAX_AGE, path="/", secure=True, httponly=True,
