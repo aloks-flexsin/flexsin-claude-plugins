@@ -486,3 +486,54 @@ def test_once_runs_a_single_step(monkeypatch):
     monkeypatch.setattr(aw, 'watch', lambda project, max_steps=None: seen.append(max_steps) or 0)
     assert aw.main(['--once', '--project', '.']) == 0 and aw.main(['--project', '.']) == 0
     assert seen == [1, None]
+
+
+# ---------- setup problems (decision record 0012, from task #20) ----------
+
+def test_a_setup_problem_claims_nothing_and_stays_until_restart(watched, central, team, env, capsys):
+    n = add_task(central, team)['number']
+    checks = []
+
+    def broken(project):
+        checks.append(project)
+        return 'the base branch "main" does not exist on origin'
+    claude = FakeClaude()
+    assert watch(watched, central, env, Clock(), claude, max_steps=3, check_setup=broken) == 0
+    assert claude.roles == [] and server_task(central, n)['status'] == 'open'     # nothing claimed, nothing spent
+    assert len(checks) == 1                                                       # sticky: not retried every poll
+    out = capsys.readouterr().out
+    assert out.count('setup problem:') == 1 and 'restarted after it is fixed' in out
+    beat = watch_file(watched)
+    assert beat['state'] == 'setup_error' and 'does not exist on origin' in beat['problem']
+
+
+def test_setup_problem_checks_the_base_on_origin(tmp_path):
+    from tests.auto_runner.test_runner import sh
+    origin = tmp_path / 'origin.git'
+    sh(tmp_path, 'init', '-q', '--bare', '-b', 'main', str(origin))
+    p = tmp_path / 'p'
+    p.mkdir()
+    sh(p, 'init', '-q', '-b', 'main')
+    sh(p, '-c', 'user.email=t@example.com', '-c', 'user.name=T', 'commit', '-q', '--allow-empty', '-m', 'x')
+    assert aw.setup_problem(p) is None                                  # no origin: local use, nothing to check
+    sh(p, 'remote', 'add', 'origin', str(origin))
+    assert 'does not exist on origin' in aw.setup_problem(p)
+    sh(p, 'push', '-q', 'origin', 'main')
+    assert aw.setup_problem(p) is None
+
+
+def test_base_branch_from_the_remote_head_when_origin_head_is_missing(tmp_path):
+    from tests.auto_runner.test_runner import sh
+    origin = tmp_path / 'origin.git'
+    sh(tmp_path, 'init', '-q', '--bare', '-b', 'trunk', str(origin))
+    seed = tmp_path / 'seed'
+    seed.mkdir()
+    sh(seed, 'init', '-q', '-b', 'trunk')
+    sh(seed, '-c', 'user.email=t@example.com', '-c', 'user.name=T', 'commit', '-q', '--allow-empty', '-m', 'x')
+    sh(seed, 'push', '-q', str(origin), 'trunk')
+    p = tmp_path / 'p'
+    p.mkdir()
+    sh(p, 'init', '-q', '-b', 'work')
+    sh(p, 'remote', 'add', 'origin', str(origin))                      # no fetch: refs/remotes/origin/HEAD is not set
+    assert aw.autocfg.remote_head(p) == 'trunk'
+    assert aw.autocfg.detect_base_branch(p) == 'trunk'

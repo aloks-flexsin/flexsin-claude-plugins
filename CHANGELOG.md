@@ -39,6 +39,10 @@ All notable changes to this project are written here (Keep a Changelog).
   restricted paths.
 
 ### Fixed
+- Watch mode no longer retries a broken setup forever (from task #20): before each claim it checks that the base branch
+  can be told and exists on origin; if not, it claims and spends nothing, says why once and waits as `setup_error` until
+  it is restarted. The base branch is also found from `git ls-remote --symref origin HEAD` when the clone has no
+  `origin/HEAD`.
 - Runner: a run on a central task works only that task's items. The shared queue can hold another task's open items
   (still being built on another branch); the runner used to take the first ready one, so one account's run started
   another account's work. The request's item IDs are now kept with the current task, the run picks only among them,
