@@ -274,6 +274,14 @@ def _git(project_dir, *args):
     return r.stdout.strip() if r.returncode == 0 else ''
 
 
+def remote_head(project_dir):
+    """The default branch origin advertises (`git ls-remote --symref origin HEAD`), or '' when it cannot be read."""
+    for line in _git(project_dir, 'ls-remote', '--symref', 'origin', 'HEAD').splitlines():
+        if line.startswith('ref: refs/heads/') and line.rstrip().endswith('HEAD'):
+            return line[len('ref: refs/heads/'):].split()[0]
+    return ''
+
+
 def detect_base_branch(project_dir, cfg=None):
     cfg = cfg if cfg is not None else load(project_dir)
     if cfg['base_branch']:
@@ -281,6 +289,9 @@ def detect_base_branch(project_dir, cfg=None):
     head = _git(project_dir, 'symbolic-ref', 'refs/remotes/origin/HEAD')
     if head.startswith('refs/remotes/origin/'):
         return head[len('refs/remotes/origin/'):]
+    remote = remote_head(project_dir)          # a clone without origin/HEAD (made by `git init` + `remote add`)
+    if remote:
+        return remote
     current = _git(project_dir, 'symbolic-ref', '--short', 'HEAD')
     if current in KNOWN_BRANCHES:
         return current

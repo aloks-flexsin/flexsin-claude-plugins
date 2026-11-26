@@ -219,6 +219,25 @@ def _waiting_request(project):
     return number, folder, claim
 
 
+def setup_problem(project):
+    """-> a sentence when this checkout cannot build anything (decision 0012, from task #20), else None: the base branch
+    cannot be told, or origin does not have it. Checked before each claim, so no plan is paid for a task that can never
+    build. A checkout without an origin remote (local use) has nothing to check."""
+    try:
+        base = autocfg.detect_base_branch(project)
+    except autocfg.BaseBranchUnknown as e:
+        return str(e)
+    except autocfg.ConfigError as e:
+        return f'.claude/auto.json: {e}'
+    git = _runner().git
+    if not git(project, 'remote', 'get-url', 'origin', check=False):
+        return None
+    heads = git(project, 'ls-remote', '--heads', 'origin', base, check=False)
+    if not heads.strip():
+        return f'the base branch "{base}" does not exist on origin (or origin cannot be reached)'
+    return None
+
+
 def _plan_title(folder):
     """The first heading of the request's plan.md, or ''."""
     try:
@@ -321,7 +340,7 @@ def _while_waiting(project, waited, claude, env, send, meter, on_start):
 
 
 def watch(project, claude=None, env=None, send=None, build=None, clock=time.time, sleep=time.sleep, out=None,
-          max_steps=None):
+          max_steps=None, check_setup=None):
     """The loop -> 0 when the STOP file ends it. `claude`, `send` and `build(project, slug, claude, env, send) -> exit`
     replace the CLI, the service and the runner in tests; `clock`/`sleep` the time; `max_steps` bounds a test run."""
     project = Path(project).resolve()
@@ -338,13 +357,16 @@ def watch(project, claude=None, env=None, send=None, build=None, clock=time.time
               file=out or sys.stdout, flush=True)
         return 2
     try:
-        return _loop(project, stop, poll, daily, runner, claude, env, send, build, clock, sleep, out, max_steps)
+        return _loop(project, stop, poll, daily, runner, claude, env, send, build, clock, sleep, out, max_steps,
+                     check_setup)
     finally:
         lock.release()
 
 
-def _loop(project, stop, poll, daily, runner, claude, env, send, build, clock, sleep, out, max_steps):
+def _loop(project, stop, poll, daily, runner, claude, env, send, build, clock, sleep, out, max_steps, check_setup=None):
     last, steps, paused, over_budget, beat_problem = None, 0, False, False, None
+    blocked = None          # a setup problem: no claim until this watcher is restarted (decision 0012, from task #20)
+    check_setup = check_setup or setup_problem
     pending = None          # a control the idle wait's beat received; the next turn of the loop obeys it
 
     def say(text):
@@ -406,6 +428,17 @@ def _loop(project, stop, poll, daily, runner, claude, env, send, build, clock, s
         if paused:
             say('resumed from the service')
             paused = False
+        if blocked is None:
+            blocked = check_setup(project)
+            if blocked:
+                say(f'setup problem: {blocked}. Not taking work until this watcher is restarted after it is fixed.')
+        if blocked:
+            heartbeat(project, 'setup_error', clock(), last, problem=blocked)
+            pending = report('paused: setup problem')
+            if max_steps is not None:
+                steps += 1
+            wait(poll)
+            continue
         steps += 1
         meter = Meter(project, clock)
         try:
