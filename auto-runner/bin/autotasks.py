@@ -259,11 +259,15 @@ def line(task):
 
 # ---------- used by the runner ----------
 
-def adopt(auto_dir, request_dir):
-    """The runner adds a request to its queue: a task.json in it becomes the run's current task."""
+def adopt(auto_dir, request_dir, items=None):
+    """The runner adds a request to its queue: a task.json in it becomes the run's current task. `items`, the request's
+    item IDs, is kept with it as `items`: the run's scope (it works, finishes and reports on those items only)."""
     src = Path(request_dir) / 'task.json'
     if src.exists():
-        _save(Path(auto_dir) / CURRENT, json.loads(src.read_text(encoding='utf-8')))
+        data = json.loads(src.read_text(encoding='utf-8'))
+        if items:
+            data['items'] = list(items)
+        _save(Path(auto_dir) / CURRENT, data)
 
 
 def run_task(auto_dir, request_dir, new_branch):

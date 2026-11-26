@@ -974,7 +974,7 @@ def apply_pending(project, wt, cfg, queue_rel, limit=None):
                 msg += f'\n\n{cfg["commit_trailer"]}'
             git(wt, 'add', '--', *files)
             git(wt, 'commit', '-q', '-m', msg)
-        autotasks.adopt(project / AUTO_DIR, d)          # a request made from a central task: the run now works on it
+        autotasks.adopt(project / AUTO_DIR, d, request_ids(itext))   # a request made from a central task: the run now works on it
         dest = project / AUTO_DIR / 'applied' / f'{d.name}-{stamp}'
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(d), str(dest))
@@ -983,10 +983,34 @@ def apply_pending(project, wt, cfg, queue_rel, limit=None):
     return added
 
 
-def first_open_id(qtext, known=None):
-    """-> the first open item that is ready (not blocked, every `depends_on` ticked), or None. See queue.readiness."""
-    ready = queue.ready_items(qtext, known)
+def first_open_id(qtext, known=None, scope=None):
+    """-> the first open item that is ready (not blocked, every `depends_on` ticked), or None. See queue.readiness.
+    With a `scope` (a set of item IDs), only an item in it."""
+    ready = [i for i in queue.ready_items(qtext, known) if scope is None or i in scope]
     return ready[0] if ready else None
+
+
+def request_ids(itext):
+    """-> the item IDs of a request's items text, in order."""
+    return [i for i, _, _ in queue.parse_items(itext)]
+
+
+def run_scope(auto):
+    """-> the item IDs the run's central task asked for, as a set, or None: no current task, or one adopted before tasks
+    carried their items. The queue is shared, so it can hold other requests' open items (a task still being built on
+    another branch); a run with a scope works, finishes and reports on its own items only and leaves those alone."""
+    task = autotasks.current(auto)
+    items = task.get('items') if task else None
+    if not isinstance(items, list):
+        return None
+    return {i for i in items if isinstance(i, str)} or None
+
+
+def open_in(qtext, scope=None):
+    """-> how many items are open: all of them (scope None, as queue.open_count) or only those in `scope`."""
+    if scope is None:
+        return queue.open_count(qtext)
+    return sum(1 for i, checked, _ in queue.parse_items(qtext) if not checked and i in scope)
 
 
 def sync_back(wq, pq, statuses):
@@ -1183,7 +1207,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             say(f"request '{enqueue}' is already queued on {on}: resuming it")
             if not dry_run:
                 # the claim autotasks.start wrote last is the one this run beats and reports with
-                autotasks.adopt(auto, req.parent)
+                autotasks.adopt(auto, req.parent, request_ids(req.read_text(encoding='utf-8')))
                 shutil.rmtree(req.parent)
             enqueue = ''
     if enqueue:
@@ -1291,6 +1315,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
     exit_code, reason = None, 'error'
     usage_stop = None                       # {window, utilization, resets_at} when the run stops at the plan-usage threshold
     published = None
+    task_items = None                       # the item IDs of the run's central task (run_scope), or None: every item
     last_suite = ''
     statuses = {}
 
@@ -1400,7 +1425,9 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         for r in autoblock.ingest(new_dirs, auto, None, stamp, slug):
             say(f"blocker file {r['file']} was waiting before any iteration: moved to {r['moved_to']}")
         deliver()
-        say(f'{queue.open_count(wq.read_text(encoding="utf-8"))} open item(s) in {queue_rel}')
+        task_items = run_scope(auto)
+        say(f'{queue.open_count(wq.read_text(encoding="utf-8"))} open item(s) in {queue_rel}'
+            + (f'; this run works only its task\'s items: {", ".join(sorted(task_items))}' if task_items else ''))
 
         (auto / 'logs').mkdir(parents=True, exist_ok=True)
         fix_rounds, pending_fix, handovers = {}, {}, {}
@@ -1551,14 +1578,18 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 exit_code, reason = 1, 'claim_lost'
                 return 1
             qtext = wq.read_text(encoding='utf-8')
-            before = queue.open_count(qtext)
+            before = open_in(qtext, task_items)
             if before == 0:
+                others = queue.open_count(qtext)
+                if task_items and others:
+                    say(f"the task's items are done; {others} open item(s) of other requests left untouched")
                 say('queue is empty: done.')
                 reason = 'queue_empty'
                 break
-            item = first_open_id(qtext, statuses)
+            item = first_open_id(qtext, statuses, task_items)
             if item is None:
-                waiting = [f'{i} ({why})' for i, why in queue.readiness(qtext, statuses) if why]
+                waiting = [f'{i} ({why})' for i, why in queue.readiness(qtext, statuses)
+                           if why and (task_items is None or i in task_items)]
                 say(f'no ready item: {before} open item(s) are blocked or waiting for another item: ' + '; '.join(waiting)
                     + '. A person answers the blocker (and deletes its status line) before they run.')
                 reason = 'no_ready_items'
@@ -1708,7 +1739,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 autoblock.write_view(auto)
             after_head = git(wt, 'rev-parse', 'HEAD')
             left = leftovers(wt, cfg)
-            progressed = (after_head != head or queue.open_count(wq.read_text(encoding='utf-8')) != before
+            progressed = (after_head != head or open_in(wq.read_text(encoding='utf-8'), task_items) != before
                           or bool(raised))
             entry['duration_s'] = round(time.time() - t0, 1)
             entry['commit'] = after_head[:10] if after_head != head else None
@@ -1847,7 +1878,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
                 say('no progress twice in a row: stopping.')
                 exit_code, reason = 1, 'no_progress'
                 return 1
-            if i < budget[0] and queue.open_count(wq.read_text(encoding='utf-8')) > 0:
+            if i < budget[0] and open_in(wq.read_text(encoding='utf-8'), task_items) > 0:
                 if not entry['plan_usage']:
                     say('no plan usage in the output: not checking the usage threshold.')
                 crossed = usage_threshold(entry['plan_usage'], limits['stop_at_percent'])
@@ -1890,7 +1921,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         push()
         if pusher is not None and autotasks.current(auto) is not None:
             wq_end = wt / queue_rel
-            done = exit_code == 0 and wq_end.exists() and queue.open_count(wq_end.read_text(encoding='utf-8')) == 0
+            done = exit_code == 0 and wq_end.exists() and open_in(wq_end.read_text(encoding='utf-8'), task_items) == 0
             before = len(frictions)
             line = autotasks.finish(pusher, auto, done, branch, (published or {}).get('pr_url'), reason,
                                     on_error=central_error)
