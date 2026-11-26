@@ -3,6 +3,7 @@ counts, and the project Overview.
 
 - `nav_badge(db, account)`: decisions waiting for this person across projects (plans they may approve + blockers they
   may answer), for the My work link. Cheap: two queries per project, no event parsing.
+- `side`: the sidebar's project list (`side_projects`).
 - `notif_count`: the person's unread, unresolved notifications, for the bell in the top bar.
 - `project_nav(db, project, account, role, now)`: what every project page's header shows: role, members, whether this
   person can run runners, and the tab counts (open tasks, plans waiting, live runs, waiting blockers).
@@ -128,6 +129,15 @@ def overview(db, project, account, role, now):
             "runners": runners.views(db, project, account, now)}
 
 
+SIDE_PROJECTS = 5
+
+
+def side_projects(db, account, current_slug=None):
+    """The sidebar's Projects list: up to SIDE_PROJECTS the person can see (the open one first), and the total."""
+    rows = sorted(projects.visible_to(db, account), key=lambda p: p["slug"] != current_slug)   # stable sort
+    return {"items": [{"name": p["name"], "slug": p["slug"]} for p in rows[:SIDE_PROJECTS]], "total": len(rows)}
+
+
 def init_app(app):
     @app.context_processor
     def _frame():
@@ -136,7 +146,8 @@ def init_app(app):
             return {}
         db = get_db()
         out = {"nav_badge": nav_badge(db, account), "nav_endpoint": request.endpoint or "",
-               "notif_count": notifications.unread_count(db, account["id"])}
+               "notif_count": notifications.unread_count(db, account["id"]),
+               "side": side_projects(db, account, g.project["slug"] if g.get("project") else None)}
         # Queue item A1: the "turn on push" bar on every signed-in page except the Account page (its own section).
         if push.configured() and request.endpoint != "admin.account_page":
             out["push_ask_key"] = (current_app.config.get("CENTRAL_VAPID_PUBLIC_KEY") or "").strip()

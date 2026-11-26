@@ -552,3 +552,8 @@ harness cannot copy.
 ## Uninstall
 `claude plugin uninstall auto-runner`, then `claude plugin marketplace remove flexsin-claude-plugins`. In a project: `python bin/auto_init.py --remove` previews what init added; add `--apply` to remove it.
 Remove a finished worktree with `git worktree remove <folder>` (unlink any shared folder junction first so the real one is never touched).
+
+## Central sidebar (task 22, first slice)
+The central service's pages now sit in a left sidebar (My work with its waiting count, Projects, Admin for admins,
+theme switch and Settings); the top bar keeps the brand, the bell and the account menu. Project pages keep their
+header and tabs. The other pages from `docs/designs` follow in later slices.

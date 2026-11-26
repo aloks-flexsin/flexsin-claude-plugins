@@ -410,3 +410,30 @@ ul.plain{padding-left:18px}
 .push-ask-actions{display:flex;gap:8px;flex-wrap:wrap}
 @media (max-width:640px){.push-ask-in{padding:10px 14px}.push-ask-actions{width:100%}.push-ask-actions .btn{flex:1}}
 [hidden]{display:none !important}
+
+/* Sidebar redesign (task 22): a left sidebar on every signed-in page; the top bar keeps the brand, bell and account. */
+.topbar-in{max-width:none}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.account-menu{margin-left:0}
+.shell{display:flex;align-items:stretch}
+.shell>.content{flex:1 1 0;min-width:0}
+.side{flex:0 0 232px;background:var(--surface);border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:20px;min-height:calc(100vh - 57px)}
+.side-label{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700;margin:0 10px 4px}
+.side a.side-item,.side-btn{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;color:var(--text);font:inherit;font-size:14px;font-weight:500;min-height:38px;background:none;border:0;cursor:pointer;width:100%;text-align:left}
+.side a.side-item:hover,.side-btn:hover{background:var(--bg);text-decoration:none}
+.side a.side-item[aria-current=page]{background:var(--brand-soft);color:var(--brand);font-weight:600}
+.side-item.head{font-weight:600}
+.side a.side-more{color:var(--muted);font-size:13px}
+.grow{flex:1;min-width:0}
+.ellip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.side-foot{margin-top:auto;border-top:1px solid var(--line);padding-top:14px;display:flex;flex-direction:column;gap:6px}
+.side-foot .theme-form{margin:0}
+.side-btn.theme-toggle{border-radius:8px;padding:8px 10px}
+@media (max-width:820px){
+  .shell{flex-direction:column}
+  .side{flex:none;flex-direction:row;flex-wrap:wrap;gap:4px 16px;min-height:0;border-right:0;border-bottom:1px solid var(--line);padding:8px 12px}
+  .side>div{display:flex;flex-wrap:wrap;align-items:center;gap:2px}
+  .side .side-label{display:none}
+  .side a.side-item,.side-btn{width:auto}
+  .side-foot{margin-top:0;border-top:0;padding-top:0;flex-direction:row;flex-wrap:wrap;align-items:center}
+}
