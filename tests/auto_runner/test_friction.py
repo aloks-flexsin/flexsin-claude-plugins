@@ -78,10 +78,12 @@ def test_a_limit_stops_cleanly_keeps_the_work_and_is_not_called_red(project, cap
     st = project_statuses(project)['A1']
     assert st[0] == 'queued' and 'usage limit' in st[1]
     wt = worktree(project)
-    assert not (wt / 'half-done.txt').exists()
-    assert 'A1 unfinished at a usage limit' in ar.git(wt, 'stash', 'list')
+    assert ar.git(wt, 'status', '--porcelain', '--', 'half-done.txt') == ''          # nothing left uncommitted
+    # kept as a wip commit on the branch (pushed with it), so any runner continues from it
+    assert ar.git(wt, 'log', '-1', '--format=%s').startswith('wip(A1): unfinished at a usage limit')
+    assert ar.git(wt, 'show', '--name-only', '--format=', 'HEAD') == 'half-done.txt'
     out = capsys.readouterr().out
-    assert 'usage limit reached during A1' in out and 'stash list' in out
+    assert 'usage limit reached during A1' in out and 'kept as "wip(A1)' in out
     assert 'RED' not in out and 'leftovers' not in out.lower()
 
 
@@ -90,7 +92,7 @@ def test_with_waiting_on_the_run_sleeps_until_the_reset_and_carries_on(project):
     calls, slept, restored = [], [], []
     finish = fake_agent()
 
-    def then(cmd, cwd):                                         # the retry gets the stashed half-done work back
+    def then(cmd, cwd):                                         # the retry gets the half-done work back
         half = Path(cwd) / 'half-done.txt'
         restored.append(half.exists())
         half.unlink(missing_ok=True)

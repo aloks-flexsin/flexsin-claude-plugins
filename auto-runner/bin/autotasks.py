@@ -200,7 +200,11 @@ def start(project, number, env=None, send=None):
     folder.mkdir(parents=True, exist_ok=True)
     (folder / 'items.md').write_text(task['items'].rstrip() + '\n', encoding='utf-8')
     (folder / 'plan.md').write_text(task['plan'].rstrip() + '\n', encoding='utf-8')
-    _save(folder / 'task.json', {'number': int(number), 'claim': claim})
+    data = {'number': int(number), 'claim': claim}
+    for key in ('branch', 'pr_url'):                    # an earlier run's pushed work: this run continues it
+        if isinstance(task.get(key), str) and task[key].strip():
+            data[key] = task[key].strip()
+    _save(folder / 'task.json', data)
     _call(transport(project, env, send), 'POST', f'/api/v1/tasks/{int(number)}/heartbeat',
           {'claim': claim, 'state': 'queued'})          # the request waits for its run: the page says Queued
     return slug
