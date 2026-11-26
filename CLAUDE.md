@@ -17,18 +17,22 @@ dashboard will live in `auto-runner/central/`.
 - Tests never reach the network or live services; use fakes (see `tests/auto_runner/fake_central.py`).
 - Config comes from environment variables only; never commit secrets, `.env` files or real customer data.
 - When you change anything under `auto-runner/bin`, `commands` or `config.schema.json`, update `auto-runner/README.md` (the doc-map check enforces this).
-- Never deploy or touch Vercel/Supabase; a person does that.
+- Deploys run only through the Supervisor's deploy step after a merge (decision record 0012); never deploy by hand
+  from a session, and never touch Supabase data or run a destructive migration (a person does that).
 - This repo is separate from SaleEnable/SIVA: never copy its code, database, queue or docs here.
 
 ## Team git rules
 - Every Claude session has an identity made of three parts: the **real person** working (for example `alok`), the
   **Claude account** they are using (for example `bhawish`; one person may use several accounts) and the **surface**
   (`browser`, `desktop`, `cli`, or `auto-runner` for unattended runs). Use it in branch names and as the commit author,
-  never just "Claude". If you are unsure of any part, ask before creating a branch.
+  never just "Claude". Take it from the environment (`AUTO_RUNNER_USER`, `AUTO_RUNNER_ACCOUNT`) and the surface you
+  run in; ask only when a part is missing.
 - Branch names: `<user>/<account>-claude-<surface>/<type>/<brief>`, type one of `feat`, `fix`, `hot-fix`, `chore`, `docs`,
   `refactor`, `test`. Examples: `alok/bhawish-claude-browser/fix/login`, `alok/alok-claude-cli/feat/csv-export`; the
   auto-runner makes `alok/bhawish-claude-auto-runner/<type>/<brief>` from `AUTO_RUNNER_USER` and `AUTO_RUNNER_ACCOUNT`.
 - Every new request (feature, fix, anything) gets a new branch from the latest base: run `git fetch origin main` first,
   then `git switch -c <branch> origin/main` (no upstream to `main`).
 - Commit, push and open a pull request from that branch. The PR target is always the base branch (`main`).
-- Never push to `main`, never force-push, never merge your own pull request.
+- Never push to `main`, never force-push. Autonomy is the default (decision record 0012): a pull request is merged by the
+  Supervisor, or by the session that opened it, once its `tests` check is green. A project or task in manual mode
+  (`"autonomy": "manual"`, or the switch on the central service) waits for a person instead.

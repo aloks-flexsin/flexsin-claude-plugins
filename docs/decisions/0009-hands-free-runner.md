@@ -1,5 +1,7 @@
 # 0009: Hands-free work: routing, the headless planner, the watch loop and runner presence
 
+Amended by 0012 (autonomy by default): in auto mode the Supervisor approves plans; "Approval: on the central page" applies in manual mode.
+
 Status: **accepted** (2026-11-24). Builds on 0007 (central tasks and claims) and 0008 (no shared secrets).
 Everything here is **unverified** until it runs on the live service.
 
