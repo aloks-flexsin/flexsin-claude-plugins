@@ -1,9 +1,9 @@
 name: tests
 
+# Pull requests only: every change reaches main through a pull request whose full suite already passed, so a second
+# run after the merge would only repeat it.
 on:
   pull_request:
-    branches: [main]
-  push:
     branches: [main]
 
 permissions:
@@ -18,7 +18,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: What changed
+        id: changes
+        # Plans and designs (docs/plans/, docs/designs/) are read by no test: a pull request that changes only those
+        # passes without running the suite. Anything else, other docs included (tests read the READMEs, docs/data,
+        # docs/decisions and docs/doc-map.json), runs everything.
+        run: |
+          files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          echo "$files"
+          if [ -n "$files" ] && ! echo "$files" | grep -qvE '^docs/(plans|designs)/'; then
+            echo "Only docs/plans or docs/designs changed: the suite is skipped."
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-python@v5
+        if: steps.changes.outputs.code == 'true'
         with:
           python-version: '3.12'
           cache: pip
@@ -26,8 +43,11 @@ jobs:
             requirements-dev.txt
             auto-runner/central/requirements.txt
       - name: Install dependencies
+        if: steps.changes.outputs.code == 'true'
         run: |
           python -m pip install -r requirements-dev.txt
           python -m pip install -r auto-runner/central/requirements.txt
       - name: Run the suite
-        run: python -m pytest -q
+        if: steps.changes.outputs.code == 'true'
+        # -n auto: one worker per CPU (pytest-xdist); --durations lists the slowest tests, the next ones to trim
+        run: python -m pytest -q -n auto --durations=15
