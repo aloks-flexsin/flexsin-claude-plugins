@@ -96,3 +96,10 @@ def test_strangers_still_get_404_everywhere(world, conn):
     stranger = signed_in(world['clients']['owner'].application, 'nobody@example.com')
     for url in ('/projects/alpha', '/projects/alpha/settings/members', '/projects/alpha/settings/repository'):
         assert stranger.get(url).status_code == 404, url
+
+
+def test_projects_list_puts_the_ones_needing_you_first(world, conn):
+    plan_waiting(world, conn)
+    page = world['clients']['owner'].get('/projects').get_data(as_text=True)
+    first = page.index('class="project-card"')
+    assert 'aria-label="Waits for you"' in page[first:first + 700]

@@ -53,6 +53,7 @@ def _list_page(error=None, status=200, form=None):
     db, moment = get_db(), auth.now()
     rows = [dict(p, nav=shell.project_nav(db, p, g.account, projects.effective_role(db, p, g.account), moment))
             for p in projects.visible_to(db, g.account)]
+    rows.sort(key=lambda p: -(p["nav"]["approval"] + p["nav"]["blockers"]))      # those needing you first; stable
     page = render_template("projects.html", projects=rows,
                            is_admin=g.account["role"] == projects.ADMIN, error=error, form=form or {})
     return page, status

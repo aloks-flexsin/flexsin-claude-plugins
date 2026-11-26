@@ -442,3 +442,5 @@ ul.plain{padding-left:18px}
 .two-col{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:20px;align-items:start}
 .two-col>.col{display:flex;flex-direction:column;gap:20px;min-width:0}
 .lower{margin-top:24px}
+.mk-attn{color:var(--attn-mark,#c27a00)}.mk-run{color:var(--info,#2f5bea)}.mk-bad{color:var(--bad-mark,#c8382a)}
+.project-card-name .mk{vertical-align:-1px}
