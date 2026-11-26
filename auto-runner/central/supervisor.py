@@ -99,7 +99,7 @@ def state():
     blocked = db.query("SELECT * FROM blocker WHERE project_id = ? AND status IN (%s) ORDER BY created_at, id" % marks,
                        (project["id"],) + tuple(ANSWERABLE))
     marks = plan_marks(db, project["id"])
-    return jsonify(project=project["slug"], autonomy=projects.autonomy(project),
+    return jsonify(project=project["slug"], autonomy=projects.autonomy(project), last_deploy=last_deploy(db, project["id"]),
                    tasks=[_task(marks, r, moment) for r in tasks.for_project(db, project["id"])],
                    runners=[dict(runners.public(r, moment), id=r["id"], paused_by_supervisor=(
                        r["control"] == "pause" and r["control_role"] == accounts.SUPERVISOR))
@@ -317,6 +317,62 @@ def merge_record(number):
                          "merge_sha": merge_sha})
     db.commit()
     return jsonify(task=tasks.public(row, moment), phase=phase, already=False)
+
+
+DEPLOY_PHASES = ("started", "done", "failed", "rolled_back")
+MAX_DEPLOY_OUTPUT = 2000
+
+
+def last_deploy(db, project_id):
+    """-> the project's latest `supervisor.deploy.*` audit row as {"sha", "phase", "at"}, or None (never deployed)."""
+    row = db.query_one("SELECT action, detail, at FROM audit WHERE project_id = ? AND action LIKE 'supervisor.deploy.%' "
+                       "ORDER BY at DESC, id DESC LIMIT 1", (project_id,))
+    if row is None:
+        return None
+    try:
+        detail = json.loads(row["detail"] or "{}")
+    except (TypeError, ValueError):
+        detail = {}
+    return {"sha": detail.get("sha") if isinstance(detail, dict) else None,
+            "phase": row["action"].rsplit(".", 1)[1], "at": row["at"]}
+
+
+@bp.post("/api/v1/supervisor/deploys")
+def deploy_record():
+    """The supervisor records a deploy of the base branch (decision record 0012, Phase 5), with `?project=<slug>` and
+    `{"phase": "started" | "done" | "failed" | "rolled_back", "sha", "reasons", "output", "task"}`. It deploys nothing
+    itself (the pass runs the project's deploy command between `started` and `done`/`failed`). One
+    `supervisor.deploy.<phase>` audit row per call; `output` (the command's last lines) is cut to its last
+    MAX_DEPLOY_OUTPUT characters. `done`, `failed` and `rolled_back` need an earlier `started` for the same SHA (409).
+    Supervisor role only. Answers `{"last_deploy"}`."""
+    db = get_db()
+    account = _caller(db)
+    if account is None or account["role"] != accounts.SUPERVISOR:
+        tokens._fail(403, "deploy records need a supervisor account")
+    project = projects.get_by_slug(db, request.args.get("project"))
+    if project is None:
+        return _error("no such project", 404)
+    body = request.get_json(silent=True)
+    body = body if isinstance(body, dict) else {}
+    phase = body.get("phase")
+    if phase not in DEPLOY_PHASES:
+        return _error('phase is "started", "done", "failed" or "rolled_back"', 400)
+    sha = body.get("sha") if isinstance(body.get("sha"), str) and body.get("sha").strip() else None
+    if sha is None:
+        return _error("sha is required", 400)
+    if phase != "started":
+        started = db.query("SELECT detail FROM audit WHERE project_id = ? AND action = 'supervisor.deploy.started'",
+                           (project["id"],))
+        if not any(json.loads(r["detail"] or "{}").get("sha") == sha for r in started):
+            return _error("no deploy was started for that SHA", 409)
+    output = body.get("output") if isinstance(body.get("output"), str) else ""
+    task = body.get("task") if isinstance(body.get("task"), int) else None
+    moment = auth.now()
+    audit.record(db, "supervisor.deploy." + phase, sessions.iso(moment), account_id=account["id"],
+                 project_id=project["id"], detail={"sha": sha, "reasons": _reasons(body.get("reasons")),
+                                                   "output": output[-MAX_DEPLOY_OUTPUT:], "task": task})
+    db.commit()
+    return jsonify(last_deploy=last_deploy(db, project["id"]))
 
 
 @bp.put("/api/v1/supervisor/order")

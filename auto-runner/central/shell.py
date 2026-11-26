@@ -85,6 +85,9 @@ def _sentence(row, project_slug):
         "invite.create": "%s invited %s" % (who, d.get("email") or "someone"),
         "decision.record": "%s answered a blocker" % who,
         "project.repo_url": "%s changed the repository URL" % who,
+        "supervisor.deploy.done": "%s deployed %s" % (who, (d.get("sha") or "")[:10] or "the base branch"),
+        "supervisor.deploy.failed": "%s's deploy of %s failed" % (who, (d.get("sha") or "")[:10] or "the base branch"),
+        "supervisor.deploy.rolled_back": "%s rolled back the deploy of %s" % (who, (d.get("sha") or "")[:10]),
         "project.autonomy": "%s switched the project to %s mode" % (who, d.get("to") or "another"),
         "task.manual": ("%s marked %s manual: a person decides its plan" if d.get("manual")
                         else "%s let the supervisor decide %s") % (who, task),

@@ -5,6 +5,11 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Supervisor deploy step (autonomy Phase 5): a `deploy` section in `.claude/auto.json` (`command`, `smoke_url`,
+  `rollback_command`, `smoke_tries`, `timeout_s`). In auto mode, after merges, the Supervisor deploys each new base head
+  once in a separate worktree, checks the smoke URL, and on failure rolls back and adds a fix task to the pool. Central
+  records every deploy (`POST /api/v1/supervisor/deploys`, audit `supervisor.deploy.*`, `last_deploy` in the state).
+  Nothing is deployed without a `deploy.command`; no project sets one yet. Unverified against a live deploy.
 - Central: autonomy switch per project (Settings › Repository, owners and admins, audited; default auto) and a per-task
   "manual" flag on the task page. In auto mode the supervisor decides plans without a manager membership, also on tasks
   it added, and approves the latest plan after two rounds of changes instead of escalating; a manual task or project
