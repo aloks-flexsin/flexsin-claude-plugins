@@ -18,6 +18,7 @@
     "path_prepend": {"$ref": "#/$defs/texts"},
     "test_command": {"$ref": "#/$defs/text", "description": "Command that proves the suite is green ('' = none)."},
     "item_test_command": {"$ref": "#/$defs/text", "description": "Command that tests only an item's own test files; {tests} is replaced by their paths ('' = run test_command)."},
+    "autonomy": {"type": "string", "enum": ["auto", "manual"], "description": "auto (default): the Supervisor decides instead of escalating (approves plans with open points, recording them; may merge PRs opened by the merging identity). manual: every person-in-the-loop step stays."},
     "check_only": {"$ref": "#/$defs/flag", "description": "true = no tests exist; statuses say 'unverified: no tests'."},
     "queue_file": {"$ref": "#/$defs/text", "description": "The one queue file a person reads."},
     "rules_files": {"$ref": "#/$defs/texts", "description": "Files the agent must read first."},

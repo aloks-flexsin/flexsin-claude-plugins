@@ -36,8 +36,14 @@ def http_for(app, token):
     return http
 
 
-def reader(text=POLICY, sha='sha-1'):
-    return lambda ref, path: None if text is None else (text, sha)
+def reader(text=POLICY, sha='sha-1', autonomy='manual'):
+    """The base's files: the policy (`text`, None = missing) and `.claude/auto.json` with `autonomy` (None = no file).
+    The tests above the auto-mode section run in manual mode, today's behaviour."""
+    def read(ref, path):
+        if path == '.claude/auto.json':
+            return None if autonomy is None else (json.dumps({'autonomy': autonomy}), 'cfg-sha')
+        return None if text is None else (text, sha)
+    return read
 
 
 def post_plan(app, team, n, text, runner='alok/bhawish-claude-auto-runner'):
@@ -361,3 +367,45 @@ def test_the_control_step_reports_failures_and_runs_in_the_pass(app, team, conn,
     result = sup_mod.run_pass('alpha', http, reader(), 'origin/main', F(base=RED), MERGER)
     assert result['controls'] == [] and 'control' not in ' '.join(sup_mod.summary(result))
     assert sup_mod.control_step('alpha', lambda m, p, b=None: (403, {}), reader(), 'origin/main', F())[0]['error']
+
+
+# ---------- auto mode (the default): the supervisor decides instead of waiting for a person ----------
+
+def test_auto_mode_approves_a_plan_with_open_points_and_records_them(app, team, conn, sup):
+    http = http_for(app, sup)
+    n = add(team)
+    post_plan(app, team, n, GOOD.replace('None.', '- Which colour should the button be?'))
+    [done] = sup_mod.plan_step('alpha', http, reader(autonomy='auto'), 'origin/main')
+    assert done['verdict'] == 'approve' and done['decision'] == 'approve' and status(conn, team, n) == 'approved'
+    [row] = audit.rows(conn, 'supervisor.plan.approve')
+    assert any('decided by the supervisor in auto mode: Which colour should the button be?' in r
+               for r in row['detail']['reasons'])
+
+
+def test_no_auto_json_means_auto_mode(app, team, conn, sup):
+    http = http_for(app, sup)
+    n = add(team)
+    finish(app, team, n, 51)
+    forge = FakeForge({51: pr_entry(author=MERGER)})            # the runner's PR, opened by the merging identity
+    [out] = sup_mod.merge_step('alpha', http, reader(autonomy=None), 'origin/main', forge, MERGER)
+    assert out['outcome'] == 'merged' and forge.merges
+
+
+def test_auto_mode_without_a_policy_file_uses_the_default_policy(app, team, conn, sup):
+    http = http_for(app, sup)
+    n = add(team)
+    finish(app, team, n, 52)
+    forge = FakeForge({52: pr_entry(author=MERGER)})
+    [out] = sup_mod.merge_step('alpha', http, reader(None, autonomy='auto'), 'origin/main', forge, MERGER)
+    assert out['outcome'] == 'merged'
+
+
+def test_auto_mode_still_refuses_red_ci_and_secrets(app, team, conn, sup):
+    http = http_for(app, sup)
+    a, b = add(team, title='red'), add(team, title='secret')
+    finish(app, team, a, 53, 'alok/r1-claude-auto-runner')
+    finish(app, team, b, 54, 'alok/r2-claude-auto-runner')
+    forge = FakeForge({53: pr_entry(checks='failure'), 54: pr_entry(files=['config/prod.pem'])})
+    outs = sup_mod.merge_step('alpha', http, reader(None, autonomy='auto'), 'origin/main', forge, MERGER)
+    assert [o['outcome'] for o in outs] == ['refused', 'refused'] and forge.merges == []
+

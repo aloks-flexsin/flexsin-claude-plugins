@@ -15,6 +15,9 @@ The project file is `.claude/auto.json`; every key is optional and a missing fil
     branch_prefix    deprecated, ignored since 0.14.0 (run branches are <user>/<account>-claude-auto-runner/<type>/<brief>)
     commit_trailer   line added to each commit message ('' = none)
     enforce_runner   true = the PreToolUse guard (autohook.py guard) blocks edits in the main checkout (default false)
+    autonomy         "auto" (default) or "manual". In auto mode the Supervisor decides instead of escalating: it approves
+                     plans whose "Needs a person" is not empty (recording the open points as decided) and may merge pull
+                     requests the merging identity opened; "manual" keeps every person-in-the-loop step (autogates)
 
 Schema v2 adds optional sections (objects; each nested key optional, unknown nested keys and wrong types fail naming
 `section.key`). They are parsed and validated only: a section is in the loaded dict only when the file sets it, so a
@@ -58,6 +61,7 @@ import subprocess
 from pathlib import Path
 
 CONFIG_PATH = Path('.claude') / 'auto.json'
+AUTONOMY = ('auto', 'manual')
 KNOWN_BRANCHES = ('main', 'master', 'trunk', 'develop')
 
 DEFAULTS = {
@@ -75,6 +79,7 @@ DEFAULTS = {
     'branch_prefix': 'auto/',
     'commit_trailer': '',
     'enforce_runner': False,
+    'autonomy': 'auto',
 }
 
 # Nested key -> kind: 'text', 'flag', 'count' (whole number >= 0), 'amount' (number >= 0), 'percent' (whole number 1-100), 'texts' (list of text).
@@ -143,6 +148,8 @@ def load(project_dir):
               else isinstance(value, type(want)) and not isinstance(value, bool))
         if not ok:
             raise ConfigError(f'{CONFIG_PATH.as_posix()}: "{key}" must be {"true/false" if isinstance(want, bool) else "a list of text" if isinstance(want, list) else "text"}')
+        if key == 'autonomy' and value not in AUTONOMY:
+            raise ConfigError(f'{CONFIG_PATH.as_posix()}: "autonomy" must be one of: {", ".join(AUTONOMY)}')
         cfg[key] = value
     return cfg
 
