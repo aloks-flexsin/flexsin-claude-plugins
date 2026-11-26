@@ -10,6 +10,11 @@ All notable changes to this project are written here (Keep a Changelog).
   `manual on|off [task N]` (and `manual edits`, the old allow-edits) and `tick`, one lifecycle step for
   `/loop 15m /auto-runner:tick`. The old names keep working for one release. New: `autotasks.py add` and `manual`,
   `autowatch.py --once`, and on central `"approval": "open"` and `POST /api/v1/tasks/<n>/manual`.
+- Releases (autonomy Phase 5): `autochange.py release --apply` moves the Unreleased entries under the new version and
+  bumps the project's version files (`package.json`, `pyproject.toml`, `.claude-plugin/plugin.json`, `VERSION`, or the
+  `release.version_files`), so a release lands through a pull request; `release.tag_format` (default `v{version}`)
+  names the tag. The proposal now reads the last version from those files too when the changelog has no version heading.
+  Init turns the changelog on in every new `.claude/auto.json`.
 - Supervisor `watch` (autonomy Phase 5): `autosupervisor.py watch [--every SECONDS]` runs a pass every 15 minutes
   for every project in `AUTO_SUPERVISOR_PROJECTS` (`slug=clone dir,...`), each with its own clone's policy and
   settings and its own GitHub repository, until `.auto/STOP`. One project's error does not stop the others.
@@ -25,6 +30,13 @@ All notable changes to this project are written here (Keep a Changelog).
   it added, and approves the latest plan after two rounds of changes instead of escalating; a manual task or project
   keeps the old escalations. The Supervisor pass decides each task in auto mode only when the repository, the central
   project and the task all say auto. Needs `python -m central init-db` (two columns). Unverified against the live service.
+
+### Changed
+- Rules (autonomy Phase 6, decision record 0012): autonomy is the default. CLAUDE.md now lets the Supervisor or the
+  opening session merge a pull request once its `tests` check is green, deploys run only through the Supervisor's
+  deploy step, and a session takes its identity from the environment and asks only when a part is missing. Decision
+  records 0009 and 0010 are amended; `.claude/supervisor-policy.json` allows self-merge explicitly and keeps its
+  restricted paths.
 
 ### Fixed
 - Runner: a run on a central task works only that task's items. The shared queue can hold another task's open items

@@ -1,5 +1,7 @@
 # 0010: A Supervisor that carries work from assignment to UAT
 
+Amended by 0012 (autonomy by default): sections 4, 6 and 7 change in auto mode (self-merge, automatic deploys, no escalation of plans).
+
 Status: proposed (2026-11-24). Builds on 0007 (central tasks and claims) and **0009 (hands-free work: the watch loop,
 the headless planner, runner presence with Pause, Resume and Stop)**, which is accepted and built. Parts of P0, P1
 and P1b are built (see "Progress"); the rest is not. It amends one decision of 0009 and replaces two team rules (see "Rules and decisions this

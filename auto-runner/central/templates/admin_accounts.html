@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% import "_ui.html" as ui %}
+{% from "_tabs.html" import settings_tabs, admin_tabs %}
 {% block title %}Accounts{% endblock %}
 {% block content %}
+{{ admin_tabs('accounts') }}
 <div class="page-head">
   <div><h1>Accounts</h1><p class="lead">Everyone who can sign in, across all projects. To give someone a project, invite
     them from the project's Settings › Members instead: that adds the account and the membership in one step.

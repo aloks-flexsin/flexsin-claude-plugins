@@ -1,0 +1,15 @@
+{#- Section tabs for Settings and Admin (sidebar redesign). {% from "_tabs.html" import settings_tabs, admin_tabs %} -#}
+{% macro settings_tabs(active) -%}
+<nav class="subnav" aria-label="Settings section">
+  <a href="{{ url_for('admin.account_page') }}"{% if active == "account" %} aria-current="page"{% endif %}>Account</a>
+  <a href="{{ url_for('personal.tokens_page') }}"{% if active == "tokens" %} aria-current="page"{% endif %}>My tokens</a>
+</nav>
+{%- endmacro %}
+
+{% macro admin_tabs(active) -%}
+<nav class="subnav" aria-label="Admin section">
+  <a href="{{ url_for('admin.accounts_page') }}"{% if active == "accounts" %} aria-current="page"{% endif %}>Accounts</a>
+  <a href="{{ url_for('admin.notifications_log') }}"{% if active == "log" %} aria-current="page"{% endif %}>Notification log</a>
+  <a href="{{ url_for('frictions.frictions_page') }}"{% if active == "frictions" %} aria-current="page"{% endif %}>Runner frictions</a>
+</nav>
+{%- endmacro %}

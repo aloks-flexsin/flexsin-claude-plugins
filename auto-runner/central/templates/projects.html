@@ -2,12 +2,13 @@
 {% block title %}Projects{% endblock %}
 {% block content %}
 <h1>Projects</h1>
+<p class="lead">Every project you can see, those needing you first.</p>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 {% if projects %}
 <div class="project-cards">
   {% for p in projects %}
   <a class="project-card" href="{{ url_for('projects.overview_page', slug=p.slug) }}">
-    <span class="project-card-name">{{ p.name }}</span>
+    <span class="project-card-name">{% if p.nav.blockers %}<svg class="mk mk-bad" viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Blocked"><path d="M6 1l5.5 10H.5z" fill="currentColor"/></svg>{% elif p.nav.approval %}<svg class="mk mk-attn" viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Waits for you"><circle cx="6" cy="6" r="5" fill="currentColor"/></svg>{% elif p.nav.live_runs %}<svg class="mk mk-run" viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="Running"><rect x="1" y="1" width="10" height="10" rx="1.5" fill="currentColor"/></svg>{% endif %} {{ p.name }}</span>
     <span class="muted">{{ (p.repo_url or "no repository yet") | replace("https://", "") | replace(".git", "") }}</span>
     <span class="project-card-meta">
       <span class="chip tone-neutral">{{ p.nav.role }}</span>

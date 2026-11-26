@@ -121,7 +121,7 @@ def test_test_command_detection(tmp_path, files, expected):
 def test_no_tests_found_proposes_check_only(tmp_path):
     p = make_repo(tmp_path)
     ai.main(['--project', str(p), '--local', '--apply'])
-    assert json.loads((p / '.claude' / 'auto.json').read_text(encoding='utf-8')) == {'check_only': True}
+    assert json.loads((p / '.claude' / 'auto.json').read_text(encoding='utf-8')) == {'check_only': True, 'changelog': {'enabled': True}}
 
 
 def test_existing_auto_command_scripts_and_config_are_reported_not_touched(tmp_path, capsys):

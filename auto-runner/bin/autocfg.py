@@ -104,6 +104,7 @@ SECTIONS = {
     'principles': {'enabled': 'flag', 'file': 'text', 'require_slices': 'flag'},
     'watch': {'poll_seconds': 'count', 'plan_budget_usd': 'amount', 'daily_budget_usd': 'amount'},
     'sandbox': {'enabled': 'flag', 'required': 'flag', 'allowed_domains': 'texts'},
+    'release': {'version_files': 'texts', 'tag_format': 'text'},
     'deploy': {'command': 'text', 'smoke_url': 'text', 'rollback_command': 'text', 'smoke_tries': 'count',
                'timeout_s': 'count'},
 }
@@ -113,6 +114,7 @@ WATCH_DEFAULTS = {'poll_seconds': 300, 'plan_budget_usd': 2, 'daily_budget_usd':
 SANDBOX_DEFAULTS = {'enabled': True, 'required': False,
                     'allowed_domains': ['github.com', '*.github.com', 'pypi.org', 'files.pythonhosted.org',
                                         'registry.npmjs.org']}
+RELEASE_DEFAULTS = {'version_files': [], 'tag_format': 'v{version}'}
 DEPLOY_DEFAULTS = {'command': '', 'smoke_url': '', 'rollback_command': '', 'smoke_tries': 3, 'timeout_s': 600}
 DOCS_MAP_DEFAULT = 'docs/doc-map.json'
 KIND_TEXT = {'text': 'text', 'flag': 'true/false', 'count': 'a whole number >= 0',
@@ -214,6 +216,13 @@ def changelog(cfg):
 def watch(cfg):
     """The watch section with its defaults filled in (poll every 300 s, $2 per plan, $20 per local day)."""
     return {**WATCH_DEFAULTS, **section(cfg, 'watch')}
+
+
+def release(cfg):
+    """The `release` section with RELEASE_DEFAULTS filled in (no extra version files, tags like v1.2.3)."""
+    out = {**RELEASE_DEFAULTS, **section(cfg, 'release')}
+    out['version_files'] = list(out['version_files'])
+    return out
 
 
 def deploy(cfg):
