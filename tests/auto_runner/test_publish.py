@@ -107,7 +107,9 @@ def test_a_pull_request_is_opened_with_gh(project, tmp_path):
     head = argv[argv.index('--head') + 1]
     assert head.startswith('tester/acct-claude-auto-runner/feat/queue-')
     assert argv[argv.index('--title') + 1] == f"feat: {head.split('/', 3)[3].replace('-', ' ')} (tester via acct-claude-auto-runner)"
-    assert 'Read the diff before merging' in argv[argv.index('--body') + 1]
+    body = argv[argv.index('--body') + 1]                       # the team's template (central task #25)
+    assert body.startswith('# Pull Request: ') and '**Status:** Ready for Review' in body
+    assert '- [x] Unit tests passed' in body and 'Recommended action: Approve' in body
     assert events_of(project, 'publish')[0]['detail']['pr_url'] == 'https://github.com/example/proj/pull/7'
 
 
@@ -152,7 +154,8 @@ def test_a_run_that_stops_with_items_open_opens_a_draft(project, tmp_path):
     gh = FakeGh()
     assert ar.run(project, max_iterations=1, claude=picking_agent(), pr_runner=gh) == 0       # A2 is still open
     [argv] = gh.calls
-    assert '--draft' in argv and 'continues on this branch' in argv[argv.index('--body') + 1]
+    assert '--draft' in argv and '**Status:** Draft' in argv[argv.index('--body') + 1]
+    assert '## 8. Known Limitations / Pending Work' in argv[argv.index('--body') + 1]       # task #25's template
 
 
 def test_an_existing_pull_request_is_reused_and_marked_ready(project, tmp_path):
@@ -166,7 +169,9 @@ def test_an_existing_pull_request_is_reused_and_marked_ready(project, tmp_path):
             return 1, 'a pull request for branch "x" into branch "main" already exists:\nhttps://github.com/example/proj/pull/9\n'
         return 0, ''
     assert ar.run(project, max_iterations=3, claude=picking_agent(), pr_runner=gh) == 0
-    assert calls[-1] == ['gh', 'pr', 'ready', 'https://github.com/example/proj/pull/9']
+    assert calls[-2] == ['gh', 'pr', 'ready', 'https://github.com/example/proj/pull/9']
+    assert calls[-1][:5] == ['gh', 'pr', 'edit', 'https://github.com/example/proj/pull/9', '--body']
+    assert calls[-1][5].startswith('# Pull Request: ') and '**Status:** Ready for Review' in calls[-1][5]
     detail = events_of(project, 'publish')[0]['detail']
     assert detail['pr_url'] == 'https://github.com/example/proj/pull/9' and detail['pr_existing'] is True
 
@@ -374,3 +379,27 @@ def test_a_remote_without_owner_and_repo_is_not_tried(project, tmp_path):
     gh = ScriptedGh((1, GRAPHQL_403))
     out = publish_with(project, cfg, gh)
     assert len(gh.calls) == 1 and 'gh api pulls not tried' in out['pr_error']
+
+
+# ---------- the team's PR description (central task #25, Z3) ----------
+
+def test_the_rest_fallback_sends_the_same_description(project, tmp_path):
+    cfg = rest_ready(project, tmp_path)
+    gh = ScriptedGh((1, GRAPHQL_403), (0, 'https://github.com/o/r/pull/9\n'))
+    publish_with(project, cfg, gh)
+    create_body = gh.calls[0][gh.calls[0].index('--body') + 1]
+    rest = gh.calls[1]
+    assert create_body.startswith('# Pull Request: ') and f'body={create_body}' in rest
+
+
+def test_a_reused_pull_request_gets_the_description_also_on_a_draft_run(project, tmp_path):
+    cfg = rest_ready(project, tmp_path)
+    exists = (1, 'a pull request for branch "x" into branch "main" already exists:\nhttps://github.com/o/r/pull/9\n')
+    gh = ScriptedGh(exists, (0, ''))
+    out = ar.publish(project, project, cfg, 'main', BRANCH, gh, name=RUNNER, draft=True)
+    assert [c[:3] for c in gh.calls] == [['gh', 'pr', 'create'], ['gh', 'pr', 'edit']]      # no `gh pr ready` on a draft
+    assert '**Status:** Draft' in gh.calls[1][5] and out['pr_url'].endswith('/pull/9') and 'pr_error' not in out
+    gh = ScriptedGh(exists, (0, ''), (1, 'HTTP 403'))
+    out = ar.publish(project, project, cfg, 'main', BRANCH, gh, name=RUNNER)
+    assert [c[:3] for c in gh.calls] == [['gh', 'pr', 'create'], ['gh', 'pr', 'ready'], ['gh', 'pr', 'edit']]
+    assert out['pr_url'].endswith('/pull/9') and out['pr_error'].startswith('gh pr edit failed (exit 1)')

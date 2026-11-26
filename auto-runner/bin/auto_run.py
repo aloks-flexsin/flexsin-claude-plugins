@@ -90,6 +90,7 @@ autodeliver = _load('autorunner_deliver', 'autodeliver.py')
 autoupdate = _load('autorunner_update', 'autoupdate.py')
 autobrowser = _load('autorunner_browser', 'autobrowser.py')
 autochange = _load('autorunner_change', 'autochange.py')
+autopr = _load('autorunner_pr', 'autopr.py')
 autodocs = _load('autorunner_docs', 'autodocs.py')
 autojourney = _load('autorunner_journey', 'autojourney.py')
 autodeck = _load('autorunner_deck', 'autodeck.py')
@@ -936,12 +937,13 @@ def push_branch(project, wt, cfg, base, branch, start=None, name=None, handed=No
     return out
 
 
-def publish(project, wt, cfg, base, branch, pr_runner=None, start=None, name=None, handed=None, draft=False):
+def publish(project, wt, cfg, base, branch, pr_runner=None, start=None, name=None, handed=None, draft=False, suite=None):
     """Push the run branch (push_branch) and, unless `publish.pull_request` is false, open a pull request into `base`.
     `draft` (a run that stopped with the task's items still open) opens it as a draft, so nothing merges half-done
     work; a pull request that already exists for the branch (an earlier, stopped run of the task) is reused and, when
-    this run finished the work, marked ready for review. -> None when publishing is off, else a dict for the
-    `publish` event."""
+    this run finished the work, marked ready for review. The description is the team's template filled from the run's
+    facts (`autopr`, central task #25; `suite` is the last independent suite line); a reused pull request gets it too
+    (`gh pr edit --body`, draft or not). -> None when publishing is off, else a dict for the `publish` event."""
     pr_runner = pr_runner or run_pr
     start = start or base
     name = autosafe.runner_name() if name is None else name
@@ -952,11 +954,7 @@ def publish(project, wt, cfg, base, branch, pr_runner=None, start=None, name=Non
         out['draft'] = True
     if autosafe.publish_settings(cfg)['pull_request']:
         ahead = out['commits']
-        log = git(wt, 'log', '--oneline', '--no-decorate', f'{start}..{branch}', check=False)
-        body = (('Opened by auto-runner as a draft: the run stopped with items still open, and any runner that takes '
-                 'the task continues on this branch.' if draft else
-                 'Opened by auto-runner after its own test run passed on every commit. Read the diff before merging.')
-                + '\n\n' + '\n'.join(f'- {line}' for line in log.splitlines()))
+        body = autopr.pr_body(autopr.gather(project, wt, cfg, base, branch, start, suite=suite, name=name), draft)
         title = pr_title(branch, name, ahead)
         code, text = pr_runner(['gh', 'pr', 'create', '--head', branch, '--base', base, '--title', title, '--body', body,
                                 *(['--draft'] if draft else [])], wt)
@@ -967,6 +965,9 @@ def publish(project, wt, cfg, base, branch, pr_runner=None, start=None, name=Non
                 rcode, rtext = pr_runner(['gh', 'pr', 'ready', url], wt)
                 if rcode != 0 and 'not a draft' not in (rtext or '').lower():
                     out['pr_error'] = _pr_error('gh pr ready', rcode, rtext)
+            ecode, etext = pr_runner(['gh', 'pr', 'edit', url, '--body', body], wt)     # this run's description
+            if ecode != 0:
+                out['pr_error'] = '; '.join(filter(None, [out.get('pr_error'), _pr_error('gh pr edit', ecode, etext)]))
         elif url:
             out['pr_url'] = url
         else:
@@ -2092,7 +2093,8 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
         wq_now = wt / queue_rel
         still_open = wq_now.exists() and open_in(wq_now.read_text(encoding='utf-8'), task_items) > 0
         final_publish = True
-        published = publish(project, wt, cfg, base, branch, pr_runner, start, name, handed, draft=still_open)
+        published = publish(project, wt, cfg, base, branch, pr_runner, start, name, handed, draft=still_open,
+                            suite=autobrowser.redact(last_suite, generated()) if last_suite else None)
         if published is not None:
             published = autobrowser.redact_obj(published, generated())
             ledger.emit('publish', detail=published)
@@ -2107,7 +2109,8 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             # stopped on a problem, a lost claim, a limit or a crash: the work so far goes up as a draft pull request,
             # so it is never only on this computer and any runner that takes the task continues it
             try:
-                published = publish(project, wt, cfg, base, branch, pr_runner, start, name, handed, draft=True)
+                published = publish(project, wt, cfg, base, branch, pr_runner, start, name, handed, draft=True,
+                                    suite=autobrowser.redact(last_suite, generated()) if last_suite else None)
                 if published is not None and published['pushed']:
                     published = autobrowser.redact_obj(published, generated())
                     ledger.emit('publish', detail=published)

@@ -5,6 +5,10 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Pull requests the runner opens follow the team's description template (central task #25): a header, sections 1 to
+  10 and an AI self-assessment (`auto-runner/docs/pr-template.md`), filled only from the run's facts by
+  `bin/autopr.py`; a box is ticked only from evidence and a missing part says "None recorded by this run.". A pull
+  request reused from an earlier run gets the new description too.
 - The Supervise stage under your own sign-in (autonomy Phase 8): the supervisor API also accepts a developer-or-above
   member's personal token (audited `"as": "supervise stage"`); `autosupervisor.py` and its `watch` need no setup: the
   central URL, project and token come from the project's config and your sign-in, the repository from `origin`, the
