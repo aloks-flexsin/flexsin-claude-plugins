@@ -256,6 +256,10 @@ The runner refuses to start unless:
 
 The agent is asked to run only the tests that cover its change (the whole suite once, if it changed shared code or setup):
 the runner's own run of `test_command` after the iteration is the gate, so the suite no longer runs twice per item.
+When `item_test_command` is set, that gate runs only the item's own tests instead: the test files named on its `*Acceptance:*`
+line plus the test files its commits changed (`item_test_command` with `{tests}` replaced by them). An item with no such
+file still gets the full `test_command`. The log line and the `tests` event say which ran (`scope`: `item` or `full`), and a
+red per-item run's fix note names the command that failed.
 Each iteration's log (`.auto/logs/<run>-iter<N>.log`) holds the agent's full `stream-json` transcript, every tool call and its
 result, redacted like the rest of the log, followed by the runner's test and stage output.
 Claude's usage limit is recognised from the agent's final result (or, when the CLI left none, its last lines), never from the

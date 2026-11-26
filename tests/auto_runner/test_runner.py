@@ -993,3 +993,65 @@ def test_config_accepts_item_test_command(tmp_path):
     (tmp_path / '.claude' / 'auto.json').write_text('{"item_test_command": "pytest -q {tests}"}', encoding='utf-8')
     assert ar.autocfg.load(tmp_path)['item_test_command'] == 'pytest -q {tests}'
     assert ar.autocfg.load(tmp_path / 'none')['item_test_command'] == ''
+
+
+# ---- T2: the item's own tests run after each item
+
+ITEM_QUEUE = """# Queue
+
+- [ ] **A1 First thing.** Build the first thing in a small file, with enough words to pass any length rule we might have.
+  *Acceptance:* `python -m pytest -q tests/test_a.py` passes.
+
+- [ ] **A2 Second thing.** Build the second thing in a small file, with enough words to pass any length rule we might have.
+  *Acceptance:* tests/test_missing.py passes.
+
+## Needs a person
+- nothing
+"""
+ITEM_CMD = 'runitem {tests}'
+
+
+def item_project(project, **kw):
+    (project / 'tests').mkdir()
+    (project / 'tests' / 'test_a.py').write_text('', encoding='utf-8')
+    sh(project, 'add', 'tests/test_a.py')
+    sh(project, 'commit', '-q', '-m', 'tests')
+    set_cfg(project, **kw)
+    (project / '.auto' / 'queue.md').write_text(ITEM_QUEUE, encoding='utf-8')
+
+
+def recording_tests(commands, *codes):
+    seq = list(codes)
+    return lambda command, cwd: (commands.append(command) or (seq.pop(0) if seq else 0), 'fake suite')
+
+
+def scopes(p):
+    return [e['detail']['scope'] for e in events(p) if e['type'] == 'tests']
+
+
+def test_item_run_gets_the_named_test_file_and_scope_item(project):
+    item_project(project, item_test_command=ITEM_CMD)
+    commands = []
+    ar.run(project, max_iterations=2, claude=fake_agent(), tests=recording_tests(commands))
+    assert commands == ['runitem tests/test_a.py', GREEN]
+    assert scopes(project) == ['item', 'full']          # A2 names no existing test file: the full command, scope full
+    assert all(ar.autoevents.validate(e) == [] for e in events(project))
+
+
+def test_empty_item_test_command_runs_the_full_command_every_time(project):
+    item_project(project, item_test_command='')
+    commands = []
+    ar.run(project, max_iterations=2, claude=fake_agent(), tests=recording_tests(commands))
+    assert commands == [GREEN, GREEN]
+    assert scopes(project) == ['full', 'full']
+
+
+def test_red_item_run_fix_note_names_the_item_command(project):
+    item_project(project, item_test_command=ITEM_CMD, review={'max_fix_rounds': 1})
+    commands, calls = [], []
+    first = fake_agent(calls=calls)
+    claude = lambda cmd, cwd: first(cmd, cwd) if not calls else (calls.append(cmd) or (0, ''))   # fix round: nothing to commit
+    ar.run(project, max_iterations=2, claude=claude, tests=recording_tests(commands, 1, 0))
+    assert commands[0] == 'runitem tests/test_a.py'
+    note = next(a for a in calls[1] if 'own test run (' in a)
+    assert 'own test run (runitem tests/test_a.py)' in note and f'({GREEN})' not in note
