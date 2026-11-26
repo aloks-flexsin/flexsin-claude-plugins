@@ -507,6 +507,21 @@ def items_done_on_branch(wt, start):
     return {line.strip() for line in out.splitlines() if line.strip()}
 
 
+def sandbox_settings(project, cfg):
+    """The `--settings` an item's agent gets when it runs in Claude Code's sandbox: every shell command runs inside it
+    without a prompt or an allowlist (`autoAllowBashIfSandboxed`), never outside it (`allowUnsandboxedCommands` false),
+    and the agent refuses to start rather than run unsandboxed (`failIfUnavailable`). It writes in the worktree (the
+    sandbox's working directory), the repository's git folder (commits of a linked worktree land there) and the shared
+    folders; it reaches only `sandbox.allowed_domains`."""
+    common = git(project, 'rev-parse', '--git-common-dir', check=False) or '.git'
+    git_dir = (Path(project) / common).resolve()
+    writable = [git_dir.as_posix()] + [(Path(project) / d).resolve().as_posix() for d in cfg['share_dirs']]
+    return {'sandbox': {'enabled': True, 'failIfUnavailable': True, 'autoAllowBashIfSandboxed': True,
+                        'allowUnsandboxedCommands': False,
+                        'network': {'allowedDomains': autocfg.sandbox(cfg)['allowed_domains']},
+                        'filesystem': {'allowWrite': writable}}}
+
+
 def update_base(project, remote, base, dry_run=False):
     """Team rule: start from the remote's latest base. -> the start point (`<remote>/<base>`, or `base` when the repository has
     no such remote). A fetch that fails stops the run: an unattended run must not build on old code."""
@@ -1396,17 +1411,31 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
     allowed = (list(BASE_ALLOWED) + ([f'Bash({cfg["test_command"]}:*)'] if cfg['test_command'] else [])
                + ([f'Bash({cfg["check_command"]}:*)'] if cfg.get('check_command') else []))
     model = model_args(cfg, 'implementer')
+    sandbox_cfg = autocfg.sandbox(cfg)
+    sandboxed, sandbox_why = (autosafe.sandbox_available() if sandbox_cfg['enabled'] else (False, 'turned off'))
+    sandbox_line = ('sandbox: on, each agent runs every shell command inside the Claude Code sandbox (no shell allowlist; '
+                    'network: ' + ', '.join(sandbox_cfg['allowed_domains']) + ')' if sandboxed else
+                    f'sandbox: not used ({sandbox_why}); the agent keeps the shell allowlist' +
+                    ('' if sandbox_why == 'turned off' else f'. {autosafe.SANDBOX_FIX}'))
     if dry_run:
         open_now = queue.open_count((wt / queue_rel if (wt / queue_rel).exists() else pq).read_text(encoding='utf-8')) if pq.exists() else 0
         say(f'{open_now} open item(s) in {queue_rel}')
         say(f'dry run: would run up to {max_iterations} iteration(s), each: claude -p <prompt> --permission-mode acceptEdits '
             f'--max-budget-usd {max_budget_usd}' + (f' --model {model[1]}' if model else ''))
         say('allowed in addition to .claude/settings.json: ' + ' | '.join(allowed))
+        say(sandbox_line)
         say('after each iteration: ' + (f'run `{cfg["test_command"]}` in the worktree; ' if not check_only else '')
             + 'stop if red, if STOP exists, on uncommitted leftovers, or if nothing changed twice in a row')
         return 0
 
     lock.acquire()
+    say(sandbox_line)
+    sandbox_args = []
+    if sandboxed:
+        settings_file = auto / 'run' / 'sandbox-settings.json'
+        settings_file.parent.mkdir(parents=True, exist_ok=True)
+        settings_file.write_text(json.dumps(sandbox_settings(project, cfg), indent=2), encoding='utf-8')
+        sandbox_args = ['--settings', str(settings_file)]
     PATH_PREPEND[:] = [str((wt / p).resolve()) for p in cfg.get('path_prepend') or []]
     slug = project_slug(project, cfg)
     central_token, token_source = autosafe.central_token(cfg) if autosafe.central_enabled(cfg) else ('', '')
@@ -1779,7 +1808,7 @@ def run(project, max_iterations=8, max_budget_usd=5.0, enqueue='', dry_run=False
             t0 = time.time()
             cmd = ['claude', '-p', prompt, '--permission-mode', 'acceptEdits', '--output-format', 'stream-json', '--verbose',
                    '--allowedTools', *allowed, '--disallowedTools', *autosafe.PUSH_DENIED,
-                   '--max-budget-usd', str(max_budget_usd), *model]
+                   '--max-budget-usd', str(max_budget_usd), *model, *sandbox_args]
             code, out = claude(cmd, wt)
             entry = {'time': datetime.now().isoformat(timespec='seconds'), 'item': item, 'result': None, 'commit': None,
                      'duration_s': None, 'cost_usd': parse_cost(out), 'plan_usage': plan_usage(out)}

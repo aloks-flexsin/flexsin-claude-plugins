@@ -43,6 +43,10 @@ config with only the old keys loads exactly as before. Read them with `section(c
                 a set base_url must pass `autobrowser.check_base_url`, which preflight checks)
     changelog   enabled, file, versioning (semver); defaults off, CHANGELOG.md, semver (read them with `changelog(cfg)`).
                 When on, queue items need a `*Kind:*` line and the prompt asks for one change sentence per item.
+    sandbox     enabled (default true), required (default false), allowed_domains (default the git host and package
+                registries); read them with `sandbox(cfg)`. Where Claude Code's sandbox works (macOS, Linux and WSL2 with
+                bubblewrap and socat) each item's agent runs in it and may run any shell command; elsewhere it keeps the
+                shell allowlist, or with `required` the runner refuses to start.
 
 `plugins/auto-runner/config.schema.json` describes every key; keep it in step with DEFAULTS and SECTIONS (a test checks).
 
@@ -94,10 +98,14 @@ SECTIONS = {
     'publish': {'push': 'flag', 'pull_request': 'flag', 'remote': 'text'},
     'principles': {'enabled': 'flag', 'file': 'text', 'require_slices': 'flag'},
     'watch': {'poll_seconds': 'count', 'plan_budget_usd': 'amount', 'daily_budget_usd': 'amount'},
+    'sandbox': {'enabled': 'flag', 'required': 'flag', 'allowed_domains': 'texts'},
 }
 # Values a section means when the file leaves a key out (section() still returns only what the file sets).
 CHANGELOG_DEFAULTS = {'enabled': False, 'file': 'CHANGELOG.md', 'versioning': 'semver'}
 WATCH_DEFAULTS = {'poll_seconds': 300, 'plan_budget_usd': 2, 'daily_budget_usd': 20}
+SANDBOX_DEFAULTS = {'enabled': True, 'required': False,
+                    'allowed_domains': ['github.com', '*.github.com', 'pypi.org', 'files.pythonhosted.org',
+                                        'registry.npmjs.org']}
 DOCS_MAP_DEFAULT = 'docs/doc-map.json'
 KIND_TEXT = {'text': 'text', 'flag': 'true/false', 'count': 'a whole number >= 0',
              'amount': 'a number >= 0', 'texts': 'a list of text', 'percent': 'a whole number from 1 to 100'}
@@ -196,6 +204,14 @@ def changelog(cfg):
 def watch(cfg):
     """The watch section with its defaults filled in (poll every 300 s, $2 per plan, $20 per local day)."""
     return {**WATCH_DEFAULTS, **section(cfg, 'watch')}
+
+
+def sandbox(cfg):
+    """The `sandbox` section with SANDBOX_DEFAULTS filled in (on by default, not required, the git host and package
+    registries allowed); a set `allowed_domains` replaces the default list."""
+    out = {**SANDBOX_DEFAULTS, **section(cfg, 'sandbox')}
+    out['allowed_domains'] = list(out['allowed_domains'])
+    return out
 
 
 PRINCIPLES_FILE = Path(__file__).resolve().parent.parent / 'docs' / 'engineering-principles.md'

@@ -38,3 +38,13 @@ def _no_real_credentials(tmp_path_factory, monkeypatch):
     from pathlib import Path
     home = tmp_path_factory.mktemp('home')
     monkeypatch.setattr(Path, 'home', classmethod(lambda cls: home))
+
+
+@pytest.fixture(autouse=True)
+def _no_sandbox(monkeypatch):
+    """Runs behave the same on every machine (a Linux CI host with bubblewrap would otherwise sandbox its agents): the
+    sandbox counts as unavailable unless a test says otherwise (tests/auto_runner/test_sandbox.py)."""
+    import sys
+    for mod in list(sys.modules.values()):
+        if getattr(mod, '__file__', '') and str(mod.__file__).endswith('autosafe.py') and hasattr(mod, 'sandbox_available'):
+            monkeypatch.setattr(mod, 'sandbox_available', lambda platform=None, which=None: (False, 'not in tests'))

@@ -194,6 +194,7 @@ Schema v2 sections (objects, every nested key optional, unknown nested keys and 
 | `central` | `enabled`, `url`, `project`, `token_env` (the name of the variable holding the token; never a token) |
 | `publish` | `push`, `pull_request` (flags, default **on**; `false` turns each off), `remote` (default `origin`): see "Publishing a run" |
 | `principles` | `enabled` (default on), `file` (default the plugin's `docs/engineering-principles.md`), `require_slices` (default on): see "Engineering principles" |
+| `sandbox` | `enabled` (default on), `required` (default off), `allowed_domains` (default `github.com`, `*.github.com`, `pypi.org`, `files.pythonhosted.org`, `registry.npmjs.org`); read with `autocfg.sandbox()`. See "Sandbox" |
 | `safety` | `allow_env_read` (`true`: the agent may read `.env` files; init leaves out the `Read(./.env)` rules and preflight stops demanding them. Default off) |
 | `locks` | `path`, `stale_after_minutes` |
 | `usage_limit` | `wait` (default false), `max_wait_minutes` (default 360): wait for Claude's usage limit to reset and continue, instead of stopping; `stop_at_percent` (1 to 100, default 90): stop between items when a plan-usage window reaches it (100 = never) |
@@ -223,6 +224,18 @@ permissively licensed open-source packages; building it yourself needs a reason 
   `"enabled": false` turns both off: the prompt is then exactly as before.
 
 ## Publishing a run (tested with a local bare remote and a fake `gh`; never against GitHub)
+## Sandbox
+Where Claude Code's sandbox works (macOS; Linux and WSL2 with `bubblewrap` and `socat`; `autosafe.sandbox_available`),
+each item's agent runs in it: the runner writes `.auto/run/sandbox-settings.json` (`auto_run.sandbox_settings`) and starts
+the agent with `--settings <that file>`. Every shell command then runs inside the sandbox without a prompt and without the
+shell allowlist (`autoAllowBashIfSandboxed`), never outside it (`allowUnsandboxedCommands: false`), and the agent refuses
+to start rather than run unsandboxed (`failIfUnavailable: true`). It may write in the worktree, the repository's git folder
+(a linked worktree's commits land there) and the `share_dirs` targets, and reach only `sandbox.allowed_domains`.
+`git push` stays denied to the agent either way. Where the sandbox cannot run (native Windows, a Linux host without the
+two tools) the agent keeps the shell allowlist below and the run says so in its first lines; `"sandbox": {"required":
+true}` makes preflight refuse to start instead (group `sandbox`), and `"enabled": false` turns it off. Not yet tried
+against a live sandbox (unverified): the setting names follow the Claude Code docs (sandboxing, settings reference).
+
 The agent can never push: the runner starts every agent with `--disallowedTools Bash(git push:*) PowerShell(git push:*)`,
 whatever the project's settings say. Publishing is **on by default** (since 0.14.0): the runner itself, a plain Python step with
 your own git credentials, pushes the run branch **as it goes**: before each new item starts, whenever the branch has new
@@ -528,7 +541,7 @@ harness cannot copy.
 
 ## What the plugin cannot enforce
 - The deny rules are Claude Code permission settings. The plugin only checks they are written; it cannot stop a person or another tool from changing them, or a command written in a form the rules do not match.
-- It does not sandbox the machine: the agent runs with your user account's file access inside the worktree and anything your permission mode allows.
+- Without Claude Code's sandbox (see "Sandbox": native Windows, or `sandbox.enabled` false) it does not sandbox the machine: the agent runs with your user account's file access inside the worktree and anything your permission mode allows.
 - A green suite shows the tests pass, not that the work is right. Read the diff (`git log <base>..<branch>`) before merging. Merging and pushing are always yours.
 - Cost and time limits are per run flags, enforced by the `claude` CLI, not by the plugin.
 
