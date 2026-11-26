@@ -430,17 +430,66 @@ def bad_steps(result):
         d for d in result.get('deploys', []) if d['outcome'] in ('error', 'failed')]
 
 
-def check_role(http, out):
-    """-> None when the token is a supervisor's, else the exit code after saying why."""
+def check_role(http, out, projects=()):
+    """-> None when the token may supervise, else the exit code after saying why. A supervisor account may; any other
+    signed-in account acts as the Supervise stage (decision record 0012, Phase 8) and must be a developer or above in
+    each project (`projects`: slugs, checked with a read of the state)."""
     status, who = http('GET', WHOAMI)
     role = who.get('role') if status == 200 and isinstance(who, dict) else None
     if role == 'supervisor':
         return None
-    if status != 200:
-        out('Supervisor: refusing to run. The central service did not answer or rejected the token.')
-    else:
-        out('Supervisor: refusing to run. This token belongs to a "%s" account, not a supervisor.' % role)
-    return EXIT_REFUSED
+    if status != 200 or role is None:
+        out('Supervisor: refusing to run. The central service did not answer or rejected the token, or it is a '
+            'project token: sign this computer in (/auto-runner:setup).')
+        return EXIT_REFUSED
+    refused = [p for p in projects if http('GET', STATE % quote(p, safe=''))[0] != 200]
+    if refused or not projects:
+        out('Supervisor: refusing to run. The Supervise stage needs you to be a developer or above in: %s.'
+            % ', '.join(refused or ['the project']))
+        return EXIT_REFUSED
+    return None
+
+
+def github_token(env, run=subprocess.run):
+    """The token merges run with: AUTO_SUPERVISOR_GITHUB_TOKEN, else GITHUB_TOKEN or GH_TOKEN, else `gh auth token`
+    (the GitHub CLI's own sign-in), else '' (pull requests are then read-only: merges are refused by the forge)."""
+    for name in ('AUTO_SUPERVISOR_GITHUB_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN'):
+        if env.get(name):
+            return env[name]
+    try:
+        got = run(['gh', 'auth', 'token'], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return ''
+    return got.stdout.strip() if got.returncode == 0 else ''
+
+
+def resolve_settings(env, repo_dir=None, origin=origin_repo, run=subprocess.run):
+    """Settings for a pass with nothing set up for the Supervise stage (decision record 0012, Phase 8): each
+    AUTO_SUPERVISOR_* variable that is set wins; the rest come from the project's `.claude/auto.json` (central URL and
+    slug), the person's own sign-in (their personal token), the clone's origin (GitHub owner/repo) and github_token.
+    -> (settings dict, list of what is still missing)."""
+    repo_dir = repo_dir or env.get('AUTO_SUPERVISOR_REPO_DIR') or '.'
+    out = {'url': env.get('AUTO_SUPERVISOR_URL') or '', 'token': env.get('AUTO_SUPERVISOR_TOKEN') or '',
+           'project': env.get('AUTO_SUPERVISOR_PROJECT') or '', 'repo': env.get('AUTO_SUPERVISOR_REPO') or '',
+           'merger': env.get('AUTO_SUPERVISOR_MERGER') or '', 'repo_dir': repo_dir,
+           'base': env.get('AUTO_SUPERVISOR_BASE') or 'origin/main', 'github_token': github_token(env, run)}
+    if not (out['url'] and out['token'] and out['project']):
+        try:
+            cfg_mod, safe = _load('autorunner_cfg', 'autocfg.py'), _load('autorunner_safe', 'autosafe.py')
+            cfg = cfg_mod.load(repo_dir)
+            if safe.central_enabled(cfg):
+                out['url'] = out['url'] or cfg['central'].get('url') or ''
+                out['project'] = out['project'] or cfg['central'].get('project') or ''
+                if not out['token']:
+                    token, _ = safe.central_token(cfg, env)
+                    out['token'] = token if token.startswith(safe.PERSONAL_TOKEN_PREFIX) else ''
+        except Exception:                          # no readable config: the missing list below says what to do
+            pass
+    if not out['repo']:
+        out['repo'] = origin(repo_dir) or ''
+    missing = [name for name, key in (('the central URL', 'url'), ('your sign-in (personal token)', 'token'),
+                                      ('the project', 'project'), ('the GitHub repository', 'repo')) if not out[key]]
+    return out, missing
 
 
 STOP = Path('.auto') / 'STOP'
@@ -449,7 +498,7 @@ WATCH_SLICE = 30
 
 
 def watch_main(argv, env, http=None, make_read=None, make_forge=None, make_deployer=None, probe=None, out=print,
-               sleep=None, clock=None, origin=origin_repo, max_passes=None, stop=None):
+               sleep=None, clock=None, origin=origin_repo, max_passes=None, stop=None, settings=None):
     """`watch [--every SECONDS]`: run a pass for every project (watch_projects), sleep, and again, until `.auto/STOP`
     exists in the current folder (checked between projects and every WATCH_SLICE seconds while waiting). One project's
     error never stops the loop. Exit 0 when stopped, 2 on missing settings, 3 when the token is not a supervisor's."""
@@ -460,21 +509,28 @@ def watch_main(argv, env, http=None, make_read=None, make_forge=None, make_deplo
     sleep = sleep or _time.sleep
     clock = clock or _time.monotonic
     stop = Path(stop) if stop is not None else STOP
-    missing = [k for k in ('AUTO_SUPERVISOR_URL', 'AUTO_SUPERVISOR_TOKEN', 'AUTO_SUPERVISOR_MERGER') if not env.get(k)]
-    projects, problems = watch_projects(env, origin)
+    s, unresolved = settings if settings is not None else resolve_settings(env, origin=origin)
+    missing = [m for m in unresolved if m in ('the central URL', 'your sign-in (personal token)')]
+    if env.get('AUTO_SUPERVISOR_PROJECTS'):
+        projects, problems = watch_projects(env, origin)
+    elif s['project'] and s['repo']:                   # the project this clone belongs to (zero setup, Phase 8)
+        projects, problems = [{'slug': s['project'], 'repo_dir': s['repo_dir'], 'repo': s['repo']}], []
+    else:
+        projects, problems = [], [m for m in unresolved if m not in missing] or ['no project found']
     if missing or not projects:
-        out('Supervisor: not configured. ' + '; '.join((['set ' + ', '.join(missing)] if missing else []) + problems) + '.')
+        out('Supervisor: not configured: ' + '; '.join(missing + problems) + '. Run /auto-runner:setup in the project, '
+            'or set the AUTO_SUPERVISOR_* overrides.')
         return EXIT_CONFIG
     for p in problems:
         out('Supervisor: skipping ' + p)
-    http = http or urllib_http(env['AUTO_SUPERVISOR_URL'], env['AUTO_SUPERVISOR_TOKEN'])
-    refused = check_role(http, out)
+    http = http or urllib_http(s['url'], s['token'])
+    refused = check_role(http, out, [p['slug'] for p in projects])
     if refused is not None:
         return refused
     make_read = make_read or git_reader
-    make_forge = make_forge or (lambda repo: autoforge.GithubForge(repo, token=env.get('AUTO_SUPERVISOR_GITHUB_TOKEN', '')))
+    make_forge = make_forge or (lambda repo: autoforge.GithubForge(repo, token=s['github_token']))
     make_deployer = make_deployer or autodeploy.ShellDeployer
-    base_ref = env.get('AUTO_SUPERVISOR_BASE') or 'origin/main'
+    base_ref = s['base']
     out('Supervisor: watching %s every %d s (create %s to stop)' % (', '.join(p['slug'] for p in projects), a.every,
                                                                    stop.as_posix()))
     passes = 0
@@ -484,8 +540,9 @@ def watch_main(argv, env, http=None, make_read=None, make_forge=None, make_deplo
                 out('Supervisor: STOP file found: stopping.')
                 return EXIT_OK
             try:
-                result = run_pass(p['slug'], http, make_read(p['repo_dir']), base_ref, make_forge(p['repo']),
-                                  env['AUTO_SUPERVISOR_MERGER'], make_deployer(p['repo_dir']), probe)
+                forge = make_forge(p['repo'])
+                result = run_pass(p['slug'], http, make_read(p['repo_dir']), base_ref, forge,
+                                  s['merger'] or forge.login() or '', make_deployer(p['repo_dir']), probe)
                 for line in summary(result):
                     out('[%s] %s' % (p['slug'], line))
             except Exception as e:                       # one project's failure never ends the watch
@@ -501,7 +558,7 @@ def watch_main(argv, env, http=None, make_read=None, make_forge=None, make_deplo
             sleep(min(WATCH_SLICE, max(end - clock(), 0)))
 
 
-def main(argv=None, env=None, http=None, read=None, forge=None, out=print, deployer=None, probe=None):
+def main(argv=None, env=None, http=None, read=None, forge=None, out=print, deployer=None, probe=None, settings=None):
     """Run one pass. Exit 0 = ran clean, 1 = ran but a step reported an error, 2 = missing configuration,
     3 = refused (the token is not a supervisor's, or the service did not answer). Injectable parts are for tests.
     `main(['add', ...])` adds a task instead (see `add_main`)."""
@@ -511,19 +568,20 @@ def main(argv=None, env=None, http=None, read=None, forge=None, out=print, deplo
         return add_main(argv[1:], env, http=http, out=out)
     if argv[:1] == ['watch']:
         return watch_main(argv[1:], env, http=http, out=out)
-    missing = [k for k in REQUIRED if not env.get(k)]
+    s, missing = settings if settings is not None else resolve_settings(env)
     if missing:
-        out('Supervisor: not configured. Set ' + ', '.join(missing) + '.')
+        out('Supervisor: not configured: ' + ', '.join(missing) + ' could not be found. Run /auto-runner:setup in the '
+            'project (it signs this computer in and connects the project), or set the AUTO_SUPERVISOR_* overrides.')
         return EXIT_CONFIG
-    http = http or urllib_http(env['AUTO_SUPERVISOR_URL'], env['AUTO_SUPERVISOR_TOKEN'])
-    refused = check_role(http, out)
+    http = http or urllib_http(s['url'], s['token'])
+    refused = check_role(http, out, [s['project']])
     if refused is not None:
         return refused
-    forge = forge or autoforge.GithubForge(env['AUTO_SUPERVISOR_REPO'], token=env.get('AUTO_SUPERVISOR_GITHUB_TOKEN', ''))
-    read = read or git_reader(env.get('AUTO_SUPERVISOR_REPO_DIR') or '.')
-    deployer = deployer or autodeploy.ShellDeployer(env.get('AUTO_SUPERVISOR_REPO_DIR') or '.')
-    result = run_pass(env['AUTO_SUPERVISOR_PROJECT'], http, read, env.get('AUTO_SUPERVISOR_BASE') or 'origin/main',
-                      forge, env['AUTO_SUPERVISOR_MERGER'], deployer, probe)
+    forge = forge or autoforge.GithubForge(s['repo'], token=s['github_token'])
+    merger = s['merger'] or forge.login() or ''
+    read = read or git_reader(s['repo_dir'])
+    deployer = deployer or autodeploy.ShellDeployer(s['repo_dir'])
+    result = run_pass(s['project'], http, read, s['base'], forge, merger, deployer, probe)
     for line in summary(result):
         out(line)
     return EXIT_ERRORS if bad_steps(result) else EXIT_OK

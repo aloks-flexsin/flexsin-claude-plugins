@@ -5,6 +5,12 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- The Supervise stage under your own sign-in (autonomy Phase 8): the supervisor API also accepts a developer-or-above
+  member's personal token (audited `"as": "supervise stage"`); `autosupervisor.py` and its `watch` need no setup: the
+  central URL, project and token come from the project's config and your sign-in, the repository from `origin`, the
+  GitHub token from `GITHUB_TOKEN`/`GH_TOKEN`/`gh auth token`, and the merging identity from that token. The
+  `AUTO_SUPERVISOR_*` variables become overrides. A pause made by the stage can be undone by it, never a person's
+  (`runner.control_source`, added by `python -m central init-db`).
 - Fewer, clearer commands (autonomy Phase 7): `/auto-runner:setup` (one guided setup; `setup check` reads only),
   `start` (the watcher, or `start supervisor`), `stop`, `add <what>` (an open task for you or the pool), `status`,
   `manual on|off [task N]` (and `manual edits`, the old allow-edits) and `tick`, one lifecycle step for

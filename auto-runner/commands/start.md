@@ -11,8 +11,8 @@ watcher takes this person's tasks and the pool's, plans them, and builds approve
 **`supervisor`: the supervisor loop.** Start it in the background (Bash tool with `run_in_background: true`):
 `python "${CLAUDE_PLUGIN_ROOT}/bin/autosupervisor.py" watch`. It decides plans, merges green pull requests, deploys and
 keeps the queue moving every 15 minutes for each project in `AUTO_SUPERVISOR_PROJECTS` (or the single project in
-`AUTO_SUPERVISOR_PROJECT`); it needs the supervisor settings described in the README and stops when `.auto/STOP` exists
-in this folder. If it exits at once, show its message (exit 2: a setting is missing; 3: not a supervisor token).
+`AUTO_SUPERVISOR_PROJECT`); it needs no setup (it runs as the Supervise stage under your own sign-in; you must be a developer or above) and stops when `.auto/STOP` exists
+in this folder. If it exits at once, show its message (exit 2: run `/auto-runner:setup` first; 3: you are not a developer in the project).
 
 **Without a background process.** Tell the user they can instead keep the whole lifecycle moving from this session with
 Claude Code's loop: `/loop 15m /auto-runner:tick` (one step each time; stopping the loop stops the work).

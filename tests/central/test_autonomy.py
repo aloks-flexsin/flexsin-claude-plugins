@@ -138,6 +138,44 @@ def test_a_caller_whose_repository_is_manual_keeps_the_old_escalation(app, conn,
     assert send(app, sup_token, n, 'changes', reasons=['x'], autonomy='manual').get_json()['decision'] == 'escalate'
 
 
+# ---------- the Supervise stage under a member's own sign-in (decision record 0012, Phase 8) ----------
+
+def test_a_developer_acts_as_the_supervise_stage_and_it_is_audited(app, conn, team):
+    dev = team['token']['dev']
+    state = get(app, '/api/v1/supervisor/state?project=alpha', dev)
+    assert state.status_code == 200 and state.get_json()['autonomy'] == 'auto'
+    n = waiting(app, team)
+    resp = send(app, dev, n, 'approve', reasons=['passes the policy'])
+    assert resp.status_code == 200 and resp.get_json()['decision'] == 'approve'
+    [row] = rows(conn, 'supervisor.plan.approve')
+    detail = row['detail'] if isinstance(row['detail'], dict) else json.loads(row['detail'])
+    assert detail['as'] == 'supervise stage'
+    added = add_as_supervisor(app, dev, assignee='manager@example.com')
+    assert added.status_code == 201 and 'From: ' in added.get_json()['task']['description']
+
+
+def test_a_viewer_or_an_outsider_is_refused_and_a_slug_is_not_revealed(app, conn, team):
+    assert get(app, '/api/v1/supervisor/state?project=alpha', team['token']['viewer']).status_code == 403
+    assert get(app, '/api/v1/supervisor/state?project=nope', team['token']['dev']).status_code == 403
+    assert get(app, '/api/v1/supervisor/state?project=alpha').status_code == 401
+
+
+def test_a_stage_pause_can_be_resumed_by_the_stage_but_not_a_persons(app, conn, team):
+    from central import runners
+    from .test_runners import LABEL, beat
+    from .test_supervisor_api import runner_action
+    beat(app, team)
+    rid = runners.get(conn, team['alpha']['id'], LABEL)['id']
+    dev = team['token']['dev']
+    assert runner_action(app, dev, rid, 'pause').status_code == 200
+    assert runners.by_id(conn, team['alpha']['id'], rid)['control_source'] == 'supervise'
+    state = get(app, '/api/v1/supervisor/state?project=alpha', dev).get_json()
+    assert state['runners'][0]['paused_by_supervisor'] is True
+    assert runner_action(app, dev, rid, 'resume').status_code == 200
+    row = runners.by_id(conn, team['alpha']['id'], rid)
+    runners.set_control(conn, row, 'pause', team['accounts']['manager'], START)      # a person's pause
+    conn.commit()
+    assert runner_action(app, dev, rid, 'resume').status_code == 403
 def test_the_api_marks_a_task_manual_for_its_assignee_only(app, conn, team):
     from .test_tasks import api
     n = add(team)

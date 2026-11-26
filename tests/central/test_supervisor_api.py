@@ -52,9 +52,9 @@ def test_state_is_read_only_and_supervisor_only(app, team, conn, sup_token):
     assert 'claim' not in ok.get_data(as_text=True)
     assert {'plan', 'items', 'status', 'branch', 'pr_url', 'plan_rounds', 'merged_at'} <= set(body['tasks'][0])
     assert body['runners'] == [] and body['blockers'] == []
-    assert get(app, url, team['token']['dev']).status_code == 403
+    assert get(app, url, team['token']['viewer']).status_code == 403
     admin_token = personal.create_token(conn, team['accounts']['admin']['id'], 'adm', START)
-    assert get(app, url, admin_token).status_code == 403
+    assert get(app, url, admin_token).status_code == 200        # decision 0012 Phase 8: any developer+ may act as the stage
     assert get(app, url).status_code == 401
     assert get(app, '/api/v1/supervisor/state?project=nope', sup_token).status_code == 404
     assert get(app, '/api/v1/supervisor/state?project=nope', team['token']['dev']).status_code == 403
@@ -142,10 +142,9 @@ def test_a_new_plan_post_is_decided_afresh(app, team, conn, sup_token, member):
     assert send(app, sup_token, n, 'approve').get_json()['already'] is False
 
 
-def test_plan_decision_is_for_the_supervisor_only(app, team, conn, sup_token, member):
+def test_plan_decision_is_for_the_supervisor_or_a_developer_and_above(app, team, conn, sup_token, member):
     n = waiting(app, team)
-    assert send(app, team['token']['manager'], n, 'approve').status_code == 403
-    assert send(app, team['token']['dev'], n, 'approve').status_code == 403
+    assert send(app, team['token']['viewer'], n, 'approve').status_code == 403
     url = '/api/v1/supervisor/tasks/%d/plan-decision?project=alpha' % n
     assert new_client(app).post(url, json={'decision': 'approve'}).status_code == 401
     assert send(app, sup_token, n, 'approve', project='nope').status_code == 404
@@ -199,7 +198,7 @@ def test_adding_needs_a_source_a_runnable_assignee_and_a_supervisor(app, team, c
     assert add_as_supervisor(app, sup_token, assignee='sup@example.com').status_code == 400
     assert add_as_supervisor(app, sup_token, plan='## Intent\nx.').status_code == 400        # a plan needs its items
     assert add_as_supervisor(app, sup_token, project='nope').status_code == 404
-    assert add_as_supervisor(app, team['token']['dev']).status_code == 403
+    assert add_as_supervisor(app, team['token']['viewer']).status_code == 403
     assert len(conn.query('SELECT * FROM project_task')) == before and rows(conn, 'supervisor.task.add') == []
 
 
@@ -257,10 +256,9 @@ def test_supervisor_cannot_resume_a_persons_pause(app, team, conn, sup_token, a_
     assert audit.rows(conn, 'supervisor.runner.resume') == []
 
 
-def test_runner_control_is_for_the_supervisor_only(app, team, conn, sup_token, a_runner):
+def test_runner_control_is_for_the_supervisor_or_a_developer_and_above(app, team, conn, sup_token, a_runner):
     rid = a_runner['id']
-    assert runner_action(app, team['token']['dev'], rid, 'pause').status_code == 403
-    assert runner_action(app, team['token']['manager'], rid, 'pause').status_code == 403
+    assert runner_action(app, team['token']['viewer'], rid, 'pause').status_code == 403
     assert new_client(app).post('/api/v1/supervisor/runners/%s/pause?project=alpha' % rid).status_code == 401
     assert runner_action(app, sup_token, rid, 'stop').status_code == 404
     assert runner_action(app, sup_token, rid, 'nope').status_code == 404

@@ -106,7 +106,7 @@ def test_missing_token_refused_without_calling():
 
 def test_interface_exposes_no_write_to_branch_method():
     public = {n for n in dir(Forge) if not n.startswith('_')}
-    assert public == {'pr', 'changed_files', 'checks', 'base_checks', 'reviews', 'merge'}
+    assert public == {'pr', 'changed_files', 'checks', 'base_checks', 'reviews', 'merge', 'login'}   # login reads only
     for cls in (GithubForge, fake_forge.FakeForge):
         extra = {n for n in dir(cls) if not n.startswith('_')} - public
         assert not [n for n in extra if any(w in n for w in ('push', 'commit', 'write', 'update', 'branch', 'ref'))]
@@ -130,3 +130,11 @@ def test_fake_forge_merges_at_exact_sha():
     with pytest.raises(ForgeError):
         ff.merge(3, 'other', 'squash')
     assert ff.merge(3, 's1', 'squash')['merged'] and ff.merges == [(3, 's1', 'squash')]
+
+
+def test_login_reads_the_token_identity_or_none():
+    f, op = forge({('GET', '/user'): {'login': 'sup-bot'}})
+    assert f.login() == 'sup-bot' and op.calls[0][0] == 'GET'
+    assert forge({})[0].login() is None                              # 404: unknown
+    assert GithubForge('o/r', token='', opener=Opener({})).login() is None
+    assert Forge().login() is None

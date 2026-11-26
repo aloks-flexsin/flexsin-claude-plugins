@@ -55,4 +55,7 @@ request to merged and deployed with no person in the loop, and a person to step 
   session identity comes from the environment and a session asks only when a part is missing.
 - New config: `autonomy`, `deploy`, `release`, `sandbox`; new central columns `project.autonomy`, `project_task.manual`
   (`python -m central init-db`).
+- The Supervise stage runs under each person's own sign-in (Phase 8): the supervisor API accepts a developer-or-above
+  member's personal token, audited as the stage; the supervisor account stays only as a back-compat alias, and the
+  plugin needs no supervisor settings (the `AUTO_SUPERVISOR_*` variables only override).
 - Manual mode is the way back: switching a project or a task to manual brings back every person-in-the-loop step.

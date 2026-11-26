@@ -38,6 +38,36 @@ def whoami():
     return jsonify(role=account["role"], email=account["email"])
 
 
+STAGE_MIN_ROLE = "developer"      # decision record 0012, Phase 8: a member's own token may act as the Supervise stage
+
+
+def acts_as_supervisor(db, project, account):
+    """True for a supervisor account (back-compat) and for a developer-or-above member of `project` acting as the
+    Supervise stage under their own sign-in (decision record 0012, Phase 8)."""
+    if account is None or project is None:
+        return False
+    return account["role"] == accounts.SUPERVISOR or projects.allows(projects.effective_role(db, project, account),
+                                                                     STAGE_MIN_ROLE)
+
+
+def _stage_project(db, refusal):
+    """-> (account, project, None) for a caller allowed on `?project=<slug>`, else (account, project, error response).
+    401 without a valid token. A supervisor account gets 404 for an unknown project; anyone else gets 403 both for an
+    unknown project and for one where they are below developer, so a slug's existence is not revealed."""
+    account = _caller(db)
+    project = projects.get_by_slug(db, request.args.get("project"))
+    if account is not None and account["role"] == accounts.SUPERVISOR and project is None:
+        return account, None, _error("no such project", 404)
+    if not acts_as_supervisor(db, project, account):
+        tokens._fail(403, refusal)
+    return account, project, None
+
+
+def _as(account):
+    """Audit detail naming who acted: nothing extra for a supervisor account, `{"as": "supervise stage"}` for a member."""
+    return {} if account["role"] == accounts.SUPERVISOR else {"as": "supervise stage"}
+
+
 PLAN_ROUND_CAP = 2          # a plan is sent back at most this many times, then it goes to a person
 POST_MARKS = ("task.plan.post", "task.create")                    # a runner put a (new) plan up for review
 DECISIONS = ("approve", "changes", "escalate")
@@ -86,14 +116,9 @@ def _blocker(row):
 @bp.get("/api/v1/supervisor/state")
 def state():
     db = get_db()
-    account = _caller(db)
-    if account is None or account["role"] != accounts.SUPERVISOR:
-        tokens._fail(403, "the supervisor state needs a supervisor account")
-    project = projects.get_by_slug(db, request.args.get("project"))
-    if project is None:
-        response = jsonify(error="no such project")
-        response.status_code = 404
-        return response
+    account, project, refused = _stage_project(db, "the supervisor state needs a supervisor account or a developer+ member")
+    if refused is not None:
+        return refused
     moment = auth.now()
     marks = ",".join("?" * len(ANSWERABLE))
     blocked = db.query("SELECT * FROM blocker WHERE project_id = ? AND status IN (%s) ORDER BY created_at, id" % marks,
@@ -102,7 +127,7 @@ def state():
     return jsonify(project=project["slug"], autonomy=projects.autonomy(project), last_deploy=last_deploy(db, project["id"]),
                    tasks=[_task(marks, r, moment) for r in tasks.for_project(db, project["id"])],
                    runners=[dict(runners.public(r, moment), id=r["id"], paused_by_supervisor=(
-                       r["control"] == "pause" and r["control_role"] == accounts.SUPERVISOR))
+                       r["control"] == "pause" and runners.paused_by_supervisor(r)))
                             for r in runners.for_project(db, project["id"])],
                    blockers=[_blocker(r) for r in blocked])
 
@@ -117,12 +142,9 @@ def add_task():
     supervisor never approves or sends back a plan on a task it added. Otherwise the task is `open` and the assignee's
     runner plans it. Writes `task.create` and `supervisor.task.add` audit rows."""
     db = get_db()
-    account = _caller(db)
-    if account is None or account["role"] != accounts.SUPERVISOR:
-        tokens._fail(403, "adding a task this way needs a supervisor account")
-    project = projects.get_by_slug(db, request.args.get("project"))
-    if project is None:
-        return _error("no such project", 404)
+    account, project, refused = _stage_project(db, "adding a task this way needs a supervisor account or a developer+ member")
+    if refused is not None:
+        return refused
     body = request.get_json(silent=True)
     body = body if isinstance(body, dict) else {}
     email = body.get("assignee")
@@ -141,14 +163,14 @@ def add_task():
         row = tasks.create(db, project, account, assignee, body.get("title"), body.get("description"), moment,
                            status="plan_review" if with_plan else "open", plan=plan if with_plan else "",
                            items=items if with_plan else "", source=body.get("from"),
-                           priority=body.get("priority"), depends_on=body.get("depends_on"))
+                           priority=body.get("priority"), depends_on=body.get("depends_on"), as_stage=True)
     except tasks.TaskError as e:
         db.rollback()
         return _error(str(e), e.status)
     audit.record(db, "task.create", sessions.iso(moment), account_id=account["id"], project_id=project["id"],
                  detail={"number": row["number"], "via": "supervisor", "approval": "page" if with_plan else None})
     audit.record(db, "supervisor.task.add", sessions.iso(moment), account_id=account["id"], project_id=project["id"],
-                 detail={"number": row["number"], "from": body.get("from").strip(), "assignee": assignee["email"] if assignee else None,
+                 detail={**_as(account), "number": row["number"], "from": body.get("from").strip(), "assignee": assignee["email"] if assignee else None,
                          "with_plan": with_plan})
     if with_plan:
         tasks.notify_plan(db, project, row, moment)
@@ -185,12 +207,9 @@ def plan_decision(number):
     project: approve and changes become `escalate`. Manual project: as before, a `changes` after PLAN_ROUND_CAP and an
     approve or changes on a task the supervisor added become `escalate`, and approve/changes need a manager membership."""
     db = get_db()
-    account = _caller(db)
-    if account is None or account["role"] != accounts.SUPERVISOR:
-        tokens._fail(403, "plan decisions need a supervisor account")
-    project = projects.get_by_slug(db, request.args.get("project"))
-    if project is None:
-        return _error("no such project", 404)
+    account, project, refused = _stage_project(db, "plan decisions need a supervisor account or a developer+ member")
+    if refused is not None:
+        return refused
     body = request.get_json(silent=True)
     body = body if isinstance(body, dict) else {}
     decision = body.get("decision")
@@ -234,12 +253,12 @@ def plan_decision(number):
             tasks.notify_plan(db, project, row, moment)
             updated = row
         else:
-            updated = tasks.decide(db, project, row, account, decision, comment, moment)
+            updated = tasks.decide(db, project, row, account, decision, comment, moment, as_stage=True)
     except tasks.TaskError as e:
         db.rollback()
         return _error(str(e), e.status)
     audit.record(db, "supervisor.plan." + decision, sessions.iso(moment), account_id=account["id"], project_id=project["id"],
-                 detail={"number": number, "policy_sha": sha, "reasons": reasons, "converted": converted,
+                 detail={**_as(account), "number": number, "policy_sha": sha, "reasons": reasons, "converted": converted,
                          "round": mark["rounds"] + (1 if decision == "changes" else 0)})
     db.commit()
     return jsonify(task=tasks.public(updated, moment), decision=decision, already=False, converted=converted)
@@ -273,12 +292,9 @@ def merge_record(number):
     earlier `decided` for the same SHA. A `refused` that repeats the previous row (same SHA and reasons) and a `done`
     for a merged task are no-ops (`already: true`)."""
     db = get_db()
-    account = _caller(db)
-    if account is None or account["role"] != accounts.SUPERVISOR:
-        tokens._fail(403, "merge records need a supervisor account")
-    project = projects.get_by_slug(db, request.args.get("project"))
-    if project is None:
-        return _error("no such project", 404)
+    account, project, refused = _stage_project(db, "merge records need a supervisor account or a developer+ member")
+    if refused is not None:
+        return refused
     body = request.get_json(silent=True)
     body = body if isinstance(body, dict) else {}
     phase = body.get("phase")
@@ -313,7 +329,7 @@ def merge_record(number):
                          detail={"number": number, "via": "merge", "from": row["status"]})
         row = tasks.get(db, project["id"], number)
     audit.record(db, "supervisor.merge." + phase, sessions.iso(moment), account_id=account["id"], project_id=project["id"],
-                 detail={"number": number, "sha": sha, "method": method, "reasons": reasons, "evidence": evidence,
+                 detail={**_as(account), "number": number, "sha": sha, "method": method, "reasons": reasons, "evidence": evidence,
                          "merge_sha": merge_sha})
     db.commit()
     return jsonify(task=tasks.public(row, moment), phase=phase, already=False)
@@ -346,12 +362,9 @@ def deploy_record():
     MAX_DEPLOY_OUTPUT characters. `done`, `failed` and `rolled_back` need an earlier `started` for the same SHA (409).
     Supervisor role only. Answers `{"last_deploy"}`."""
     db = get_db()
-    account = _caller(db)
-    if account is None or account["role"] != accounts.SUPERVISOR:
-        tokens._fail(403, "deploy records need a supervisor account")
-    project = projects.get_by_slug(db, request.args.get("project"))
-    if project is None:
-        return _error("no such project", 404)
+    account, project, refused = _stage_project(db, "deploy records need a supervisor account or a developer+ member")
+    if refused is not None:
+        return refused
     body = request.get_json(silent=True)
     body = body if isinstance(body, dict) else {}
     phase = body.get("phase")
@@ -369,7 +382,7 @@ def deploy_record():
     task = body.get("task") if isinstance(body.get("task"), int) else None
     moment = auth.now()
     audit.record(db, "supervisor.deploy." + phase, sessions.iso(moment), account_id=account["id"],
-                 project_id=project["id"], detail={"sha": sha, "reasons": _reasons(body.get("reasons")),
+                 project_id=project["id"], detail={**_as(account), "sha": sha, "reasons": _reasons(body.get("reasons")),
                                                    "output": output[-MAX_DEPLOY_OUTPUT:], "task": task})
     db.commit()
     return jsonify(last_deploy=last_deploy(db, project["id"]))
@@ -383,12 +396,9 @@ def set_order():
     `supervisor.order` audit row (detail: number, from, to, reason). Answers `{"changed": [numbers]}`, so repeating a
     call changes nothing."""
     db = get_db()
-    account = _caller(db)
-    if account is None or account["role"] != accounts.SUPERVISOR:
-        tokens._fail(403, "queue order needs a supervisor account")
-    project = projects.get_by_slug(db, request.args.get("project"))
-    if project is None:
-        return _error("no such project", 404)
+    account, project, refused = _stage_project(db, "queue order needs a supervisor account or a developer+ member")
+    if refused is not None:
+        return refused
     body = request.get_json(silent=True)
     orders = body.get("orders") if isinstance(body, dict) else None
     if not isinstance(orders, list) or len(orders) > 1000:
@@ -413,7 +423,7 @@ def set_order():
             continue
         db.execute("UPDATE project_task SET rank = ? WHERE id = ?", (rank, rows[number]["id"]))
         audit.record(db, "supervisor.order", at, account_id=account["id"], project_id=project["id"],
-                     detail={"number": number, "from": rows[number]["rank"], "to": rank, "reason": reason})
+                     detail={**_as(account), "number": number, "from": rows[number]["rank"], "to": rank, "reason": reason})
         changed.append(number)
     db.commit()
     return jsonify(changed=changed)
@@ -427,18 +437,17 @@ def control_runner(runner_id, action):
     Repeating a call changes nothing. Each change writes a `supervisor.runner.<action>` audit row. Answers
     `{"runner", "changed"}`."""
     db = get_db()
-    account = _caller(db)
-    if account is None or account["role"] != accounts.SUPERVISOR:
-        tokens._fail(403, "runner control needs a supervisor account")
+    account, project, refused = _stage_project(db, "runner control needs a supervisor account or a developer+ member")
+    if refused is not None:
+        return refused
     if action not in ("pause", "resume", "wake"):
         return _error("no such action", 404)
-    project = projects.get_by_slug(db, request.args.get("project"))
-    row = runners.by_id(db, project["id"], runner_id) if project else None
+    row = runners.by_id(db, project["id"], runner_id)
     if row is None:
         return _error("no such runner", 404)
     current = row["control"] or None
     if action == "resume":
-        if current in ("pause", "stop") and row["control_role"] != accounts.SUPERVISOR:
+        if current in ("pause", "stop") and not runners.paused_by_supervisor(row):
             return _error("this runner was paused or stopped by a person; only a person can resume it", 403)
         if current not in ("pause", "stop"):
             return _error("this runner is not paused", 409)
@@ -447,10 +456,10 @@ def control_runner(runner_id, action):
     elif action == "wake" and current in ("pause", "stop"):
         return _error("this runner is asked to %s; waking it would override that" % current, 409)
     moment = auth.now()
-    changed = runners.set_control(db, row, action, account, moment)
+    changed = runners.set_control(db, row, action, account, moment, source="supervise")
     if changed:
         audit.record(db, "supervisor.runner." + action, sessions.iso(moment), account_id=account["id"],
-                     project_id=project["id"], detail={"label": row["label"], "owner": row["account_email"],
+                     project_id=project["id"], detail={**_as(account), "label": row["label"], "owner": row["account_email"],
                                                        "state": row["state"]})
     db.commit()
     return jsonify(runner=runners.public(runners.by_id(db, project["id"], runner_id), moment), changed=changed)
@@ -459,12 +468,9 @@ def control_runner(runner_id, action):
 def _supervisor_task(number):
     """-> (db, account, project, row) for a supervisor call on task `number`; on a problem `row` is an error response."""
     db = get_db()
-    account = _caller(db)
-    if account is None or account["role"] != accounts.SUPERVISOR:
-        tokens._fail(403, "this needs a supervisor account")
-    project = projects.get_by_slug(db, request.args.get("project"))
-    if project is None:
-        return db, account, None, _error("no such project", 404)
+    account, project, refused = _stage_project(db, "this needs a supervisor account or a developer+ member")
+    if refused is not None:
+        return db, account, project, refused
     row = tasks.get(db, project["id"], number)
     if row is None:
         return db, account, project, _error("no such task", 404)
@@ -494,7 +500,7 @@ def release_task(number):
     updated = tasks.release(db, project, row, None, moment)
     for action in ("task.release", "supervisor.task.release"):
         audit.record(db, action, sessions.iso(moment), account_id=account["id"], project_id=project["id"],
-                     detail={"number": number, "runner": row["claim_runner"], "reason": _reason(body)})
+                     detail={**_as(account), "number": number, "runner": row["claim_runner"], "reason": _reason(body)})
     db.commit()
     return jsonify(task=tasks.public(updated, moment), changed=True)
 
@@ -524,7 +530,7 @@ def reassign_task(number):
     updated = tasks.release(db, project, row, to, moment, pool=to is None)
     for action in ("task.reassign", "supervisor.task.reassign"):
         audit.record(db, action, sessions.iso(moment), account_id=account["id"], project_id=project["id"],
-                     detail={"number": number, "runner": row["claim_runner"], "from": row["assignee_email"],
+                     detail={**_as(account), "number": number, "runner": row["claim_runner"], "from": row["assignee_email"],
                              "to": to["email"] if to else None, "pool": to is None, "reason": _reason(body)})
     db.commit()
     return jsonify(task=tasks.public(updated, moment), changed=True)

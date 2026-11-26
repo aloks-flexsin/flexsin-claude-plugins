@@ -84,13 +84,18 @@ def test_one_projects_error_does_not_stop_the_watch_and_stop_file_ends_it(tmp_pa
     assert lines[-1] == 'Supervisor: STOP file found: stopping.'
 
 
-def test_watch_refuses_without_settings_or_a_supervisor_token(tmp_path):
+def test_watch_refuses_without_settings_or_with_a_project_token(tmp_path):
     lines = []
-    assert sup.watch_main([], {}, out=lines.append) == sup.EXIT_CONFIG and 'not configured' in lines[0]
+    empty = {'AUTO_SUPERVISOR_REPO_DIR': str(tmp_path)}
+    assert sup.watch_main([], empty, out=lines.append, origin=lambda d: None) == sup.EXIT_CONFIG
+    assert 'not configured' in lines[0]
     env = dict(ENV, AUTO_SUPERVISOR_PROJECT='x', AUTO_SUPERVISOR_REPO='o/r')
-    assert sup.watch_main([], env, http=fake_http([], role='developer'), out=lines.append) == sup.EXIT_REFUSED
+    assert sup.watch_main([], env, http=fake_http([], role=None), out=lines.append) == sup.EXIT_REFUSED
+    assert sup.watch_main([], env, http=fake_http([], role='user'), out=lines.append, max_passes=1,
+                          make_read=lambda d: (lambda ref, path: None), make_forge=lambda r: FakeForge(),
+                          make_deployer=lambda d: object()) == 0          # a member acts as the Supervise stage
 
 
 def test_main_dispatches_watch(tmp_path):
     lines = []
-    assert sup.main(['watch'], env={}, out=lines.append) == sup.EXIT_CONFIG
+    assert sup.main(['watch'], env={'AUTO_SUPERVISOR_REPO_DIR': str(tmp_path)}, out=lines.append) == sup.EXIT_CONFIG
