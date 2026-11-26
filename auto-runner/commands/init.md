@@ -1,5 +1,5 @@
 ---
-description: Set this project up for unattended runs (preview first, then apply after you agree)
+description: (Old name, kept one release: use /auto-runner:setup) Set this project up for unattended runs (preview first, then apply after you agree)
 argument-hint: [--central-url URL | --local] [--central-project SLUG] [--token-env NAME] [--with-rules]
 ---
 

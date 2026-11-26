@@ -1,5 +1,5 @@
 ---
-description: Set up the central service in one go (check, sign in, clone or sync, connect), each change after you agree
+description: (Old name, kept one release: use /auto-runner:setup) Set up the central service in one go (check, sign in, clone or sync, connect), each change after you agree
 argument-hint: [--central-url URL] [--central-project SLUG]
 ---
 

@@ -609,8 +609,17 @@ def api_record():
     def run():
         db = get_db()
         approval = body.get("approval") or "terminal"
-        if approval not in ("terminal", "page"):
-            raise TaskError('approval is "terminal" (the default) or "page"')
+        if approval not in ("terminal", "page", "open"):
+            raise TaskError('approval is "terminal" (the default), "page" or "open"')
+        if approval == "open":                # a task to plan later (decision 0012, /auto-runner:add): yours or the pool
+            row = create(db, g.token_project, account, None if body.get("pool") is True else account, body.get("title"),
+                         body.get("description"), moment, priority=body.get("priority"),
+                         depends_on=body.get("depends_on"))
+            audit.record(db, "task.create", _at(moment), account_id=account["id"], project_id=g.token_project["id"],
+                         detail={"number": row["number"], "via": "terminal", "approval": "open",
+                                 "pool": row["assignee_id"] is None})
+            db.commit()
+            return jsonify(task=public(row, moment, full=True), claim=None)
         on_page = approval == "page"
         runner = _text(body.get("runner"), 200, "the runner") or "a runner"
         plan = _text(body.get("plan"), MAX_PLAN, "the plan", required=on_page)
@@ -625,6 +634,29 @@ def api_record():
             notify_plan(db, g.token_project, row, moment)
         db.commit()
         return jsonify(task=public(row, moment, full=True), claim=row["claim_id"])
+    return _api(run)
+
+
+@bp.post("/api/v1/tasks/<int:number>/manual")
+@tokens.bearer_token("ingest")
+def api_manual(number):
+    """`{"manual": true | false}`: mark the task manual (a person decides its plan) or back to the project's mode, as
+    on the task page: the assignee, a manager or above, an admin or the supervisor (can_manage); 404 otherwise.
+    Audited as `task.manual` (via api)."""
+    account, body = _api_account(), _body()
+
+    def run():
+        db, moment = get_db(), auth.now()
+        row = get(db, g.token_project["id"], number)
+        if row is None or not can_manage(db, g.token_project, row, account):
+            raise TaskError("no such task", 404)
+        if not isinstance(body.get("manual"), bool):
+            raise TaskError('manual is true or false')
+        before = set_manual(db, row, body["manual"])
+        audit.record(db, "task.manual", _at(moment), account_id=account["id"], project_id=g.token_project["id"],
+                     detail={"number": number, "manual": body["manual"], "before": before, "via": "api"})
+        db.commit()
+        return jsonify(task=public(get(db, g.token_project["id"], number), moment, full=True))
     return _api(run)
 
 

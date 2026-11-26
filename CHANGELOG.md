@@ -5,6 +5,11 @@ All notable changes to this project are written here (Keep a Changelog).
 ## [Unreleased]
 
 ### Added
+- Fewer, clearer commands (autonomy Phase 7): `/auto-runner:setup` (one guided setup; `setup check` reads only),
+  `start` (the watcher, or `start supervisor`), `stop`, `add <what>` (an open task for you or the pool), `status`,
+  `manual on|off [task N]` (and `manual edits`, the old allow-edits) and `tick`, one lifecycle step for
+  `/loop 15m /auto-runner:tick`. The old names keep working for one release. New: `autotasks.py add` and `manual`,
+  `autowatch.py --once`, and on central `"approval": "open"` and `POST /api/v1/tasks/<n>/manual`.
 - Supervisor `watch` (autonomy Phase 5): `autosupervisor.py watch [--every SECONDS]` runs a pass every 15 minutes
   for every project in `AUTO_SUPERVISOR_PROJECTS` (`slug=clone dir,...`), each with its own clone's policy and
   settings and its own GitHub repository, until `.auto/STOP`. One project's error does not stop the others.

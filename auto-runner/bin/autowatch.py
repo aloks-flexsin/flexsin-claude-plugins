@@ -444,9 +444,11 @@ def _loop(project, stop, poll, daily, runner, claude, env, send, build, clock, s
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='autowatch.py', description=__doc__.strip().splitlines()[0])
     ap.add_argument('--project', default=os.environ.get('CLAUDE_PROJECT_DIR') or '.')
+    ap.add_argument('--once', action='store_true', help='one step (take or continue a task, plan or build it) and return; '
+                                                         'for /auto-runner:tick under /loop')
     a = ap.parse_args(argv)
     try:
-        return watch(a.project)
+        return watch(a.project, max_steps=1 if a.once else None)
     except (autocfg.ConfigError, OSError) as e:
         print(f'Not started: {e}')
         return 2

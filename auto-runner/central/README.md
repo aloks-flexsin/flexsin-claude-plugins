@@ -202,6 +202,12 @@ may not stick over plain http. The API endpoints do not use the cookie.
   `supervisor.task.add` (number, from, assignee, with_plan) audit rows. **A person decides plans on tasks the supervisor
   added (manual mode only):** on such a task the plan-decision route turns approve and changes into escalate
   (`"converted": true`). In auto mode (see **Autonomy** below) the supervisor decides them like any other. Tests: `tests/central/test_supervisor_api.py`.
+- **Open tasks and the manual flag from the plugin** (decision record 0012, Phase 7): `POST /api/v1/tasks` takes
+  `"approval": "open"` for a task to plan later, assigned to the caller or, with `"pool": true`, to nobody (the pool);
+  no claim is taken (`task.create` with approval `open`). `POST /api/v1/tasks/<n>/manual` with `{"manual": true|false}`
+  sets the manual flag for the task's assignee, a manager or above, an admin or the supervisor (404 otherwise; 400
+  without a boolean), audited as `task.manual` via api. `/auto-runner:add` and `/auto-runner:manual` use them.
+  Tests: `tests/auto_runner/test_central_tasks.py`, `tests/central/test_autonomy.py`.
 - **Autonomy** (decision record 0012, Phase 3b): `project.autonomy` is `auto` (the default) or `manual`; owners and admins
   switch it on Settings › Repository (`POST /projects/<slug>/autonomy`, audited as `project.autonomy` with from and to).
   `project_task.manual` (0/1) is set on the task page by the assignee, a manager or above, or the supervisor
