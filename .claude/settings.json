@@ -12,7 +12,9 @@
       "Bash(git switch main:*)",
       "Read(./.env)",
       "Read(./.env.*)",
-      "Read(./.auto/run/accounts.json)"
+      "Read(./.auto/run/accounts.json)",
+      "Bash(git tag:*)",
+      "Bash(git tag)"
     ]
   },
   "extraKnownMarketplaces": {

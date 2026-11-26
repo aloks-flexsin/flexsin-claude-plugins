@@ -4,6 +4,8 @@ All notable changes to this project are written here (Keep a Changelog).
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-11-26
+
 ### Added
 - The Supervise stage under your own sign-in (autonomy Phase 8): the supervisor API also accepts a developer-or-above
   member's personal token (audited `"as": "supervise stage"`); `autosupervisor.py` and its `watch` need no setup: the

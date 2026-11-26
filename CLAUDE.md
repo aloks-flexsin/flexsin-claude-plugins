@@ -17,6 +17,11 @@ dashboard will live in `auto-runner/central/`.
 - Tests never reach the network or live services; use fakes (see `tests/auto_runner/fake_central.py`).
 - Config comes from environment variables only; never commit secrets, `.env` files or real customer data.
 - When you change anything under `auto-runner/bin`, `commands` or `config.schema.json`, update `auto-runner/README.md` (the doc-map check enforces this).
+- Every change to the plugin (anything under `auto-runner/` except its README and docs) adds one line under
+  `## [Unreleased]` in `CHANGELOG.md` (the `version` check enforces this; label the PR `no-changelog` when nothing a
+  user notices changed). A release is its own PR made with `python auto-runner/bin/autochange.py release --apply`, which
+  moves Unreleased under the new version and bumps `plugin.json` and `marketplace.json` together; the `release`
+  workflow tags `auto-runner-v<version>` when that PR merges.
 - Deploys run only through the Supervisor's deploy step after a merge (decision record 0012); never deploy by hand
   from a session, and never touch Supabase data or run a destructive migration (a person does that).
 - This repo is separate from SaleEnable/SIVA: never copy its code, database, queue or docs here.

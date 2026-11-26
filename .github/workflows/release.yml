@@ -1,0 +1,42 @@
+name: release
+
+# When a new plugin version reaches main (a merged release pull request), tag it `auto-runner-v<version>` and publish a
+# GitHub release with that version's changelog section. Runs only when plugin.json changed; does nothing when the tag
+# already exists. It only creates the tag and the release: it never pushes a commit.
+on:
+  push:
+    branches: [main]
+    paths:
+      - auto-runner/.claude-plugin/plugin.json
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Tag and publish the new version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(python3 -c "import json; print(json.load(open('auto-runner/.claude-plugin/plugin.json'))['version'])")
+          tag="auto-runner-v${version}"
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            echo "${tag} already exists: nothing to do"
+            exit 0
+          fi
+          # the version's section of CHANGELOG.md, from its heading to the next version heading
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" {on=1; next}
+            on && /^## \[/ {exit}
+            on {print}
+          ' CHANGELOG.md > notes.md
+          gh release create "${tag}" --target "${GITHUB_SHA}" --title "auto-runner ${version}" --notes-file notes.md
